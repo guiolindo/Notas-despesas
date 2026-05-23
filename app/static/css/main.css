@@ -690,6 +690,32 @@ textarea:focus {
   background: #fff;
 }
 
+/* ─── Barra de filtros / busca instantanea ──────────────────── */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.filter-bar .form-input {
+  min-width: 180px;
+}
+.filter-search {
+  flex: 1 1 320px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.filter-search input {
+  flex: 1 1 auto;
+}
+.filter-count {
+  font-size: .8rem;
+  white-space: nowrap;
+}
+
 /* ─── Seleção de diretor ────────────────────────────────────── */
 .director-list { display: flex; flex-direction: column; gap: .5rem; margin-top: .5rem; }
 .director-card {

@@ -10,6 +10,33 @@
   <a class="btn btn-primary" href="/admin/users/new">Novo Usuario</a>
 </div>
 
+<div class="filter-bar">
+  <div class="filter-search">
+    <input
+      class="form-input"
+      id="admin-users-search"
+      type="search"
+      placeholder="Buscar por nome, email, perfil, departamento ou ID..."
+      autocomplete="off"
+    >
+    <span class="filter-count text-muted" id="admin-users-count"></span>
+  </div>
+  <select class="form-input" id="admin-users-role-filter">
+    <option value="">Todos os perfis</option>
+    <option value="ADMIN">Admin</option>
+    <option value="FINANCE">Despesas</option>
+    <option value="DIRECTOR">Diretor</option>
+    <option value="MANAGER">Gestor</option>
+    <option value="EMPLOYEE">Funcionario</option>
+  </select>
+  <select class="form-input" id="admin-users-status-filter">
+    <option value="">Todos os status</option>
+    <option value="active">Ativos</option>
+    <option value="inactive">Inativos</option>
+    <option value="blocked">Bloqueados</option>
+  </select>
+</div>
+
 <div class="table-responsive">
   <table class="table">
     <thead>

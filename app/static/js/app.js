@@ -1351,6 +1351,10 @@ async function initAdminUsers() {
   });
   document.getElementById('admin-edit-form')?.addEventListener('submit', saveAdminEdit);
   document.getElementById('admin-reset-form')?.addEventListener('submit', resetAdminPassword);
+  // Filtros instantaneos
+  document.getElementById('admin-users-search')?.addEventListener('input', applyAdminUsersFilter);
+  document.getElementById('admin-users-role-filter')?.addEventListener('change', applyAdminUsersFilter);
+  document.getElementById('admin-users-status-filter')?.addEventListener('change', applyAdminUsersFilter);
   await adminLoadManagers('admin-edit-manager');
   await loadAdminUsers();
 }
@@ -1358,17 +1362,61 @@ async function initAdminUsers() {
 async function loadAdminUsers() {
   try {
     adminUsersCache = await apiFetch('/admin/users');
-    renderAdminUsersTable(adminUsersCache);
+    applyAdminUsersFilter();
   } catch (error) {
     showToast(error.message, 'error');
   }
+}
+
+function applyAdminUsersFilter() {
+  const term = (document.getElementById('admin-users-search')?.value || '').trim().toLowerCase();
+  const roleFilter = document.getElementById('admin-users-role-filter')?.value || '';
+  const statusFilter = document.getElementById('admin-users-status-filter')?.value || '';
+
+  const filtered = (adminUsersCache || []).filter((user) => {
+    // Busca textual livre — bate em qualquer um destes campos
+    if (term) {
+      const haystack = [
+        user.name,
+        user.email,
+        user.role,
+        user.department_name,
+        user.id,
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(term)) return false;
+    }
+    // Filtro de perfil
+    if (roleFilter && user.role !== roleFilter) return false;
+    // Filtro de status
+    if (statusFilter) {
+      const blocked = user.blocked_until && new Date(user.blocked_until) > new Date();
+      if (statusFilter === 'active' && (!user.is_active || blocked)) return false;
+      if (statusFilter === 'inactive' && user.is_active) return false;
+      if (statusFilter === 'blocked' && !blocked) return false;
+    }
+    return true;
+  });
+
+  const countEl = document.getElementById('admin-users-count');
+  if (countEl) {
+    const total = (adminUsersCache || []).length;
+    countEl.textContent = filtered.length === total
+      ? `${total} usuario${total === 1 ? '' : 's'}`
+      : `${filtered.length} de ${total}`;
+  }
+
+  renderAdminUsersTable(filtered);
 }
 
 function renderAdminUsersTable(users) {
   const tbody = document.getElementById('admin-users-tbody');
   if (!tbody) return;
   if (!users.length) {
-    tbody.innerHTML = '<tr><td colspan="7">Nenhum usuario cadastrado.</td></tr>';
+    const total = (adminUsersCache || []).length;
+    const msg = total === 0
+      ? 'Nenhum usuario cadastrado.'
+      : 'Nenhum usuario corresponde aos filtros aplicados.';
+    tbody.innerHTML = `<tr><td colspan="7" class="text-muted">${msg}</td></tr>`;
     return;
   }
   const me = Auth.getUser();
