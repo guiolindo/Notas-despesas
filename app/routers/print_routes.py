@@ -89,8 +89,10 @@ def print_invoice(
     invoice.printed_at = now
     invoice.printed_by_id = current_user.id
 
-    # Finalizacao automatica: impressao no Financeiro equivale a confirmacao
-    # de pagamento. Tira a nota da fila operacional sem clique extra.
+    # Finalizacao automatica: impressao no Financeiro equivale a lancamento
+    # da nota (o sistema nao executa pagamento real). Tira a nota da fila
+    # operacional sem clique extra. Reimpressoes continuam permitidas porque
+    # o endpoint aceita status APROVADO ou PAGO (= LANCADO internamente).
     if invoice.status == InvoiceStatus.APROVADO:
         invoice.status = InvoiceStatus.PAGO
         invoice.paid_at = now

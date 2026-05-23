@@ -107,7 +107,7 @@ function statusBadge(status) {
     AGUARDANDO_DIRETOR: 'Aguardando diretor',
     REPROVADO_DIRETOR: 'Reprovado diretor',
     APROVADO: 'Aprovado',
-    PAGO: 'Pago'
+    PAGO: 'Lancado'
   }[status] || status;
   return `<span class="status-badge status-${String(status).toLowerCase()}">${text}</span>`;
 }
@@ -794,7 +794,7 @@ async function renderDetailActions(invoice) {
 
 function renderTimeline(history) {
   const icons = { CREATED: '+', SUBMITTED: '>', APPROVED_MANAGER: '✓', REJECTED_MANAGER: 'x', APPROVED_DIRECTOR: '✓', REJECTED_DIRECTOR: 'x', MARKED_PAID: '$' };
-  const labels = { CREATED: 'Criada', SUBMITTED: 'Enviada', APPROVED_MANAGER: 'Aprovada pelo gestor', REJECTED_MANAGER: 'Reprovada pelo gestor', APPROVED_DIRECTOR: 'Aprovada pelo diretor', REJECTED_DIRECTOR: 'Reprovada pelo diretor', MARKED_PAID: 'Marcada como paga' };
+  const labels = { CREATED: 'Criada', SUBMITTED: 'Enviada', APPROVED_MANAGER: 'Aprovada pelo gestor', REJECTED_MANAGER: 'Reprovada pelo gestor', APPROVED_DIRECTOR: 'Aprovada pelo diretor', REJECTED_DIRECTOR: 'Reprovada pelo diretor', MARKED_PAID: 'Marcada como lancada', PRINTED: 'Impressa' };
   const el = document.getElementById('invoice-timeline');
   if (!el) return;
   el.innerHTML = history.map((item) => `
@@ -1048,13 +1048,13 @@ function renderFinanceActions(invoice) {
     ].join('');
   }
 
-  // Nota ja paga
+  // Nota ja lancada
   if (invoice.status === 'PAGO') {
     actions.innerHTML = `
       <div class="receipt-card receipt-paid">
         <div class="receipt-card-icon">✓</div>
         <div class="receipt-card-body">
-          <strong>Nota lancada como paga</strong>
+          <strong>Nota lancada</strong>
           <span class="text-muted">${formatDateTime(invoice.paid_at)}</span>
         </div>
         <button class="btn btn-ghost btn-sm" id="print-invoice-btn">Re-imprimir comprovante</button>
