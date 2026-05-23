@@ -14,6 +14,11 @@ def _build_engine():
     if url.startswith("sqlite"):
         # check_same_thread só existe no SQLite (desenvolvimento local)
         kwargs["connect_args"] = {"check_same_thread": False}
+    else:
+        # PostgreSQL: revalida conexao antes de cada uso (evita SSL EOF apos idle)
+        # e recicla conexoes mais velhas que 5 min
+        kwargs["pool_pre_ping"] = True
+        kwargs["pool_recycle"] = 300
 
     return create_engine(url, **kwargs)
 
