@@ -100,6 +100,20 @@ def _client_port(request: Request) -> int | None:
     return request.client.port if request.client else None
 
 
+def _utc_iso(dt) -> str | None:
+    """Marca datetime naive como UTC e serializa em ISO (com +00:00).
+
+    Backend grava _now() em UTC mas as colunas sao naive — sem marcar tz, o
+    JS interpreta como hora local e exibe horarios errados (3h adiantadas
+    no fuso de Brasilia).
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
 def _user_payload(user: User) -> dict:
     return {
         "id": user.id,
@@ -110,10 +124,10 @@ def _user_payload(user: User) -> dict:
         "department_name": user.department_obj.name if user.department_obj else None,
         "submit_directly_to_director": getattr(user, "submit_directly_to_director", False),
         "is_active": user.is_active,
-        "created_at": user.created_at.isoformat() if user.created_at else None,
-        "last_login": user.last_login.isoformat() if user.last_login else None,
+        "created_at": _utc_iso(user.created_at),
+        "last_login": _utc_iso(user.last_login),
         "login_attempts": user.login_attempts,
-        "blocked_until": user.blocked_until.isoformat() if user.blocked_until else None,
+        "blocked_until": _utc_iso(user.blocked_until),
         "must_change_password": user.must_change_password,
         "manager_id": user.manager_id,
         "manager_name": user.manager.name if user.manager else None,
@@ -482,7 +496,7 @@ def list_audit_logs(
         "items": [
             {
                 "id": log.id,
-                "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+                "timestamp": _utc_iso(log.timestamp),
                 "action": log.action,
                 "resource_type": log.resource_type,
                 "resource_id": log.resource_id,

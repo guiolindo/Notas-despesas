@@ -49,12 +49,20 @@ def _client_port(request: Request) -> int | None:
     return request.client.port if request.client else None
 
 
+def _as_utc(dt):
+    """Marca datetime naive como UTC (todos os _now() escrevem em UTC)."""
+    if dt is None:
+        return None
+    from datetime import timezone as _tz
+    return dt if dt.tzinfo else dt.replace(tzinfo=_tz.utc)
+
+
 def _history_response(entry: ApprovalHistory) -> ApprovalHistoryResponse:
     return ApprovalHistoryResponse(
         id=entry.id,
         action=entry.action.value,
         comment=entry.comment,
-        timestamp=entry.timestamp,
+        timestamp=_as_utc(entry.timestamp),
         user=UserBrief.model_validate(entry.user),
     )
 
@@ -75,11 +83,11 @@ def invoice_response(invoice: Invoice) -> InvoiceResponse:
         created_by=UserBrief.model_validate(invoice.created_by),
         manager=UserBrief.model_validate(invoice.manager) if invoice.manager else None,
         director=UserBrief.model_validate(invoice.director) if invoice.director else None,
-        created_at=invoice.created_at,
-        submitted_at=invoice.submitted_at,
-        manager_reviewed_at=invoice.manager_reviewed_at,
-        director_reviewed_at=invoice.director_reviewed_at,
-        paid_at=invoice.paid_at,
+        created_at=_as_utc(invoice.created_at),
+        submitted_at=_as_utc(invoice.submitted_at),
+        manager_reviewed_at=_as_utc(invoice.manager_reviewed_at),
+        director_reviewed_at=_as_utc(invoice.director_reviewed_at),
+        paid_at=_as_utc(invoice.paid_at),
         history=[_history_response(entry) for entry in history],
         department_name=dept.name if dept else None,
         can_cancel=_can_cancel(invoice),

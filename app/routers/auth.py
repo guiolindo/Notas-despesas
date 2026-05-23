@@ -179,7 +179,7 @@ def me(current_user: User = Depends(get_current_user)):
         "department_id": current_user.department_id,
         "must_change_password": current_user.must_change_password,
         "submit_directly_to_director": getattr(current_user, "submit_directly_to_director", False),
-        "last_login": current_user.last_login.isoformat() if current_user.last_login else None,
+        "last_login": _as_utc(current_user.last_login).isoformat() if current_user.last_login else None,
     }
     if current_user.must_change_password:
         data["action_required"] = "change_password"

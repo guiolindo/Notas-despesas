@@ -138,7 +138,20 @@ def print_invoice(
 @router.get("/verify/{invoice_id}", response_class=HTMLResponse)
 def verify_invoice(invoice_id: str, request: Request, db: Session = Depends(get_db)):
     invoice = _invoice_with_relations(db, invoice_id)
-    context = {"request": request, "invoice": invoice, "auth_hash": None}
+    context = {
+        "request": request,
+        "invoice": invoice,
+        "auth_hash": None,
+        "director_reviewed_at_br": None,
+    }
     if invoice:
         context["auth_hash"] = invoice_hash(invoice)
+        # Converte UTC -> Brasilia para exibicao
+        if invoice.director_reviewed_at:
+            from datetime import timezone as _tz, timedelta as _td
+            dt = invoice.director_reviewed_at
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=_tz.utc)
+            br = dt.astimezone(_tz(_td(hours=-3)))
+            context["director_reviewed_at_br"] = br.strftime("%d/%m/%Y %H:%M")
     return templates.TemplateResponse(request, "verify.html", context)

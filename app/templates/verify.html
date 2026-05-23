@@ -25,7 +25,7 @@
           <div class="detail-item"><span>Status</span><strong>{{ invoice.status.value }}</strong></div>
           <div class="detail-item"><span>Numero</span><strong>{{ invoice.invoice_number }}</strong></div>
           <div class="detail-item"><span>Valor</span><strong>R$ {{ invoice.amount }}</strong></div>
-          <div class="detail-item"><span>Aprovacao Diretor</span><strong>{{ invoice.director_reviewed_at.strftime('%d/%m/%Y %H:%M') if invoice.director_reviewed_at else '-' }}</strong></div>
+          <div class="detail-item"><span>Aprovacao Diretor</span><strong>{{ director_reviewed_at_br or '-' }}</strong></div>
           <div class="detail-item"><span>Gestor</span><strong>{{ invoice.manager.name if invoice.manager else '-' }}</strong></div>
           <div class="detail-item"><span>Diretor</span><strong>{{ invoice.director.name if invoice.director else '-' }}</strong></div>
           <div class="detail-item"><span>Assinatura Digital</span><strong>{{ auth_hash }}</strong></div>

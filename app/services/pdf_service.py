@@ -40,7 +40,15 @@ def _format_date(value) -> str:
 
 
 def _format_datetime(value) -> str:
-    return value.strftime("%d/%m/%Y %H:%M") if value else "-"
+    """Formata datetime no fuso de Brasilia (-3) para impressao no PDF."""
+    if not value:
+        return "-"
+    from datetime import timezone, timedelta
+    # Se naive, assume que esta em UTC (e como _now() grava). Converte pra -3.
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    br_tz = timezone(timedelta(hours=-3))
+    return value.astimezone(br_tz).strftime("%d/%m/%Y %H:%M")
 
 
 def _format_currency(value) -> str:
