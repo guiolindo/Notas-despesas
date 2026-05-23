@@ -12,10 +12,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     MASTER_ENCRYPTION_KEY: str = ""
-    GOOGLE_DRIVE_CREDENTIALS_PATH: str = "credentials.json"
-    GOOGLE_DRIVE_FOLDER_ID: str = ""
-    # Conteudo completo do JSON da conta de servico (usado no Railway em vez do arquivo)
-    GOOGLE_CREDENTIALS_JSON: str = ""
+    # Cloudflare R2 (S3-compatible object storage)
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_ENDPOINT_URL: str = ""
+    R2_BUCKET_NAME: str = ""
     MAX_LOGIN_ATTEMPTS: int = 5
     LOGIN_BLOCK_MINUTES: int = 10
     ENVIRONMENT: str = "DEV"

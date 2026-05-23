@@ -11,7 +11,6 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 UPLOADS_DIR = PROJECT_ROOT / "uploads"
 
@@ -51,29 +50,33 @@ def decrypt_key_with_master(encrypted_key_b64: str) -> bytes:
 
 
 class DriveService:
+    """Storage service backed por Cloudflare R2 (S3-compatible).
+
+    Mantem o nome historico DriveService para minimizar refactor no resto do app.
+    Em desenvolvimento sem credenciais, faz fallback para uploads/ local.
+    """
+
     def __init__(self) -> None:
-        self._drive_client = None
+        self._s3_client = None
         self._fallback_warned = False
 
     @property
-    def credentials_path(self) -> Path:
-        path = Path(settings.GOOGLE_DRIVE_CREDENTIALS_PATH)
-        if not path.is_absolute():
-            path = PROJECT_ROOT / path
-        return path
-
-    @property
     def _has_credentials(self) -> bool:
-        return bool(settings.GOOGLE_CREDENTIALS_JSON) or self.credentials_path.exists()
+        return bool(
+            settings.R2_ACCESS_KEY_ID
+            and settings.R2_SECRET_ACCESS_KEY
+            and settings.R2_ENDPOINT_URL
+            and settings.R2_BUCKET_NAME
+        )
 
     @property
     def fallback_local(self) -> bool:
-        return not settings.GOOGLE_DRIVE_FOLDER_ID or not self._has_credentials
+        return not self._has_credentials
 
     def _warn_fallback(self) -> None:
         if not self._fallback_warned:
             logger.warning(
-                "[DriveService] Modo fallback local ativo. Configure Google Drive para producao."
+                "[DriveService] Modo fallback local ativo. Configure R2_* para producao."
             )
             self._fallback_warned = True
 
@@ -81,24 +84,19 @@ class DriveService:
         if self.fallback_local:
             self._warn_fallback()
             return None
-        if self._drive_client is None:
-            from google.oauth2 import service_account
-            from googleapiclient.discovery import build
+        if self._s3_client is None:
+            import boto3
+            from botocore.config import Config
 
-            # Railway: credenciais via variavel de ambiente
-            if settings.GOOGLE_CREDENTIALS_JSON:
-                import json
-                info = json.loads(settings.GOOGLE_CREDENTIALS_JSON)
-                credentials = service_account.Credentials.from_service_account_info(
-                    info, scopes=DRIVE_SCOPES
-                )
-            else:
-                # Desenvolvimento local: arquivo credentials.json
-                credentials = service_account.Credentials.from_service_account_file(
-                    str(self.credentials_path), scopes=DRIVE_SCOPES
-                )
-            self._drive_client = build("drive", "v3", credentials=credentials)
-        return self._drive_client
+            self._s3_client = boto3.client(
+                "s3",
+                endpoint_url=settings.R2_ENDPOINT_URL,
+                aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+                config=Config(signature_version="s3v4", retries={"max_attempts": 3}),
+                region_name="auto",
+            )
+        return self._s3_client
 
     def upload_encrypted_file(
         self,
@@ -116,23 +114,15 @@ class DriveService:
             (UPLOADS_DIR / f"{local_id}.enc").write_bytes(encrypted_bytes)
             return f"local:{local_id}", encrypted_key_b64
 
-        from googleapiclient.http import MediaIoBaseUpload
-
-        metadata = {
-            "name": f"{Path(original_filename).name}.enc",
-            "parents": [settings.GOOGLE_DRIVE_FOLDER_ID],
-        }
-        media = MediaIoBaseUpload(
-            io.BytesIO(encrypted_bytes),
-            mimetype="application/octet-stream",
-            resumable=False,
+        object_key = f"{uuid.uuid4()}.enc"
+        client.put_object(
+            Bucket=settings.R2_BUCKET_NAME,
+            Key=object_key,
+            Body=encrypted_bytes,
+            ContentType="application/octet-stream",
+            Metadata={"original_filename": Path(original_filename).name[:200]},
         )
-        uploaded = (
-            client.files()
-            .create(body=metadata, media_body=media, fields="id")
-            .execute()
-        )
-        return uploaded["id"], encrypted_key_b64
+        return object_key, encrypted_key_b64
 
     def download_and_decrypt(
         self,
@@ -144,17 +134,9 @@ class DriveService:
         else:
             client = self._client()
             if client is None:
-                raise FileNotFoundError("Arquivo local invalido ou Google Drive nao configurado.")
-
-            from googleapiclient.http import MediaIoBaseDownload
-
-            request = client.files().get_media(fileId=drive_file_id)
-            buffer = io.BytesIO()
-            downloader = MediaIoBaseDownload(buffer, request)
-            done = False
-            while not done:
-                _, done = downloader.next_chunk()
-            encrypted_bytes = buffer.getvalue()
+                raise FileNotFoundError("R2 nao configurado para baixar arquivo remoto.")
+            response = client.get_object(Bucket=settings.R2_BUCKET_NAME, Key=drive_file_id)
+            encrypted_bytes = response["Body"].read()
 
         file_key = decrypt_key_with_master(encrypted_key_b64)
         return decrypt_data(encrypted_bytes, file_key)
@@ -168,8 +150,8 @@ class DriveService:
 
         client = self._client()
         if client is None:
-            raise FileNotFoundError("Google Drive nao configurado para remover arquivo remoto.")
-        client.files().delete(fileId=drive_file_id).execute()
+            raise FileNotFoundError("R2 nao configurado para remover arquivo remoto.")
+        client.delete_object(Bucket=settings.R2_BUCKET_NAME, Key=drive_file_id)
 
     def _local_file_path(self, drive_file_id: str) -> Path:
         local_id = drive_file_id.removeprefix("local:")
