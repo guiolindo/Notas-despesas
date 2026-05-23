@@ -101,7 +101,6 @@ app.include_router(admin_router.router, tags=["Admin"])
 app.include_router(alerts.router, prefix="/alerts", tags=["Alertas"])
 app.include_router(print_routes.router, tags=["Impressao"])
 app.include_router(pages.router, tags=["Paginas"])
-app.include_router(invoices.router, prefix="/invoices", tags=["Notas Fiscais"])
 app.include_router(invoices.router, prefix="/api/invoices", tags=["Notas Fiscais API"])
 
 

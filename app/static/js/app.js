@@ -288,7 +288,7 @@ async function initDashboard() {
 
   try {
     const [invoicesData, alertsData] = await Promise.all([
-      apiFetch('/invoices/?per_page=5'),
+      apiFetch('/api/invoices/?per_page=5'),
       apiFetch('/alerts/')
     ]);
     renderStats(alertsData.summary);
@@ -365,7 +365,7 @@ function getInvoiceIdFromPath() {
 }
 
 function invoiceApiPath(invoiceId = '') {
-  return invoiceId ? `/api/invoices/${invoiceId}` : '/invoices/';
+  return invoiceId ? `/api/invoices/${invoiceId}` : '/api/invoices/';
 }
 
 function validatePassword(password) {
@@ -449,7 +449,7 @@ async function initInvoicesList() {
 async function loadInvoicesList() {
   const params = new URLSearchParams({ page: invoiceListState.page, per_page: invoiceListState.perPage });
   if (invoiceListState.status) params.set('status', invoiceListState.status);
-  const data = await apiFetch(`/invoices/?${params.toString()}`);
+  const data = await apiFetch(`/api/invoices/?${params.toString()}`);
   invoiceListState.pages = data.pages || 1;
   document.getElementById('page-indicator').textContent = `Pagina ${data.page} de ${invoiceListState.pages}`;
   document.getElementById('prev-page').disabled = data.page <= 1;
@@ -541,7 +541,7 @@ async function initInvoiceForm(mode) {
     const dirGroup = document.getElementById('director-select-group');
     if (dirGroup) dirGroup.style.display = '';
     try {
-      const directors = await apiFetch('/invoices/directors');
+      const directors = await apiFetch('/api/invoices/directors');
       renderDirectorList(directors, 'director-list', 'chosen-director-id');
     } catch {
       const el = document.getElementById('director-list');
@@ -610,7 +610,7 @@ async function saveInvoice(event, mode, submitNow = true) {
   showLoading();
   try {
     const invoiceId = getInvoiceIdFromPath();
-    const invoice = await apiFetch(mode === 'edit' ? `/api/invoices/${invoiceId}` : '/invoices/', {
+    const invoice = await apiFetch(mode === 'edit' ? `/api/invoices/${invoiceId}` : '/api/invoices/', {
       method: mode === 'edit' ? 'PATCH' : 'POST',
       body: form
     });
@@ -683,7 +683,7 @@ async function renderDetailActions(invoice) {
   actions.innerHTML = directorHtml + buttons.join('');
   if (invoice.status === 'RASCUNHO' && isDirect) {
     try {
-      const directors = await apiFetch('/invoices/directors');
+      const directors = await apiFetch('/api/invoices/directors');
       renderDirectorList(directors, 'detail-director-list', 'detail-chosen-director');
     } catch {
       const el = document.getElementById('detail-director-list');
@@ -865,7 +865,7 @@ function isWithinDateRange(dateStr, from, to) {
 // ── Finance ──────────────────────────────────────────────────────────────────
 
 async function loadFinanceInvoices(status = '') {
-  const url = status ? `/invoices/?status=${status}&per_page=100` : '/invoices/?per_page=100';
+  const url = status ? `/api/invoices/?status=${status}&per_page=100` : '/api/invoices/?per_page=100';
   const data = await apiFetch(url);
   return data.items.sort((a, b) => a.due_date.localeCompare(b.due_date));
 }
@@ -1152,7 +1152,7 @@ async function initReviewQueue(role) {
   });
 
   async function loadReviewQueue() {
-    const url = state.mode === 'pending' ? `/invoices/?status=${statusFilter}&per_page=100` : '/invoices/?per_page=100';
+    const url = state.mode === 'pending' ? `/api/invoices/?status=${statusFilter}&per_page=100` : '/api/invoices/?per_page=100';
     const data = await apiFetch(url);
     const pendingCount = data.items.filter((item) => item.status === statusFilter).length;
     document.getElementById('queue-count').textContent = `${pendingCount} pendentes`;
@@ -1194,7 +1194,7 @@ async function initReviewQueue(role) {
       button.addEventListener('click', async () => {
         if (role === 'manager' && button.dataset.action === 'APPROVE') {
           let directors = [];
-          try { directors = await apiFetch('/invoices/directors'); } catch {}
+          try { directors = await apiFetch('/api/invoices/directors'); } catch {}
           const directorId = await pickDirectorModal(directors);
           if (!directorId) return;
           const ok = await reviewInvoice(button.dataset.id, 'APPROVE', `/api/invoices/${button.dataset.id}/${endpointPart}`, directorId);
@@ -1224,7 +1224,7 @@ async function initReviewDetail(role) {
 
   if (role === 'manager') {
     try {
-      const directors = await apiFetch('/invoices/directors');
+      const directors = await apiFetch('/api/invoices/directors');
       renderDirectorList(directors, 'director-list', 'chosen-director-id');
     } catch {
       const el = document.getElementById('director-list');
@@ -1874,7 +1874,7 @@ async function _renderDrawerActions(invoice, user) {
 
   if (invoice.status === 'RASCUNHO' && isDirect) {
     try {
-      const dirs = await apiFetch('/invoices/directors');
+      const dirs = await apiFetch('/api/invoices/directors');
       renderDirectorList(dirs, 'drawer-dir-list', 'drawer-dir-chosen');
     } catch {
       const el = document.getElementById('drawer-dir-list');
@@ -1935,7 +1935,7 @@ async function _renderDrawerManagerReview(invoice) {
     </div>`;
 
   try {
-    const dirs = await apiFetch('/invoices/directors');
+    const dirs = await apiFetch('/api/invoices/directors');
     renderDirectorList(dirs, 'drawer-mgr-dir-list', 'drawer-mgr-dir-chosen');
   } catch {
     document.getElementById('drawer-mgr-dir-list').innerHTML = '<p class="text-muted">Erro ao carregar diretores.</p>';
