@@ -1887,7 +1887,7 @@ function _renderDrawerContent(invoice) {
   }
 
   const icons  = { CREATED: '+', SUBMITTED: '>', APPROVED_MANAGER: '✓', REJECTED_MANAGER: '✗', APPROVED_DIRECTOR: '✓', REJECTED_DIRECTOR: '✗', MARKED_PAID: '$', PRINTED: '🖨' };
-  const labels = { CREATED: 'Criada', SUBMITTED: 'Enviada', APPROVED_MANAGER: 'Aprovada gestor', REJECTED_MANAGER: 'Reprovada gestor', APPROVED_DIRECTOR: 'Aprovada diretor', REJECTED_DIRECTOR: 'Reprovada diretor', MARKED_PAID: 'Paga', PRINTED: 'Comprovante impresso' };
+  const labels = { CREATED: 'Criada', SUBMITTED: 'Enviada', APPROVED_MANAGER: 'Aprovada gestor', REJECTED_MANAGER: 'Reprovada gestor', APPROVED_DIRECTOR: 'Aprovada diretor', REJECTED_DIRECTOR: 'Reprovada diretor', MARKED_PAID: 'Lancada', PRINTED: 'Comprovante impresso' };
   document.getElementById('drawer-timeline').innerHTML = invoice.history.map((h) => `
     <div class="timeline-item">
       <div class="timeline-icon">${icons[h.action] || '·'}</div>
@@ -1911,8 +1911,8 @@ async function _renderDrawerActions(invoice, user) {
   if (role === 'DIRECTOR' && invoice.status === 'AGUARDANDO_DIRETOR') {
     return _renderDrawerDirectorReview(invoice);
   }
-  // Financeiro — imprimir comprovante
-  if (role === 'FINANCE' && invoice.status === 'APROVADO') {
+  // Financeiro — imprimir comprovante (APROVADO = 1a impressao | PAGO = reimpressao)
+  if (role === 'FINANCE' && (invoice.status === 'APROVADO' || invoice.status === 'PAGO')) {
     return _renderDrawerFinance(invoice);
   }
 
@@ -2077,23 +2077,31 @@ function _renderDrawerFinance(invoice) {
   const lastPrint = printedEntry
     ? `<p class="receipt-last-print">Ultima impressao: ${formatDateTime(printedEntry.timestamp)} por ${escapeHtml(printedEntry.user.name)}</p>`
     : '';
+  const isReprint = invoice.status === 'PAGO';
+  const titleTxt = isReprint ? 'Re-imprimir Comprovante' : 'Comprovante de Recebimento';
+  const descTxt = isReprint
+    ? 'Nota ja foi lancada. Reimpressao gera novo comprovante sem alterar o status.'
+    : 'Trilha completa + QR code + PDF original. Ao imprimir, registra o lancamento automaticamente.';
+  const btnTxt = isReprint ? 'Re-imprimir Comprovante' : 'Imprimir e Lancar Nota';
+  const btnClass = isReprint ? 'btn-ghost' : 'btn-primary';
+
   actionsEl.innerHTML = `
     <div class="receipt-card">
       <div class="receipt-card-icon">🖨</div>
       <div class="receipt-card-body">
-        <strong>Comprovante de Recebimento</strong>
-        <p>Trilha completa + QR code + PDF original. Ao imprimir, registra o recebimento automaticamente.</p>
+        <strong>${titleTxt}</strong>
+        <p>${descTxt}</p>
         ${lastPrint}
       </div>
       <div class="receipt-card-actions">
-        <button class="btn btn-primary" id="drawer-finance-print">Imprimir e Confirmar Recebimento</button>
+        <button class="btn ${btnClass}" id="drawer-finance-print">${btnTxt}</button>
       </div>
     </div>`;
 
   document.getElementById('drawer-finance-print').addEventListener('click', async () => {
     const ok = await fetchAndOpenPdf(`/api/invoices/${invoice.id}/print`);
     if (ok) {
-      showToast('Comprovante gerado. Recebimento registrado.', 'success');
+      showToast(isReprint ? 'Comprovante reimpresso.' : 'Comprovante gerado. Nota lancada.', 'success');
       setTimeout(async () => {
         const updated = await apiFetch(`/api/invoices/${invoice.id}`);
         _renderDrawerContent(updated);
