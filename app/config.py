@@ -1,6 +1,14 @@
+import os
 import warnings
 
 from pydantic_settings import BaseSettings
+
+# DEBUG temporario — verificar se env vars chegam no processo
+print(f"[DEBUG-ENV] SECRET_KEY presente em os.environ: {('SECRET_KEY' in os.environ)}", flush=True)
+print(f"[DEBUG-ENV] SECRET_KEY len: {len(os.environ.get('SECRET_KEY', ''))}", flush=True)
+print(f"[DEBUG-ENV] DATABASE_URL prefix: {os.environ.get('DATABASE_URL', '')[:15]}", flush=True)
+print(f"[DEBUG-ENV] ENVIRONMENT: {os.environ.get('ENVIRONMENT', 'NAO-DEFINIDO')}", flush=True)
+print(f"[DEBUG-ENV] Total env vars: {len(os.environ)}", flush=True)
 
 _INSECURE_DEFAULT_KEY = "troque-em-producao-minimo-64-chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
