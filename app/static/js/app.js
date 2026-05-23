@@ -423,14 +423,70 @@ function initChangePasswordPage() {
   });
 }
 
-let invoiceListState = { page: 1, perPage: 20, pages: 1, status: '' };
+let invoiceListState = {
+  page: 1,
+  perPage: 20,
+  pages: 1,
+  status: '',
+  search: '',
+  fromDate: '',
+  toDate: '',
+  minAmount: '',
+  maxAmount: '',
+  createdBy: '',
+};
+let _invoicesSearchDebounce = null;
 
 async function initInvoicesList() {
-  document.getElementById('status-filter')?.addEventListener('change', (event) => {
-    invoiceListState.status = event.target.value;
+  const triggerReload = () => {
     invoiceListState.page = 1;
     loadInvoicesList();
+  };
+  // Status (filtro principal)
+  document.getElementById('status-filter')?.addEventListener('change', (event) => {
+    invoiceListState.status = event.target.value;
+    triggerReload();
   });
+  // Busca textual com debounce de 300ms
+  document.getElementById('invoices-search')?.addEventListener('input', (event) => {
+    invoiceListState.search = event.target.value;
+    clearTimeout(_invoicesSearchDebounce);
+    _invoicesSearchDebounce = setTimeout(triggerReload, 300);
+  });
+  // Filtros avancados (datas, valores, responsavel)
+  document.getElementById('invoices-from-date')?.addEventListener('change', (e) => {
+    invoiceListState.fromDate = e.target.value; triggerReload();
+  });
+  document.getElementById('invoices-to-date')?.addEventListener('change', (e) => {
+    invoiceListState.toDate = e.target.value; triggerReload();
+  });
+  document.getElementById('invoices-min-amount')?.addEventListener('change', (e) => {
+    invoiceListState.minAmount = e.target.value; triggerReload();
+  });
+  document.getElementById('invoices-max-amount')?.addEventListener('change', (e) => {
+    invoiceListState.maxAmount = e.target.value; triggerReload();
+  });
+  document.getElementById('invoices-created-by')?.addEventListener('input', (e) => {
+    invoiceListState.createdBy = e.target.value;
+    clearTimeout(_invoicesSearchDebounce);
+    _invoicesSearchDebounce = setTimeout(triggerReload, 300);
+  });
+  // Mostrar/esconder filtros avancados
+  document.getElementById('invoices-toggle-advanced')?.addEventListener('click', () => {
+    document.getElementById('invoices-advanced')?.classList.toggle('hidden');
+  });
+  // Limpar todos os filtros
+  document.getElementById('invoices-clear-filters')?.addEventListener('click', () => {
+    invoiceListState = { ...invoiceListState, search: '', fromDate: '', toDate: '', minAmount: '', maxAmount: '', createdBy: '', status: '' };
+    ['invoices-search', 'invoices-from-date', 'invoices-to-date', 'invoices-min-amount', 'invoices-max-amount', 'invoices-created-by'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const statusEl = document.getElementById('status-filter');
+    if (statusEl) statusEl.value = '';
+    triggerReload();
+  });
+
   document.getElementById('prev-page')?.addEventListener('click', () => {
     if (invoiceListState.page > 1) {
       invoiceListState.page -= 1;
@@ -447,13 +503,29 @@ async function initInvoicesList() {
 }
 
 async function loadInvoicesList() {
-  const params = new URLSearchParams({ page: invoiceListState.page, per_page: invoiceListState.perPage });
+  const params = new URLSearchParams({
+    page: invoiceListState.page,
+    per_page: invoiceListState.perPage,
+  });
   if (invoiceListState.status) params.set('status', invoiceListState.status);
+  if (invoiceListState.search) params.set('search', invoiceListState.search);
+  if (invoiceListState.fromDate) params.set('from_date', invoiceListState.fromDate);
+  if (invoiceListState.toDate) params.set('to_date', invoiceListState.toDate);
+  if (invoiceListState.minAmount) params.set('min_amount', invoiceListState.minAmount);
+  if (invoiceListState.maxAmount) params.set('max_amount', invoiceListState.maxAmount);
+  if (invoiceListState.createdBy) params.set('created_by', invoiceListState.createdBy);
+
   const data = await apiFetch(`/api/invoices/?${params.toString()}`);
   invoiceListState.pages = data.pages || 1;
   document.getElementById('page-indicator').textContent = `Pagina ${data.page} de ${invoiceListState.pages}`;
   document.getElementById('prev-page').disabled = data.page <= 1;
   document.getElementById('next-page').disabled = data.page >= invoiceListState.pages;
+  const countEl = document.getElementById('invoices-count');
+  if (countEl) {
+    countEl.textContent = data.total != null
+      ? `${data.total} nota${data.total === 1 ? '' : 's'} encontrada${data.total === 1 ? '' : 's'}`
+      : '';
+  }
   renderInvoicesTable(data.items);
 }
 

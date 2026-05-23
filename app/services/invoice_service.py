@@ -423,11 +423,43 @@ def get_invoices_for_user(
     status_filter: str | None = None,
     page: int = 1,
     per_page: int = 20,
+    search: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    min_amount: float | None = None,
+    max_amount: float | None = None,
+    created_by: str | None = None,
 ) -> tuple[list[Invoice], int]:
     query = _query_visible_invoices(db, user)
     invoice_status = _status_from_filter(status_filter)
     if invoice_status:
         query = query.filter(Invoice.status == invoice_status)
+
+    # Busca livre em numero e descricao
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.filter(
+            (Invoice.invoice_number.ilike(term)) | (Invoice.description.ilike(term))
+        )
+
+    # Faixa de datas (issue_date)
+    if from_date:
+        query = query.filter(Invoice.issue_date >= from_date)
+    if to_date:
+        query = query.filter(Invoice.issue_date <= to_date)
+
+    # Faixa de valores
+    if min_amount is not None:
+        query = query.filter(Invoice.amount >= min_amount)
+    if max_amount is not None:
+        query = query.filter(Invoice.amount <= max_amount)
+
+    # Filtro por responsavel (nome do criador)
+    if created_by:
+        creator_term = f"%{created_by.strip()}%"
+        query = query.join(User, Invoice.created_by_id == User.id).filter(
+            User.name.ilike(creator_term)
+        )
 
     total = query.count()
     items = (

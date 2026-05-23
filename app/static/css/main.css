@@ -715,6 +715,18 @@ textarea:focus {
   font-size: .8rem;
   white-space: nowrap;
 }
+.filter-advanced {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: .75rem 1rem;
+  padding: 1rem;
+  background: var(--bg-soft, #f7f8fa);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+}
+.filter-advanced .form-group { margin-bottom: 0; }
+.filter-advanced .filter-actions { display: flex; align-items: flex-end; }
 
 /* ─── Seleção de diretor ────────────────────────────────────── */
 .director-list { display: flex; flex-direction: column; gap: .5rem; margin-top: .5rem; }

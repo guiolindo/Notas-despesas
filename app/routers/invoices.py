@@ -206,6 +206,12 @@ def list_invoices(
     status: str | None = None,
     page: int = 1,
     per_page: int = 20,
+    search: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    min_amount: float | None = None,
+    max_amount: float | None = None,
+    created_by: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -220,6 +226,12 @@ def list_invoices(
         status_filter=status,
         page=page,
         per_page=per_page,
+        search=search,
+        from_date=from_date,
+        to_date=to_date,
+        min_amount=min_amount,
+        max_amount=max_amount,
+        created_by=created_by,
     )
     return PaginatedInvoices(
         items=[invoice_response(invoice) for invoice in items],
