@@ -325,7 +325,7 @@ function renderAlerts(data) {
     html += `<div class="alert-banner alert-${group.type}">
       <strong>${group.label} (${data[group.key].length})</strong>
       <ul>${data[group.key].slice(0, 3).map((item) =>
-        `<li><a href="/invoices/${item.id}">${item.invoice_number}</a> - ${formatCurrency(item.amount)} - vence ${formatDate(item.due_date)}</li>`
+        `<li><a href="/invoices/${escapeHtml(item.id)}">${escapeHtml(item.invoice_number)}</a> - ${formatCurrency(item.amount)} - vence ${formatDate(item.due_date)}</li>`
       ).join('')}
       ${data[group.key].length > 3 ? '<li><a href="/alerts">Ver todos...</a></li>' : ''}
       </ul>
@@ -345,11 +345,11 @@ function renderRecentInvoices(items) {
       <th>Numero</th><th>Valor</th><th>Vencimento</th><th>Status</th><th></th>
     </tr></thead>
     <tbody>${items.map((item) => `<tr>
-      <td>${item.invoice_number}</td>
+      <td>${escapeHtml(item.invoice_number)}</td>
       <td>${formatCurrency(item.amount)}</td>
       <td>${formatDate(item.due_date)}</td>
       <td>${statusBadge(item.status)}</td>
-      <td><button class="btn btn-ghost btn-sm" data-drawer="${item.id}">Ver</button></td>
+      <td><button class="btn btn-ghost btn-sm" data-drawer="${escapeHtml(item.id)}">Ver</button></td>
     </tr>`).join('')}</tbody>
   </table>`;
 }
@@ -553,13 +553,13 @@ function renderInvoicesTable(items) {
       const isDraft = item.status === 'RASCUNHO';
       const rejected = item.status.startsWith('REPROVADO');
       return `<tr class="${rejected ? 'rejected-row' : ''}">
-        <td>${rejected ? '! ' : ''}${item.invoice_number}</td>
+        <td>${rejected ? '! ' : ''}${escapeHtml(item.invoice_number)}</td>
         <td>${formatCurrency(item.amount)}</td>
         <td>${formatDate(item.issue_date)}</td>
         <td>${formatDate(item.due_date)}</td>
         <td>${statusBadge(item.status)}</td>
         <td class="table-actions">
-          <button class="btn btn-ghost btn-sm" data-drawer="${item.id}">Ver</button>
+          <button class="btn btn-ghost btn-sm" data-drawer="${escapeHtml(item.id)}">Ver</button>
           ${canEdit ? `<a class="btn btn-ghost btn-sm" href="/invoices/${item.id}/edit">Editar</a>` : ''}
           ${isDraft ? `<button class="btn btn-danger btn-sm" data-action="delete" data-id="${item.id}">Excluir</button>` : ''}
         </td>
@@ -811,7 +811,7 @@ function renderTimeline(history) {
   el.innerHTML = history.map((item) => `
     <div class="timeline-item"><div class="timeline-icon">${icons[item.action] || '-'}</div><div>
       <strong>${labels[item.action] || item.action}</strong>
-      <div class="timeline-meta">${item.user.name} - ${formatDateTime(item.timestamp)}</div>
+      <div class="timeline-meta">${escapeHtml(item.user.name)} - ${formatDateTime(item.timestamp)}</div>
       ${item.comment ? `<p>${escapeHtml(item.comment)}</p>` : ''}
     </div></div>`).join('');
 }
@@ -936,7 +936,7 @@ async function initAlertsPage() {
 function renderAlertTable(items) {
   if (!items.length) return '<p class="text-muted">Nenhuma nota nesta categoria.</p>';
   return `<table class="table"><thead><tr><th>Numero</th><th>Valor</th><th>Emissao</th><th>Vencimento</th><th>Status</th><th></th></tr></thead>
-    <tbody>${items.map((item) => `<tr><td>${item.invoice_number}</td><td>${formatCurrency(item.amount)}</td><td>${formatDate(item.issue_date)}</td><td>${formatDate(item.due_date)}</td><td>${statusBadge(item.status)}</td><td><button class="btn btn-ghost btn-sm" data-drawer="${item.id}">Ver</button></td></tr>`).join('')}</tbody></table>`;
+    <tbody>${items.map((item) => `<tr><td>${escapeHtml(item.invoice_number)}</td><td>${formatCurrency(item.amount)}</td><td>${formatDate(item.issue_date)}</td><td>${formatDate(item.due_date)}</td><td>${statusBadge(item.status)}</td><td><button class="btn btn-ghost btn-sm" data-drawer="${escapeHtml(item.id)}">Ver</button></td></tr>`).join('')}</tbody></table>`;
 }
 
 function isWithinDateRange(dateStr, from, to) {
@@ -1004,12 +1004,12 @@ function renderFinanceQueue(items) {
   </tr></thead><tbody>${items.map((item) => {
     const overdue = daysUntil(item.due_date) < 0 && item.status !== 'PAGO';
     return `<tr class="${overdue ? 'overdue-row' : ''}">
-      <td>${item.invoice_number}</td>
-      <td>${item.created_by.name}</td>
+      <td>${escapeHtml(item.invoice_number)}</td>
+      <td>${escapeHtml(item.created_by.name)}</td>
       <td>${formatCurrency(item.amount)}</td>
       <td>${daysBadge(item.due_date)}</td>
       <td>${statusBadge(item.status)}</td>
-      <td><button class="btn btn-primary btn-sm" data-drawer="${item.id}">Abrir</button></td>
+      <td><button class="btn btn-primary btn-sm" data-drawer="${escapeHtml(item.id)}">Abrir</button></td>
     </tr>`;
   }).join('')}</tbody></table>`;
 }
@@ -1029,7 +1029,7 @@ function approvalLine(invoice, action, label) {
     <div class="timeline-icon ${done ? 'tl-ok' : 'tl-pending'}">${done ? '✓' : '·'}</div>
     <div>
       <strong>${label}</strong>
-      <div class="timeline-meta">${done ? `${item.user.name} — ${formatDateTime(item.timestamp)}` : 'Pendente'}</div>
+      <div class="timeline-meta">${done ? `${escapeHtml(item.user.name)} — ${formatDateTime(item.timestamp)}` : 'Pendente'}</div>
     </div>
   </div>`;
 }
@@ -1186,10 +1186,10 @@ async function initReviewQueue(role) {
       <th>Funcionario</th><th>Numero da nota</th><th>Valor</th><th>Emissao</th><th>Vencimento</th><th>Dias ate vencer</th>${directorExtraHead}<th>Acoes</th>
     </tr></thead><tbody>${items.map((item) => {
       const canReview = item.status === statusFilter;
-      const directorExtra = role === 'director' ? `<td>${item.manager?.name || '-'}</td><td>${formatDateTime(item.manager_reviewed_at)}</td>` : '';
+      const directorExtra = role === 'director' ? `<td>${escapeHtml(item.manager?.name || '-')}</td><td>${formatDateTime(item.manager_reviewed_at)}</td>` : '';
       return `<tr>
-        <td>${item.created_by.name}</td>
-        <td>${item.invoice_number}</td>
+        <td>${escapeHtml(item.created_by.name)}</td>
+        <td>${escapeHtml(item.invoice_number)}</td>
         <td>${formatCurrency(item.amount)}</td>
         <td>${formatDate(item.issue_date)}</td>
         <td>${formatDate(item.due_date)}</td>

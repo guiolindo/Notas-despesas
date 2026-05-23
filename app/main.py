@@ -85,9 +85,18 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RateLimitMiddleware)
+
+# CORS — em PROD restringe ao dominio publico; em DEV aceita qualquer origem
+# para facilitar testes locais (Vite, ngrok, etc.)
+import os
+_is_prod = (os.environ.get("ENVIRONMENT", "DEV").upper() == "PROD")
+_railway_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+_cors_origins = (
+    [f"https://{_railway_url}"] if _is_prod and _railway_url else ["*"]
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -102,6 +102,7 @@ def login(
         value=refresh_token,
         httponly=True,
         samesite="strict",
+        secure=settings.ENVIRONMENT.upper() == "PROD",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
     )
 
@@ -122,6 +123,7 @@ def login(
 @router.post("/refresh")
 def refresh_token(
     refresh_token_cookie: str | None = Cookie(default=None, alias="refresh_token"),
+    db: Session = Depends(get_db),
 ):
     if not refresh_token_cookie:
         raise HTTPException(
@@ -130,12 +132,23 @@ def refresh_token(
         )
 
     payload = decode_token(refresh_token_cookie, expected_type="refresh")
-    access_token = create_access_token(
-        {
-            "sub": payload.get("sub"),
-            "role": payload.get("role"),
-        }
-    )
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalido")
+
+    # Revalida o usuario no DB. Sem isso, conta desativada/bloqueada/anonimizada
+    # ou role rebaixado continuariam com access token novo por ate 7 dias.
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario invalido")
+
+    blocked_until = _as_utc(user.blocked_until)
+    now = datetime.now(timezone.utc)
+    if blocked_until and blocked_until > now:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Conta bloqueada")
+
+    # Le role do DB, nao do token (defesa contra rebaixamento ignorado)
+    access_token = create_access_token({"sub": user.id, "role": user.role.value})
     return {"access_token": access_token, "token_type": "bearer"}
 
 
