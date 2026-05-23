@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     MASTER_ENCRYPTION_KEY: str = ""
     GOOGLE_DRIVE_CREDENTIALS_PATH: str = "credentials.json"
     GOOGLE_DRIVE_FOLDER_ID: str = ""
+    # Conteudo completo do JSON da conta de servico (usado no Railway em vez do arquivo)
+    GOOGLE_CREDENTIALS_JSON: str = ""
     MAX_LOGIN_ATTEMPTS: int = 5
     LOGIN_BLOCK_MINUTES: int = 10
     ENVIRONMENT: str = "DEV"

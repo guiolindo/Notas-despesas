@@ -63,8 +63,12 @@ class DriveService:
         return path
 
     @property
+    def _has_credentials(self) -> bool:
+        return bool(settings.GOOGLE_CREDENTIALS_JSON) or self.credentials_path.exists()
+
+    @property
     def fallback_local(self) -> bool:
-        return not settings.GOOGLE_DRIVE_FOLDER_ID or not self.credentials_path.exists()
+        return not settings.GOOGLE_DRIVE_FOLDER_ID or not self._has_credentials
 
     def _warn_fallback(self) -> None:
         if not self._fallback_warned:
@@ -81,10 +85,18 @@ class DriveService:
             from google.oauth2 import service_account
             from googleapiclient.discovery import build
 
-            credentials = service_account.Credentials.from_service_account_file(
-                str(self.credentials_path),
-                scopes=DRIVE_SCOPES,
-            )
+            # Railway: credenciais via variavel de ambiente
+            if settings.GOOGLE_CREDENTIALS_JSON:
+                import json
+                info = json.loads(settings.GOOGLE_CREDENTIALS_JSON)
+                credentials = service_account.Credentials.from_service_account_info(
+                    info, scopes=DRIVE_SCOPES
+                )
+            else:
+                # Desenvolvimento local: arquivo credentials.json
+                credentials = service_account.Credentials.from_service_account_file(
+                    str(self.credentials_path), scopes=DRIVE_SCOPES
+                )
             self._drive_client = build("drive", "v3", credentials=credentials)
         return self._drive_client
 
