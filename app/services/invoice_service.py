@@ -175,10 +175,15 @@ def _replace_attachment(
     file_bytes: bytes | None,
     filename: str | None,
 ) -> None:
+    """Substitui o anexo da nota.
+
+    ATENCAO ordem: faz upload do novo primeiro; so depois deleta o antigo.
+    Se inverter, uma falha no upload deixa a nota sem anexo (antigo ja foi
+    apagado e o novo nunca chegou).
+    """
     if file_bytes is None:
         return
-    if invoice.drive_file_id:
-        drive_service.delete_file(invoice.drive_file_id)
+    old_file_id = invoice.drive_file_id
     drive_file_id, encrypted_key = drive_service.upload_encrypted_file(
         file_bytes,
         filename or "nota.pdf",
@@ -186,6 +191,12 @@ def _replace_attachment(
     invoice.drive_file_id = drive_file_id
     invoice.drive_file_name = filename
     invoice.encryption_key_enc = encrypted_key
+    # Apaga o antigo apenas apos o novo estar persistido (best-effort)
+    if old_file_id:
+        try:
+            drive_service.delete_file(old_file_id)
+        except Exception:  # noqa: BLE001
+            pass  # arquivo antigo orfao — log mas nao bloqueia operacao
 
 
 def _get_director(db: Session, director_id: str) -> User:
@@ -203,14 +214,25 @@ def _get_director(db: Session, director_id: str) -> User:
 
 
 def _get_manager_for_user(db: Session, user: User) -> User:
-    """Retorna o gestor do setor do funcionário."""
+    """Retorna o gestor do setor do funcionario.
+
+    Exige que o gestor esteja ATIVO. Sem isso, funcionario com gestor
+    desligado mandaria a nota para um destino que nunca aprovaria.
+    """
     if user.manager_id:
-        manager = db.query(User).filter(User.id == user.manager_id).first()
+        manager = (
+            db.query(User)
+            .filter(User.id == user.manager_id, User.is_active.is_(True))
+            .first()
+        )
         if manager:
             return manager
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Usuario sem gestor cadastrado. Contate o administrador.",
+        detail=(
+            "Seu gestor nao esta mais ativo no sistema ou voce nao tem gestor cadastrado. "
+            "Contate o administrador para atualizar seu cadastro."
+        ),
     )
 
 
@@ -564,10 +586,10 @@ def update_invoice(
         if value is not None and isinstance(value, str):
             value = _sanitize_text(value)
         setattr(invoice, field, value)
-    if invoice.due_date < invoice.issue_date:
+    if invoice.due_date and invoice.issue_date and invoice.due_date < invoice.issue_date:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="due_date deve ser >= issue_date",
+            detail="Vencimento deve ser igual ou posterior a data de emissao",
         )
 
     _replace_attachment(invoice, file_bytes, filename)

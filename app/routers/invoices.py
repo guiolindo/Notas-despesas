@@ -222,6 +222,15 @@ def list_invoices(
     if per_page < 1 or per_page > 100:
         raise HTTPException(status_code=400, detail="per_page deve ficar entre 1 e 100")
 
+    # Validacao de datas ISO — sem isso "from_date=abc" causa 500
+    from datetime import date as _date
+    for label, value in (("from_date", from_date), ("to_date", to_date), ("due_from", due_from), ("due_to", due_to)):
+        if value:
+            try:
+                _date.fromisoformat(value)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"{label}: formato de data invalido (use YYYY-MM-DD)")
+
     items, total, total_amount = invoice_service.get_invoices_for_user(
         db,
         current_user,

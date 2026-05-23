@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import get_db
+from app.database import engine, get_db
 from app.models import AuditLog, User
 from app.security.dependencies import get_current_user
 from app.security.hashing import hash_password, verify_password
@@ -13,6 +13,11 @@ from app.security.jwt import create_access_token, create_refresh_token, decode_t
 
 
 router = APIRouter()
+
+
+def engine_dialect_supports_for_update() -> bool:
+    """SQLite ignora SELECT ... FOR UPDATE; PostgreSQL/MySQL/etc. usam."""
+    return engine.dialect.name != "sqlite"
 
 
 class LoginRequest(BaseModel):
@@ -53,7 +58,13 @@ def login(
 ):
     now = datetime.now(timezone.utc)
     email = sanitize_email(credentials.email)
-    user = db.query(User).filter(User.email == email).first()
+    # Lock pessimista evita race em login_attempts quando dois requests caem
+    # ao mesmo tempo (incremento perdido + bypass do limite de tentativas).
+    # SQLite ignora with_for_update; em PG funciona como SELECT ... FOR UPDATE.
+    query = db.query(User).filter(User.email == email)
+    if engine_dialect_supports_for_update():
+        query = query.with_for_update()
+    user = query.first()
     invalid_credentials = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Email ou senha invalidos",

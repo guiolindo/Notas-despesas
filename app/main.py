@@ -57,27 +57,48 @@ def _run_schema_migrations() -> None:
     """Adiciona colunas novas a tabelas existentes.
     PostgreSQL: usa IF NOT EXISTS (nativo).
     SQLite: tenta e ignora erro se ja existir (desenvolvimento local).
+
+    IMPORTANTE: toda coluna nova adicionada ao modelo precisa entrar aqui
+    senao bancos antigos quebram com UndefinedColumn no proximo deploy.
     """
     is_postgres = engine.dialect.name == "postgresql"
-    if is_postgres:
-        migrations = [
-            "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS source_port INTEGER",
-            "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS http_method VARCHAR(10)",
-            "ALTER TABLE approval_history ADD COLUMN IF NOT EXISTS source_port INTEGER",
-        ]
-    else:
-        migrations = [
-            "ALTER TABLE audit_logs ADD COLUMN source_port INTEGER",
-            "ALTER TABLE audit_logs ADD COLUMN http_method VARCHAR(10)",
-            "ALTER TABLE approval_history ADD COLUMN source_port INTEGER",
-        ]
+    pg = lambda s: s if is_postgres else s.replace(" IF NOT EXISTS", "")
+
+    migrations = [
+        # Audit / historico — colunas de individualizacao NAT (LGPD)
+        pg("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS source_port INTEGER"),
+        pg("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS http_method VARCHAR(10)"),
+        pg("ALTER TABLE approval_history ADD COLUMN IF NOT EXISTS source_port INTEGER"),
+
+        # Users — colunas adicionadas pos schema inicial
+        pg("ALTER TABLE users ADD COLUMN IF NOT EXISTS department_id VARCHAR(36)"),
+        pg("ALTER TABLE users ADD COLUMN IF NOT EXISTS submit_directly_to_director BOOLEAN DEFAULT FALSE"),
+
+        # Invoices — colunas pos schema inicial (rastro de impressao + financeiro)
+        pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS finance_id VARCHAR(36)"),
+        pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS print_drive_file_id VARCHAR(255)"),
+        pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP"),
+        pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS printed_by_id VARCHAR(36)"),
+
+        # Indices para consultas frequentes
+        pg("CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)"),
+        pg("CREATE INDEX IF NOT EXISTS idx_invoices_created_by ON invoices(created_by_id)"),
+        pg("CREATE INDEX IF NOT EXISTS idx_invoices_manager ON invoices(manager_id)"),
+        pg("CREATE INDEX IF NOT EXISTS idx_invoices_director ON invoices(director_id)"),
+        pg("CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number)"),
+        pg("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id)"),
+        pg("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp)"),
+        pg("CREATE INDEX IF NOT EXISTS idx_history_invoice ON approval_history(invoice_id)"),
+        pg("CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)"),
+        pg("CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active)"),
+    ]
     with engine.connect() as conn:
         for stmt in migrations:
             try:
                 conn.execute(text(stmt))
                 conn.commit()
             except Exception:
-                pass  # SQLite: coluna ja existe
+                pass  # SQLite: coluna/indice ja existe
 
 
 _run_schema_migrations()
