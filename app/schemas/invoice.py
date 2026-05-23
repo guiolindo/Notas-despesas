@@ -101,3 +101,4 @@ class PaginatedInvoices(BaseModel):
     page: int
     per_page: int
     pages: int
+    total_amount: float = 0.0  # soma de TODOS os itens que batem nos filtros, nao so da pagina atual

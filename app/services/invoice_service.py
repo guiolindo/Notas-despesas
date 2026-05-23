@@ -426,10 +426,19 @@ def get_invoices_for_user(
     search: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    due_from: str | None = None,
+    due_to: str | None = None,
     min_amount: float | None = None,
     max_amount: float | None = None,
     created_by: str | None = None,
-) -> tuple[list[Invoice], int]:
+) -> tuple[list[Invoice], int, float]:
+    """Retorna (items_paginados, total_geral, soma_valor_total).
+
+    A soma considera TODOS os itens que batem nos filtros, nao so da pagina
+    atual — usada para exibir o totalizer no frontend.
+    """
+    from sqlalchemy import func
+
     query = _query_visible_invoices(db, user)
     invoice_status = _status_from_filter(status_filter)
     if invoice_status:
@@ -442,11 +451,17 @@ def get_invoices_for_user(
             (Invoice.invoice_number.ilike(term)) | (Invoice.description.ilike(term))
         )
 
-    # Faixa de datas (issue_date)
+    # Faixa de datas — emissao
     if from_date:
         query = query.filter(Invoice.issue_date >= from_date)
     if to_date:
         query = query.filter(Invoice.issue_date <= to_date)
+
+    # Faixa de datas — vencimento
+    if due_from:
+        query = query.filter(Invoice.due_date >= due_from)
+    if due_to:
+        query = query.filter(Invoice.due_date <= due_to)
 
     # Faixa de valores
     if min_amount is not None:
@@ -462,13 +477,20 @@ def get_invoices_for_user(
         )
 
     total = query.count()
+    # Soma sobre toda a query (nao so a pagina). Usa subquery_id para evitar
+    # problema de SQLAlchemy com .count() apos with_entities().
+    total_amount = float(
+        db.query(func.coalesce(func.sum(Invoice.amount), 0))
+        .filter(Invoice.id.in_(query.with_entities(Invoice.id)))
+        .scalar() or 0
+    )
     items = (
         query.order_by(Invoice.created_at.desc())
         .offset((page - 1) * per_page)
         .limit(per_page)
         .all()
     )
-    return items, total
+    return items, total, total_amount
 
 
 def get_invoice_or_403(db: Session, invoice_id: str, user: User) -> Invoice:

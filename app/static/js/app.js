@@ -270,13 +270,8 @@ function addApprovalQueueLink(role) {
     queue.id = 'nav-finance-queue';
     queue.className = 'nav-item';
     queue.innerHTML = '<span class="nav-icon">&#9724;</span> Lancamentos <span class="badge-count hidden" id="finance-count-nav"></span>';
-    const history = document.createElement('a');
-    history.href = '/finance/history';
-    history.id = 'nav-finance-history';
-    history.className = 'nav-item';
-    history.innerHTML = '<span class="nav-icon">&#9654;</span> Historico';
     nav.insertBefore(queue, document.getElementById('nav-alerts'));
-    nav.insertBefore(history, document.getElementById('nav-alerts'));
+    // Historico foi fundido na pagina /invoices (que ja tem totalizer + filtros completos)
   }
 }
 
@@ -431,6 +426,8 @@ let invoiceListState = {
   search: '',
   fromDate: '',
   toDate: '',
+  dueFrom: '',
+  dueTo: '',
   minAmount: '',
   maxAmount: '',
   createdBy: '',
@@ -460,6 +457,12 @@ async function initInvoicesList() {
   document.getElementById('invoices-to-date')?.addEventListener('change', (e) => {
     invoiceListState.toDate = e.target.value; triggerReload();
   });
+  document.getElementById('invoices-due-from')?.addEventListener('change', (e) => {
+    invoiceListState.dueFrom = e.target.value; triggerReload();
+  });
+  document.getElementById('invoices-due-to')?.addEventListener('change', (e) => {
+    invoiceListState.dueTo = e.target.value; triggerReload();
+  });
   document.getElementById('invoices-min-amount')?.addEventListener('change', (e) => {
     invoiceListState.minAmount = e.target.value; triggerReload();
   });
@@ -477,8 +480,8 @@ async function initInvoicesList() {
   });
   // Limpar todos os filtros
   document.getElementById('invoices-clear-filters')?.addEventListener('click', () => {
-    invoiceListState = { ...invoiceListState, search: '', fromDate: '', toDate: '', minAmount: '', maxAmount: '', createdBy: '', status: '' };
-    ['invoices-search', 'invoices-from-date', 'invoices-to-date', 'invoices-min-amount', 'invoices-max-amount', 'invoices-created-by'].forEach((id) => {
+    invoiceListState = { ...invoiceListState, search: '', fromDate: '', toDate: '', dueFrom: '', dueTo: '', minAmount: '', maxAmount: '', createdBy: '', status: '' };
+    ['invoices-search', 'invoices-from-date', 'invoices-to-date', 'invoices-due-from', 'invoices-due-to', 'invoices-min-amount', 'invoices-max-amount', 'invoices-created-by'].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -511,6 +514,8 @@ async function loadInvoicesList() {
   if (invoiceListState.search) params.set('search', invoiceListState.search);
   if (invoiceListState.fromDate) params.set('from_date', invoiceListState.fromDate);
   if (invoiceListState.toDate) params.set('to_date', invoiceListState.toDate);
+  if (invoiceListState.dueFrom) params.set('due_from', invoiceListState.dueFrom);
+  if (invoiceListState.dueTo) params.set('due_to', invoiceListState.dueTo);
   if (invoiceListState.minAmount) params.set('min_amount', invoiceListState.minAmount);
   if (invoiceListState.maxAmount) params.set('max_amount', invoiceListState.maxAmount);
   if (invoiceListState.createdBy) params.set('created_by', invoiceListState.createdBy);
@@ -525,6 +530,12 @@ async function loadInvoicesList() {
     countEl.textContent = data.total != null
       ? `${data.total} nota${data.total === 1 ? '' : 's'} encontrada${data.total === 1 ? '' : 's'}`
       : '';
+  }
+  const totalizerEl = document.getElementById('invoices-totalizer');
+  if (totalizerEl) {
+    const count = data.total || 0;
+    const sum = data.total_amount || 0;
+    totalizerEl.textContent = `${count} nota${count === 1 ? '' : 's'} | Valor total: ${formatCurrency(sum)}`;
   }
   renderInvoicesTable(data.items);
 }
@@ -1095,78 +1106,6 @@ function renderFinanceActions(invoice) {
       setTimeout(() => window.location.reload(), 1800);
     }
   });
-}
-
-let financeHistoryState = { page: 1, perPage: 20, pages: 1, filters: {} };
-
-async function initFinanceHistory() {
-  document.getElementById('history-apply-filter')?.addEventListener('click', () => {
-    financeHistoryState.page = 1;
-    financeHistoryState.filters = readFinanceHistoryFilters();
-    loadFinanceHistory();
-  });
-  document.getElementById('history-clear-filter')?.addEventListener('click', () => {
-    ['history-issue-from', 'history-issue-to', 'history-due-from', 'history-due-to', 'history-status', 'history-creator'].forEach((id) => {
-      document.getElementById(id).value = '';
-    });
-    financeHistoryState.page = 1;
-    financeHistoryState.filters = {};
-    loadFinanceHistory();
-  });
-  document.getElementById('finance-history-prev')?.addEventListener('click', () => {
-    if (financeHistoryState.page > 1) {
-      financeHistoryState.page -= 1;
-      loadFinanceHistory();
-    }
-  });
-  document.getElementById('finance-history-next')?.addEventListener('click', () => {
-    if (financeHistoryState.page < financeHistoryState.pages) {
-      financeHistoryState.page += 1;
-      loadFinanceHistory();
-    }
-  });
-  await loadFinanceHistory();
-}
-
-function readFinanceHistoryFilters() {
-  return {
-    issueFrom: document.getElementById('history-issue-from').value,
-    issueTo: document.getElementById('history-issue-to').value,
-    dueFrom: document.getElementById('history-due-from').value,
-    dueTo: document.getElementById('history-due-to').value,
-    status: document.getElementById('history-status').value,
-    creator: document.getElementById('history-creator').value.trim().toLowerCase()
-  };
-}
-
-async function loadFinanceHistory() {
-  const approved = await loadFinanceInvoices('APROVADO');
-  const paid = await loadFinanceInvoices('PAGO');
-  let items = [...approved, ...paid];
-  const f = financeHistoryState.filters;
-  if (f.status) items = items.filter((item) => item.status === f.status);
-  if (f.creator) items = items.filter((item) => item.created_by.name.toLowerCase().includes(f.creator));
-  items = items.filter((item) => isWithinDateRange(item.issue_date, f.issueFrom, f.issueTo));
-  items = items.filter((item) => isWithinDateRange(item.due_date, f.dueFrom, f.dueTo));
-  const totalValue = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  financeHistoryState.pages = Math.max(1, Math.ceil(items.length / financeHistoryState.perPage));
-  const start = (financeHistoryState.page - 1) * financeHistoryState.perPage;
-  const pageItems = items.slice(start, start + financeHistoryState.perPage);
-  document.getElementById('finance-history-totalizer').textContent = `${items.length} notas | Valor total: ${formatCurrency(totalValue)}`;
-  document.getElementById('finance-history-page').textContent = `Pagina ${financeHistoryState.page} de ${financeHistoryState.pages}`;
-  document.getElementById('finance-history-prev').disabled = financeHistoryState.page <= 1;
-  document.getElementById('finance-history-next').disabled = financeHistoryState.page >= financeHistoryState.pages;
-  renderFinanceHistoryTable(pageItems);
-}
-
-function renderFinanceHistoryTable(items) {
-  const el = document.getElementById('finance-history-table');
-  if (!items.length) {
-    el.innerHTML = '<p class="text-muted">Nenhuma nota encontrada.</p>';
-    return;
-  }
-  el.innerHTML = `<table class="table"><thead><tr><th>Numero</th><th>Criador</th><th>Valor</th><th>Emissao</th><th>Vencimento</th><th>Status</th><th></th></tr></thead>
-    <tbody>${items.map((item) => `<tr><td>${item.invoice_number}</td><td>${item.created_by.name}</td><td>${formatCurrency(item.amount)}</td><td>${formatDate(item.issue_date)}</td><td>${formatDate(item.due_date)}</td><td>${statusBadge(item.status)}</td><td><a class="btn btn-ghost btn-sm" href="/finance/invoices/${item.id}">Ver</a></td></tr>`).join('')}</tbody></table>`;
 }
 
 function daysUntil(dueDate) {
@@ -2366,8 +2305,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initShell().then(() => initFinanceQueue());
   } else if (page === 'finance-detail') {
     initShell().then(() => initFinanceDetail());
-  } else if (page === 'finance-history') {
-    initShell().then(() => initFinanceHistory());
   } else if (page === 'admin-users') {
     initShell().then(() => initAdminUsers());
   } else if (page === 'admin-user-form') {

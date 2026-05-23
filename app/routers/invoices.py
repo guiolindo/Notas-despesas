@@ -209,6 +209,8 @@ def list_invoices(
     search: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    due_from: str | None = None,
+    due_to: str | None = None,
     min_amount: float | None = None,
     max_amount: float | None = None,
     created_by: str | None = None,
@@ -220,7 +222,7 @@ def list_invoices(
     if per_page < 1 or per_page > 100:
         raise HTTPException(status_code=400, detail="per_page deve ficar entre 1 e 100")
 
-    items, total = invoice_service.get_invoices_for_user(
+    items, total, total_amount = invoice_service.get_invoices_for_user(
         db,
         current_user,
         status_filter=status,
@@ -229,6 +231,8 @@ def list_invoices(
         search=search,
         from_date=from_date,
         to_date=to_date,
+        due_from=due_from,
+        due_to=due_to,
         min_amount=min_amount,
         max_amount=max_amount,
         created_by=created_by,
@@ -239,6 +243,7 @@ def list_invoices(
         page=page,
         per_page=per_page,
         pages=math.ceil(total / per_page) if total else 0,
+        total_amount=total_amount,
     )
 
 

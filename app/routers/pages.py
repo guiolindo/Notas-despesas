@@ -140,12 +140,8 @@ def finance_invoice_detail(request: Request, invoice_id: str, db: Session = Depe
     return templates.TemplateResponse(request, "finance/invoice_detail.html", {"invoice_id": invoice_id})
 
 
-@router.get("/finance/history", response_class=HTMLResponse)
-def finance_history_page(request: Request, db: Session = Depends(get_db)):
-    guard = require_page_role(request, db, "FINANCE", "ADMIN")
-    if not isinstance(guard, User):
-        return guard
-    return templates.TemplateResponse(request, "finance/history.html")
+# /finance/history removida — funcionalidade fundida em /invoices que agora
+# tem totalizer + filtros completos (busca, vencimento, valor, criador).
 
 
 # ─── Paginas exclusivas para Admin ──────────────────────────────────────────
