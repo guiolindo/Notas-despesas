@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Auditoria{% endblock %}
+{% block page_id %}admin-audit-logs{% endblock %}
+{% block content %}
+<div class="page-header page-header-row">
+  <div>
+    <h1>Auditoria</h1>
+    <p class="text-muted">Historico das acoes sensiveis do sistema.</p>
+  </div>
+</div>
+
+<form class="form-card" id="admin-audit-filter-form">
+  <div class="form-grid audit-filter-grid">
+    <div class="form-group">
+      <label for="admin-audit-action">Acao</label>
+      <input class="form-input" id="admin-audit-action" placeholder="LOGIN, CREATE_USER, PRINT">
+    </div>
+    <div class="form-group">
+      <label for="admin-audit-user">Usuario</label>
+      <select id="admin-audit-user">
+        <option value="">Todos</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="admin-audit-success">Resultado</label>
+      <select id="admin-audit-success">
+        <option value="">Todos</option>
+        <option value="true">Sucesso</option>
+        <option value="false">Falha</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-actions">
+    <button class="btn btn-secondary" type="submit">Filtrar</button>
+    <button class="btn btn-ghost" id="admin-audit-clear" type="button">Limpar filtros</button>
+  </div>
+</form>
+
+<div class="totalizer" id="admin-audit-total">0 registros</div>
+<div class="table-responsive">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Data/Hora</th>
+        <th>Usuario</th>
+        <th>Acao</th>
+        <th>Recurso</th>
+        <th>IP</th>
+        <th>Resultado</th>
+      </tr>
+    </thead>
+    <tbody id="admin-audit-tbody">
+      <tr><td colspan="6">Carregando...</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="pagination">
+  <button class="btn btn-ghost btn-sm" id="admin-audit-prev">Anterior</button>
+  <span id="admin-audit-page">Pagina 1 de 1</span>
+  <button class="btn btn-ghost btn-sm" id="admin-audit-next">Proximo</button>
+</div>
+{% endblock %}

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Economart{% endblock %} - Notas Fiscais</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body data-page="{% block page_id %}{% endblock %}">
+  <div class="layout" id="app-layout" style="visibility:hidden">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <img src="/static/img/logo.png" alt="Economart" class="logo">
+      </div>
+      <nav class="sidebar-nav">
+        <a href="/dashboard" class="nav-item {% block nav_dashboard %}{% endblock %}">
+          <span class="nav-icon">&#9724;</span> Dashboard
+        </a>
+        <a href="/invoices" class="nav-item {% block nav_invoices %}{% endblock %}">
+          <span class="nav-icon">&#8801;</span> Notas Fiscais
+        </a>
+        <a href="/alerts" class="nav-item {% block nav_alerts %}{% endblock %}" id="nav-alerts">
+          <span class="nav-icon">&#9888;</span> Alertas
+          <span class="badge-count hidden" id="alert-count"></span>
+        </a>
+        <a href="/admin/users" class="nav-item nav-admin hidden" id="nav-admin">
+          <span class="nav-icon">&#9881;</span> Administracao
+        </a>
+      </nav>
+    </aside>
+
+    <div class="main-wrapper">
+      <header class="header">
+        <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Alternar menu">☰</button>
+        <div class="header-user">
+          <span id="header-user-name">Carregando...</span>
+          <span id="header-user-role" class="role-badge"></span>
+          <a href="/change-password" class="btn btn-ghost btn-sm">Trocar senha</a>
+          <button class="btn btn-ghost btn-sm" id="logout-btn">Sair</button>
+        </div>
+      </header>
+      <main class="content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <footer class="privacy-footer">
+    <a href="/privacidade" class="privacy-link">Privacidade e LGPD</a>
+  </footer>
+  <div id="toast-container"></div>
+  <div id="loading-overlay" class="hidden">
+    <div class="spinner"></div>
+  </div>
+  <script src="/static/js/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

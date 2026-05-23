@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Ambiente virtual
+venv/
+.venv/
+env/
+ENV/
+
+# Banco de dados local (NUNCA commitar — contém dados reais)
+*.db
+*.sqlite
+*.sqlite3
+
+# Arquivos de ambiente (contêm senhas e chaves)
+.env
+.env.*
+!.env.example
+
+# Certificados TLS (gerados localmente)
+cert.pem
+key.pem
+
+# PDFs e uploads criptografados locais
+uploads/*.enc
+uploads/*.pdf
+# Mantém a pasta uploads no repo
+!uploads/.gitignore
+
+# Chaves e credenciais
+credentials.json
+*.pem
+*.key
+service_account.json
+
+# IDE e sistema
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Cache pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Cache mypy / ruff
+.mypy_cache/
+.ruff_cache/

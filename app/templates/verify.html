@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verificacao - Economart</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body class="login-page">
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-logo">
+        <img src="/static/img/logo.png" alt="Economart" class="login-logo-img">
+      </div>
+      {% if not invoice %}
+        <h1 class="login-title">Nota nao encontrada</h1>
+        <p class="login-subtitle">O codigo informado nao corresponde a uma nota fiscal registrada.</p>
+      {% else %}
+        <h1 class="login-title">Verificacao de Nota</h1>
+        <p class="login-subtitle">Esta nota foi aprovada e e autentica quando o status estiver APROVADO ou PAGO.</p>
+        <div class="detail-grid">
+          <div class="detail-item"><span>Status</span><strong>{{ invoice.status.value }}</strong></div>
+          <div class="detail-item"><span>Numero</span><strong>{{ invoice.invoice_number }}</strong></div>
+          <div class="detail-item"><span>Valor</span><strong>R$ {{ invoice.amount }}</strong></div>
+          <div class="detail-item"><span>Aprovacao Diretor</span><strong>{{ invoice.director_reviewed_at.strftime('%d/%m/%Y %H:%M') if invoice.director_reviewed_at else '-' }}</strong></div>
+          <div class="detail-item"><span>Gestor</span><strong>{{ invoice.manager.name if invoice.manager else '-' }}</strong></div>
+          <div class="detail-item"><span>Diretor</span><strong>{{ invoice.director.name if invoice.director else '-' }}</strong></div>
+          <div class="detail-item"><span>Assinatura Digital</span><strong>{{ auth_hash }}</strong></div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

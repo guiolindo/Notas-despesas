@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Notas Fiscais{% endblock %}
+{% block page_id %}invoices-list{% endblock %}
+{% block nav_invoices %}active{% endblock %}
+{% block content %}
+<div class="page-header page-header-row">
+  <div>
+    <h1>Notas Fiscais</h1>
+    <p class="text-muted">Acompanhe suas notas e o status de aprovacao.</p>
+  </div>
+  <a href="/invoices/new" class="btn btn-primary">Nova Nota</a>
+</div>
+
+<div class="toolbar">
+  <label for="status-filter">Status</label>
+  <select id="status-filter">
+    <option value="">Todos</option>
+    <option value="RASCUNHO">Rascunho</option>
+    <option value="AGUARDANDO_GESTOR">Aguardando gestor</option>
+    <option value="REPROVADO_GESTOR">Reprovado gestor</option>
+    <option value="AGUARDANDO_DIRETOR">Aguardando diretor</option>
+    <option value="REPROVADO_DIRETOR">Reprovado diretor</option>
+    <option value="APROVADO">Aprovado</option>
+    <option value="PAGO">Pago</option>
+  </select>
+</div>
+
+<div id="invoices-table"></div>
+<div class="pagination">
+  <button class="btn btn-ghost btn-sm" id="prev-page">Anterior</button>
+  <span id="page-indicator">Pagina 1 de 1</span>
+  <button class="btn btn-ghost btn-sm" id="next-page">Proximo</button>
+</div>
+{% endblock %}

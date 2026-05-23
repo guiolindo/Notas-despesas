@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Gestao de Usuarios{% endblock %}
+{% block page_id %}admin-users{% endblock %}
+{% block content %}
+<div class="page-header page-header-row">
+  <div>
+    <h1>Gestao de Usuarios</h1>
+    <p class="text-muted">Controle de acesso e credenciais do sistema.</p>
+  </div>
+  <a class="btn btn-primary" href="/admin/users/new">Novo Usuario</a>
+</div>
+
+<div class="table-responsive">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Email</th>
+        <th>Perfil</th>
+        <th>Departamento</th>
+        <th>Status</th>
+        <th>Ultimo Login</th>
+        <th>Acoes</th>
+      </tr>
+    </thead>
+    <tbody id="admin-users-tbody">
+      <tr><td colspan="7">Carregando...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="modal-backdrop hidden" id="admin-edit-modal">
+  <div class="modal modal-wide">
+    <h2>Editar usuario</h2>
+    <form id="admin-edit-form">
+      <input type="hidden" id="admin-edit-user-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="admin-edit-name">Nome</label>
+          <input class="form-input" id="admin-edit-name" maxlength="255" required>
+        </div>
+        <div class="form-group">
+          <label for="admin-edit-dept-id">Departamento</label>
+          <select class="form-input" id="admin-edit-dept-id">
+            <option value="">Sem departamento</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="admin-edit-role">Perfil</label>
+          <select class="form-input" id="admin-edit-role" required>
+            <option value="EMPLOYEE">Funcionario</option>
+            <option value="MANAGER">Gestor</option>
+            <option value="DIRECTOR">Diretor</option>
+            <option value="FINANCE">Despesas</option>
+            <option value="ADMIN">Admin</option>
+          </select>
+        </div>
+        <div class="form-group" id="admin-edit-manager-field">
+          <label for="admin-edit-manager">Gestor imediato</label>
+          <select class="form-input" id="admin-edit-manager">
+            <option value="">Sem gestor</option>
+          </select>
+        </div>
+      </div>
+      <label class="checkbox-row">
+        <input type="checkbox" id="admin-edit-submit-directly">
+        Envia notas direto ao diretor (sem passar pelo gestor)
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="admin-edit-must-change">
+        Obrigar troca de senha
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" id="admin-edit-cancel">Cancelar</button>
+        <button class="btn btn-primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="admin-reset-modal">
+  <div class="modal">
+    <h2>Redefinir senha</h2>
+    <p class="text-muted" id="admin-reset-user-label"></p>
+    <form id="admin-reset-form">
+      <input type="hidden" id="admin-reset-user-id">
+      <div class="form-group">
+        <label for="admin-reset-password">Nova senha</label>
+        <input class="form-input" id="admin-reset-password" type="password" minlength="8" required>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" id="admin-reset-cancel">Cancelar</button>
+        <button class="btn btn-primary" type="submit">Redefinir</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

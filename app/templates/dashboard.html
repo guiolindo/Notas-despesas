@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_id %}dashboard{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Dashboard</h1>
+  <p class="text-muted" id="dashboard-greeting"></p>
+</div>
+
+<div class="stats-grid" id="stats-grid">
+  <div class="stat-card loading"></div>
+  <div class="stat-card loading"></div>
+  <div class="stat-card loading"></div>
+  <div class="stat-card loading"></div>
+</div>
+
+<div class="section-header">
+  <h2>Alertas</h2>
+</div>
+<div id="alerts-section"></div>
+
+<div class="section-header">
+  <h2>Notas Recentes</h2>
+  <a href="/invoices" class="btn btn-ghost btn-sm">Ver todas</a>
+</div>
+<div id="recent-invoices"></div>
+{% endblock %}

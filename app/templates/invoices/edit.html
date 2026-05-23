@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Editar Nota{% endblock %}
+{% block page_id %}invoice-edit{% endblock %}
+{% block nav_invoices %}active{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Editar Nota Fiscal</h1>
+  <p class="text-muted">Atualize os dados da nota antes de reenviar.</p>
+</div>
+<div id="current-attachment" class="alert-banner alert-info hidden"></div>
+{% include "invoices/form.html" %}
+{% endblock %}

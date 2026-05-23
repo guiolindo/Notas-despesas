@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Lancamentos{% endblock %}
+{% block page_id %}finance-queue{% endblock %}
+{% block content %}
+<div class="page-header page-header-row">
+  <div>
+    <h1>Notas para Lancamento</h1>
+    <p class="text-muted">Notas aprovadas aguardando processamento pelo setor de despesas.</p>
+  </div>
+  <span class="queue-count" id="finance-pending-count">0 pendentes</span>
+</div>
+<div class="segmented-control" id="finance-queue-filter">
+  <button class="active" data-status="APROVADO">Pendentes</button>
+  <button data-status="PAGO">Lancadas</button>
+</div>
+<div class="toolbar finance-toolbar">
+  <label for="finance-due-from">Vencimento de</label>
+  <input type="date" id="finance-due-from" class="form-input">
+  <label for="finance-due-to">ate</label>
+  <input type="date" id="finance-due-to" class="form-input">
+  <button class="btn btn-ghost btn-sm" id="finance-clear-filter">Limpar</button>
+</div>
+<div id="finance-queue-table"></div>
+{% endblock %}

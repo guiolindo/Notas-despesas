@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Detalhe da Nota{% endblock %}
+{% block page_id %}invoice-detail{% endblock %}
+{% block nav_invoices %}active{% endblock %}
+{% block content %}
+<div id="invoice-detail" data-invoice-id="{{ invoice_id }}">
+  <div class="page-header page-header-row">
+    <div>
+      <a href="/invoices" class="text-muted back-link">&larr; Minhas notas</a>
+      <h1 id="detail-title">Nota Fiscal</h1>
+      <p class="text-muted" id="detail-subtitle"></p>
+    </div>
+    <div id="detail-status"></div>
+  </div>
+
+  <div id="detail-actions" class="action-row"></div>
+  <div id="rejection-box" class="alert-banner alert-error hidden"></div>
+
+  <div class="detail-layout">
+    <!-- Coluna esquerda: dados + timeline -->
+    <div class="detail-left">
+      <div class="detail-grid" id="detail-grid"></div>
+      <div class="section-header"><h2>Timeline de aprovacao</h2></div>
+      <div class="timeline" id="invoice-timeline"></div>
+    </div>
+
+    <!-- Coluna direita: PDF inline -->
+    <div class="detail-right" id="pdf-panel" style="display:none">
+      <div class="pdf-panel-header">
+        <span>Documento PDF</span>
+        <a id="pdf-download-link" class="btn btn-ghost btn-sm" target="_blank">Abrir em nova aba</a>
+      </div>
+      <iframe id="pdf-iframe" class="pdf-iframe" title="PDF da nota"></iframe>
+    </div>
+  </div>
+</div>
+{% endblock %}

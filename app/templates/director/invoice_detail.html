@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Revisar Nota{% endblock %}
+{% block page_id %}director-detail{% endblock %}
+{% block content %}
+<div id="invoice-detail" data-invoice-id="{{ invoice_id }}">
+  <div class="page-header page-header-row">
+    <div>
+      <a href="/director/queue" class="text-muted back-link">&larr; Voltar para fila</a>
+      <h1 id="detail-title">Nota Fiscal</h1>
+      <p class="text-muted" id="detail-subtitle"></p>
+    </div>
+    <div id="detail-status"></div>
+  </div>
+
+  <div id="review-panel" class="review-panel card hidden">
+    <h3>Decisao do Diretor</h3>
+    <div class="review-actions">
+      <button class="btn btn-primary" id="btn-approve">Aprovar nota</button>
+      <button class="btn btn-ghost" id="btn-show-reject">Reprovar</button>
+    </div>
+    <div id="reject-section" class="hidden" style="margin-top:1rem">
+      <label class="form-label" for="reject-comment">Motivo da reprovacao (obrigatorio)</label>
+      <textarea id="reject-comment" class="form-input" rows="3" minlength="10" maxlength="500" placeholder="Descreva o motivo..."></textarea>
+      <div class="review-actions" style="margin-top:.5rem">
+        <button class="btn btn-danger" id="btn-confirm-reject" disabled>Confirmar reprovacao</button>
+        <button class="btn btn-ghost" id="btn-cancel-reject">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="rejection-box" class="alert-banner alert-error hidden"></div>
+
+  <div class="detail-layout">
+    <div class="detail-left">
+      <div class="detail-grid" id="detail-grid"></div>
+      <div class="section-header"><h2>Timeline de aprovacao</h2></div>
+      <div class="timeline" id="invoice-timeline"></div>
+    </div>
+    <div class="detail-right" id="pdf-panel" style="display:none">
+      <div class="pdf-panel-header">
+        <span>Documento PDF</span>
+        <a id="pdf-download-link" class="btn btn-ghost btn-sm" target="_blank">Abrir em nova aba</a>
+      </div>
+      <iframe id="pdf-iframe" class="pdf-iframe" title="PDF da nota"></iframe>
+    </div>
+  </div>
+</div>
+{% endblock %}

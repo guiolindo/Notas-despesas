@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == "edit" %}Editar Usuario{% else %}Novo Usuario{% endif %}{% endblock %}
+{% block page_id %}admin-user-form{% endblock %}
+{% block content %}
+<div id="admin-user-form-page" data-mode="{{ mode }}" data-user-id="{{ user_id | default('') }}">
+  <div class="page-header page-header-row">
+    <div>
+      <h1>{% if mode == "edit" %}Editar Usuario{% else %}Novo Usuario{% endif %}</h1>
+      <p class="text-muted">Defina perfil, departamento e gestor imediato.</p>
+    </div>
+    <a class="btn btn-ghost" href="/admin/users">Voltar</a>
+  </div>
+
+  <form class="form-card" id="admin-user-form">
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="admin-user-name">Nome</label>
+        <input class="form-input" id="admin-user-name" maxlength="255" required>
+      </div>
+      <div class="form-group">
+        <label for="admin-user-email">Email</label>
+        <input class="form-input" id="admin-user-email" type="email" required>
+      </div>
+      <div class="form-group" id="admin-password-field">
+        <label for="admin-user-password">Senha</label>
+        <input class="form-input" id="admin-user-password" type="password" minlength="8">
+        <div class="field-help">Minimo de 8 caracteres.</div>
+      </div>
+      <div class="form-group">
+        <label for="admin-user-role">Perfil</label>
+        <select id="admin-user-role" required>
+          <option value="EMPLOYEE">Funcionario</option>
+          <option value="MANAGER">Gestor</option>
+          <option value="DIRECTOR">Diretor</option>
+          <option value="FINANCE">Despesas</option>
+          <option value="ADMIN">Admin</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="admin-user-dept-id">Departamento / Setor</label>
+        <select class="form-input" id="admin-user-dept-id">
+          <option value="">Sem departamento</option>
+        </select>
+      </div>
+      <div class="form-group" id="admin-manager-field">
+        <label for="admin-user-manager">Gestor imediato</label>
+        <select id="admin-user-manager">
+          <option value="">Sem gestor</option>
+        </select>
+      </div>
+    </div>
+    <label class="checkbox-row">
+      <input type="checkbox" id="admin-user-submit-directly">
+      Envia notas direto ao diretor (sem passar pelo gestor)
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" id="admin-user-must-change" checked>
+      Obrigar troca de senha no proximo login
+    </label>
+    <div class="form-actions">
+      <a class="btn btn-ghost" href="/admin/users">Cancelar</a>
+      <button class="btn btn-primary" id="admin-user-submit" type="submit">
+        {% if mode == "edit" %}Salvar Alteracoes{% else %}Criar Usuario{% endif %}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

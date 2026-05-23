@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Fila de Aprovacao{% endblock %}
+{% block page_id %}manager-queue{% endblock %}
+{% block content %}
+<div class="page-header page-header-row">
+  <div>
+    <h1>Fila de Aprovacao</h1>
+    <p class="text-muted">Notas da sua equipe para revisar.</p>
+  </div>
+  <span class="queue-count" id="queue-count">0 pendentes</span>
+</div>
+<div class="segmented-control" id="manager-queue-filter">
+  <button class="active" data-mode="pending">Pendentes</button>
+  <button data-mode="all">Todas as notas da equipe</button>
+</div>
+<div id="manager-queue-table"></div>
+{% endblock %}

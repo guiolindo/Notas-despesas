@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Privacidade e LGPD{% endblock %}
+{% block page_id %}privacy{% endblock %}
+{% block nav_dashboard %}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Privacidade e Protecao de Dados</h1>
+  <p class="page-subtitle">Aviso de Privacidade — Sistema de Aprovacao de Notas Fiscais</p>
+</div>
+
+<div class="card" style="max-width:860px">
+  <div class="card-body">
+
+    <h2 class="section-title" style="font-size:1.1rem;margin-bottom:0.5rem">1. Quem e o Controlador?</h2>
+    <p class="text-muted" style="margin-bottom:1.5rem">
+      A <strong>Economart Atacadista</strong> e a controladora dos dados pessoais tratados
+      neste sistema, nos termos do Art. 5, VI da Lei 13.709/2018 (LGPD).
+      Para exercer seus direitos ou tirar duvidas, entre em contato pelo canal abaixo.
+    </p>
+
+    <h2 class="section-title" style="font-size:1.1rem;margin-bottom:0.5rem">2. Quais dados coletamos e por que?</h2>
+    <div style="overflow-x:auto;margin-bottom:1.5rem">
+      <table class="data-table" style="font-size:0.85rem">
+        <thead>
+          <tr>
+            <th>Dado</th>
+            <th>Finalidade</th>
+            <th>Base Legal (LGPD)</th>
+            <th>Retencao</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Nome</td>
+            <td>Identificacao no fluxo de aprovacao</td>
+            <td>Execucao de contrato (Art. 7, V)</td>
+            <td>Ate 2 anos apos desligamento</td>
+          </tr>
+          <tr>
+            <td>E-mail corporativo</td>
+            <td>Autenticacao e notificacoes</td>
+            <td>Execucao de contrato (Art. 7, V)</td>
+            <td>Ate 2 anos apos desligamento</td>
+          </tr>
+          <tr>
+            <td>Senha (hash bcrypt)</td>
+            <td>Autenticacao segura</td>
+            <td>Execucao de contrato (Art. 7, V)</td>
+            <td>Ate o desligamento / anonimizacao</td>
+          </tr>
+          <tr>
+            <td>Historico de aprovacoes</td>
+            <td>Rastreabilidade fiscal e trabalhista</td>
+            <td>Obrigacao legal (Art. 7, II) — CTN Art. 173</td>
+            <td>Minimo 5 anos (prazo fiscal)</td>
+          </tr>
+          <tr>
+            <td>PDFs de notas fiscais</td>
+            <td>Comprovacao de despesas</td>
+            <td>Obrigacao legal (Art. 7, II) — CTN Art. 173</td>
+            <td>Minimo 5 anos (prazo fiscal)</td>
+          </tr>
+          <tr>
+            <td>IP de acesso (pseudonimizado)</td>
+            <td>Seguranca e rastreabilidade forense</td>
+            <td>Obrigacao legal (Art. 7, II) — Marco Civil Art. 15</td>
+            <td>Minimo 6 meses</td>
+          </tr>
+          <tr>
+            <td>Timestamps de acesso</td>
+            <td>Log de auditoria</td>
+            <td>Obrigacao legal (Art. 7, II)</td>
+            <td>Minimo 6 meses</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="section-title" style="font-size:1.1rem;margin-bottom:0.5rem">3. Seus direitos (Art. 18 da LGPD)</h2>
+    <ul style="margin-bottom:1.5rem;padding-left:1.5rem;color:var(--text-secondary);line-height:1.8">
+      <li><strong>Acesso:</strong> solicitar uma copia dos seus dados armazenados.</li>
+      <li><strong>Correcao:</strong> solicitar retificacao de dados incorretos ou desatualizados.</li>
+      <li><strong>Eliminacao:</strong> apos desligamento da empresa, solicitar a pseudonimizacao
+          dos seus dados de identificacao (historico fiscal permanece por obrigacao legal).</li>
+      <li><strong>Portabilidade:</strong> receber seus dados em formato estruturado.</li>
+      <li><strong>Informacao:</strong> saber com quais terceiros seus dados foram compartilhados.</li>
+    </ul>
+
+    <h2 class="section-title" style="font-size:1.1rem;margin-bottom:0.5rem">4. Como protegemos seus dados?</h2>
+    <ul style="margin-bottom:1.5rem;padding-left:1.5rem;color:var(--text-secondary);line-height:1.8">
+      <li>PDFs de notas fiscais armazenados com criptografia (Fernet/AES).</li>
+      <li>Senhas armazenadas exclusivamente como hash bcrypt (irreversivel).</li>
+      <li>Enderecos IP pseudonimizados via HMAC antes de qualquer armazenamento.</li>
+      <li>Tokens de autenticacao expiram em 60 minutos; sessao longa em cookie HttpOnly.</li>
+      <li>Controle de acesso por funcao (RBAC) — cada perfil acessa apenas o necessario.</li>
+    </ul>
+
+    <h2 class="section-title" style="font-size:1.1rem;margin-bottom:0.5rem">5. Canal de contato — Privacidade</h2>
+    <p class="text-muted" style="margin-bottom:0.5rem">
+      Para exercer seus direitos ou reportar incidentes, entre em contato com o
+      responsavel pelo tratamento de dados:
+    </p>
+    <div class="info-box" style="background:var(--surface-2);border-radius:8px;padding:1rem;display:inline-block">
+      <p style="margin:0;font-weight:600">Economart Atacadista — Privacidade de Dados</p>
+      <p style="margin:0.25rem 0 0">
+        <a href="mailto:privacidade@economart.com.br" class="link">privacidade@economart.com.br</a>
+      </p>
+      <p style="margin:0.25rem 0 0;color:var(--text-tertiary);font-size:0.8rem">
+        Prazo de resposta: ate 15 dias uteis (LGPD Art. 18, &sect; 3)
+      </p>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
