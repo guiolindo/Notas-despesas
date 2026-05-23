@@ -1377,7 +1377,7 @@ function adminUserStatus(user) {
 async function adminLoadManagers(selectId, selectedId = '') {
   const select = document.getElementById(selectId);
   if (!select) return;
-  const managers = await apiFetch('/admin/managers');
+  const managers = await apiFetch('/api/admin/managers');
   select.innerHTML = '<option value="">Sem gestor</option>';
   managers.forEach((manager) => {
     const option = document.createElement('option');
@@ -1392,7 +1392,7 @@ async function adminLoadDepartments(selectId, selectedId = '') {
   const select = document.getElementById(selectId);
   if (!select) return;
   try {
-    const depts = await apiFetch('/admin/departments');
+    const depts = await apiFetch('/api/admin/departments');
     select.innerHTML = '<option value="">Sem departamento</option>';
     depts.forEach((dept) => {
       const option = document.createElement('option');
@@ -1433,7 +1433,7 @@ async function initAdminUsers() {
 
 async function loadAdminUsers() {
   try {
-    adminUsersCache = await apiFetch('/admin/users');
+    adminUsersCache = await apiFetch('/api/admin/users');
     applyAdminUsersFilter();
   } catch (error) {
     showToast(error.message, 'error');
@@ -1533,7 +1533,7 @@ async function handleAdminUserAction(button) {
 
 async function openAdminEditModal(userId) {
   try {
-    const user = await apiFetch(`/admin/users/${userId}`);
+    const user = await apiFetch(`/api/admin/users/${userId}`);
     document.getElementById('admin-edit-user-id').value = user.id;
     document.getElementById('admin-edit-name').value = user.name;
     document.getElementById('admin-edit-role').value = user.role;
@@ -1561,7 +1561,7 @@ async function saveAdminEdit(event) {
     must_change_password: document.getElementById('admin-edit-must-change').checked
   };
   try {
-    await apiFetch(`/admin/users/${userId}`, { method: 'PUT', body: JSON.stringify(payload) });
+    await apiFetch(`/api/admin/users/${userId}`, { method: 'PUT', body: JSON.stringify(payload) });
     document.getElementById('admin-edit-modal').classList.add('hidden');
     showToast('Usuario atualizado.', 'success');
     await loadAdminUsers();
@@ -1583,7 +1583,7 @@ async function resetAdminPassword(event) {
   const userId = document.getElementById('admin-reset-user-id').value;
   const newPassword = document.getElementById('admin-reset-password').value;
   try {
-    await apiFetch(`/admin/users/${userId}/reset-password`, {
+    await apiFetch(`/api/admin/users/${userId}/reset-password`, {
       method: 'POST',
       body: JSON.stringify({ new_password: newPassword })
     });
@@ -1597,7 +1597,7 @@ async function resetAdminPassword(event) {
 
 async function unlockAdminUser(userId) {
   try {
-    await apiFetch(`/admin/users/${userId}/unlock`, { method: 'POST' });
+    await apiFetch(`/api/admin/users/${userId}/unlock`, { method: 'POST' });
     showToast('Usuario desbloqueado.', 'success');
     await loadAdminUsers();
   } catch (error) {
@@ -1608,7 +1608,7 @@ async function unlockAdminUser(userId) {
 async function toggleAdminUserActive(userId, currentActive) {
   if (!(await confirmAction(currentActive ? 'Desativar este usuario?' : 'Ativar este usuario?'))) return;
   try {
-    await apiFetch(`/admin/users/${userId}`, {
+    await apiFetch(`/api/admin/users/${userId}`, {
       method: 'PUT',
       body: JSON.stringify({ is_active: !currentActive })
     });
@@ -1639,7 +1639,7 @@ async function initAdminUserForm() {
 
 async function loadAdminUserFormData(userId) {
   try {
-    const user = await apiFetch(`/admin/users/${userId}`);
+    const user = await apiFetch(`/api/admin/users/${userId}`);
     document.getElementById('admin-user-name').value = user.name;
     document.getElementById('admin-user-email').value = user.email;
     document.getElementById('admin-user-role').value = user.role;
@@ -1659,12 +1659,26 @@ async function saveAdminUserForm(event) {
   const mode = page.dataset.mode;
   const userId = page.dataset.userId;
   const role = document.getElementById('admin-user-role').value;
+  const departmentId = document.getElementById('admin-user-dept-id').value || null;
+  const submitDirectly = document.getElementById('admin-user-submit-directly').checked;
+  const managerId = document.getElementById('admin-user-manager').value || '';
+
+  // Validacoes client-side espelhando as do backend pra dar feedback imediato
+  if (role !== 'ADMIN' && !departmentId) {
+    showToast('Selecione um setor para este perfil.', 'error');
+    return;
+  }
+  if (role === 'EMPLOYEE' && !managerId && !submitDirectly) {
+    showToast('Funcionario precisa de gestor ou da opcao "envia direto ao diretor".', 'error');
+    return;
+  }
+
   const payload = {
     name: document.getElementById('admin-user-name').value.trim(),
     role,
-    department_id: document.getElementById('admin-user-dept-id').value || null,
-    submit_directly_to_director: document.getElementById('admin-user-submit-directly').checked,
-    manager_id: role === 'EMPLOYEE' ? document.getElementById('admin-user-manager').value : '',
+    department_id: departmentId,
+    submit_directly_to_director: submitDirectly,
+    manager_id: role === 'EMPLOYEE' ? managerId : '',
     must_change_password: document.getElementById('admin-user-must-change').checked
   };
   if (mode === 'create') {
@@ -1676,7 +1690,7 @@ async function saveAdminUserForm(event) {
     }
   }
   try {
-    const url = mode === 'create' ? '/admin/users' : `/admin/users/${userId}`;
+    const url = mode === 'create' ? '/api/admin/users' : `/api/admin/users/${userId}`;
     const method = mode === 'create' ? 'POST' : 'PUT';
     await apiFetch(url, { method, body: JSON.stringify(payload) });
     showToast(mode === 'create' ? 'Usuario criado com sucesso!' : 'Alteracoes salvas.', 'success');
@@ -1719,7 +1733,7 @@ async function loadAdminAuditUsers() {
   const select = document.getElementById('admin-audit-user');
   if (!select) return;
   try {
-    const users = await apiFetch('/admin/users');
+    const users = await apiFetch('/api/admin/users');
     users.forEach((user) => {
       const option = document.createElement('option');
       option.value = user.id;
@@ -1749,7 +1763,7 @@ async function loadAdminAuditLogs() {
     if (!value) params.delete(key);
   });
   try {
-    const data = await apiFetch(`/admin/audit-logs?${params.toString()}`);
+    const data = await apiFetch(`/api/admin/audit-logs?${params.toString()}`);
     adminAuditState.pages = data.pages || 1;
     renderAdminAuditLogs(data);
   } catch (error) {
@@ -2204,13 +2218,13 @@ async function initAdminDepartments() {
   let allDirectors = [];
 
   async function loadDirectors() {
-    try { allDirectors = await apiFetch('/admin/directors'); } catch { allDirectors = []; }
+    try { allDirectors = await apiFetch('/api/admin/directors'); } catch { allDirectors = []; }
   }
 
   async function loadDepartments() {
     const list = document.getElementById('departments-list');
     try {
-      const depts = await apiFetch('/admin/departments');
+      const depts = await apiFetch('/api/admin/departments');
       if (!depts.length) {
         list.innerHTML = '<p class="text-muted" style="padding:1.5rem">Nenhum setor cadastrado ainda.</p>';
         return;
@@ -2272,10 +2286,10 @@ async function initAdminDepartments() {
     const body = { name, description: document.getElementById('dept-desc').value.trim() || null, director_ids: directorIds };
     try {
       if (editingDeptId) {
-        await apiFetch(`/admin/departments/${editingDeptId}`, { method: 'PUT', body: JSON.stringify(body) });
+        await apiFetch(`/api/admin/departments/${editingDeptId}`, { method: 'PUT', body: JSON.stringify(body) });
         showToast('Setor atualizado', 'success');
       } else {
-        await apiFetch('/admin/departments', { method: 'POST', body: JSON.stringify(body) });
+        await apiFetch('/api/admin/departments', { method: 'POST', body: JSON.stringify(body) });
         showToast('Setor criado', 'success');
       }
       closeDeptModal();
@@ -2286,7 +2300,7 @@ async function initAdminDepartments() {
   async function deleteDept(id) {
     if (!(await confirmAction('Excluir este setor?'))) return;
     try {
-      await apiFetch(`/admin/departments/${id}`, { method: 'DELETE' });
+      await apiFetch(`/api/admin/departments/${id}`, { method: 'DELETE' });
       showToast('Setor excluido', 'success');
       await loadDepartments();
     } catch (e) { showToast(e.message, 'error'); }

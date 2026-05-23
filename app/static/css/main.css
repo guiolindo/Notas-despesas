@@ -728,6 +728,13 @@ textarea:focus {
 .filter-advanced .form-group { margin-bottom: 0; }
 .filter-advanced .filter-actions { display: flex; align-items: flex-end; }
 
+/* Marcador de campo obrigatorio */
+.field-required {
+  color: #d32f2f;
+  font-weight: 600;
+  margin-left: 2px;
+}
+
 /* ─── Seleção de diretor ────────────────────────────────────── */
 .director-list { display: flex; flex-direction: column; gap: .5rem; margin-top: .5rem; }
 .director-card {

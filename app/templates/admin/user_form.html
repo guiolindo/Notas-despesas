@@ -37,10 +37,11 @@
         </select>
       </div>
       <div class="form-group">
-        <label for="admin-user-dept-id">Departamento / Setor</label>
+        <label for="admin-user-dept-id">Departamento / Setor <span id="admin-dept-required" class="field-required">*</span></label>
         <select class="form-input" id="admin-user-dept-id">
-          <option value="">Sem departamento</option>
+          <option value="">Selecione um setor...</option>
         </select>
+        <div class="field-help">Obrigatorio para todos exceto Admin.</div>
       </div>
       <div class="form-group" id="admin-manager-field">
         <label for="admin-user-manager">Gestor imediato</label>

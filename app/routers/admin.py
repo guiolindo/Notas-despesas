@@ -9,10 +9,9 @@ from app.database import get_db
 from app.models import AuditLog, Department, User, UserRole
 from app.security.dependencies import require_role
 from app.security.hashing import hash_password, pseudonymize_ip
-from app.security.jwt import decode_token
 
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
 
 class UserCreateRequest(BaseModel):
@@ -101,28 +100,6 @@ def _client_port(request: Request) -> int | None:
     return request.client.port if request.client else None
 
 
-def _wants_html(request: Request) -> bool:
-    accept = request.headers.get("accept", "")
-    return "text/html" in accept and "application/json" not in accept
-
-
-def _require_admin_from_request(request: Request, db: Session) -> User:
-    authorization = request.headers.get("authorization", "")
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente")
-    payload = decode_token(token, expected_type="access")
-    user_id: str | None = payload.get("sub")
-    user = db.query(User).filter(User.id == user_id).first() if user_id else None
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario nao encontrado")
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuario inativo")
-    if user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissao insuficiente")
-    return user
-
-
 def _user_payload(user: User) -> dict:
     return {
         "id": user.id,
@@ -177,6 +154,43 @@ def _ensure_manager_exists(db: Session, manager_id: str | None) -> None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Gestor nao encontrado")
 
 
+def _ensure_department_exists(db: Session, department_id: str | None) -> None:
+    if not department_id:
+        return
+    dept = db.query(Department).filter(Department.id == department_id).first()
+    if not dept:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Setor nao encontrado")
+
+
+def _validate_user_structure(
+    role: UserRole,
+    department_id: str | None,
+    manager_id: str | None,
+    submit_directly_to_director: bool,
+) -> None:
+    """Valida que o usuario tem todos os vinculos necessarios para o fluxo funcionar.
+
+    Regras:
+    - ADMIN: nao precisa de setor (acesso global)
+    - EMPLOYEE: precisa de setor + gestor (ou submit_directly_to_director=True)
+    - MANAGER / DIRECTOR / FINANCE: precisam de setor
+    """
+    needs_department = role in {UserRole.EMPLOYEE, UserRole.MANAGER, UserRole.DIRECTOR, UserRole.FINANCE}
+    if needs_department and not department_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Setor e obrigatorio para este perfil. Selecione um setor antes de salvar.",
+        )
+    if role == UserRole.EMPLOYEE and not manager_id and not submit_directly_to_director:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Funcionario precisa de um gestor cadastrado. "
+                "Selecione um gestor ou marque 'Envia notas direto ao diretor'."
+            ),
+        )
+
+
 def _active_admins_except(db: Session, user_id: str) -> int:
     return (
         db.query(User)
@@ -187,14 +201,9 @@ def _active_admins_except(db: Session, user_id: str) -> int:
 
 @router.get("/users")
 def list_users(
-    request: Request,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("ADMIN")),
 ):
-    if _wants_html(request):
-        from app.main import templates
-
-        return templates.TemplateResponse(request, "admin/users.html", {})
-    _require_admin_from_request(request, db)
     users = db.query(User).order_by(User.name).all()
     return [_user_payload(user) for user in users]
 
@@ -213,6 +222,13 @@ def create_user(
 
     manager_id = body.manager_id if body.role == UserRole.EMPLOYEE else None
     _ensure_manager_exists(db, manager_id)
+    _ensure_department_exists(db, body.department_id)
+    _validate_user_structure(
+        body.role,
+        body.department_id,
+        manager_id,
+        body.submit_directly_to_director,
+    )
 
     new_user = User(
         id=str(uuid.uuid4()),
@@ -238,15 +254,6 @@ def create_user(
     db.commit()
     db.refresh(new_user)
     return {"id": new_user.id, "message": "Usuario criado com sucesso"}
-
-
-@router.get("/users/new")
-def create_user_page(request: Request):
-    if _wants_html(request):
-        from app.main import templates
-
-        return templates.TemplateResponse(request, "admin/user_form.html", {"mode": "create"})
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario nao encontrado")
 
 
 @router.get("/users/{user_id}")
@@ -300,12 +307,36 @@ def update_user(
             detail="Nao e possivel remover o ultimo ADMIN do sistema",
         )
 
+    # Calcula estado final ANTES de aplicar para validar consistencia
+    final_role = body.role if body.role is not None else user.role
+    final_dept_id = (
+        (body.department_id.strip() or None) if body.department_id is not None
+        else user.department_id
+    )
+    final_submit_direct = (
+        body.submit_directly_to_director
+        if body.submit_directly_to_director is not None
+        else getattr(user, "submit_directly_to_director", False)
+    )
+    # manager_id so se aplica a EMPLOYEE
+    if final_role == UserRole.EMPLOYEE:
+        if body.manager_id is not None:
+            final_manager_id = body.manager_id.strip() or None
+        else:
+            final_manager_id = user.manager_id
+    else:
+        final_manager_id = None
+
+    _ensure_department_exists(db, final_dept_id)
+    _ensure_manager_exists(db, final_manager_id)
+    _validate_user_structure(final_role, final_dept_id, final_manager_id, final_submit_direct)
+
     changes: list[str] = []
     if body.name is not None:
         user.name = body.name.strip()
         changes.append("name")
     if body.department_id is not None:
-        user.department_id = body.department_id.strip() or None
+        user.department_id = final_dept_id
         changes.append("department_id")
     if body.role is not None:
         user.role = body.role
@@ -313,10 +344,7 @@ def update_user(
             user.manager_id = None
         changes.append("role")
     if body.manager_id is not None:
-        manager_id = body.manager_id.strip() or None
-        if manager_id:
-            _ensure_manager_exists(db, manager_id)
-        user.manager_id = manager_id if user.role == UserRole.EMPLOYEE else None
+        user.manager_id = final_manager_id
         changes.append("manager_id")
     if body.is_active is not None:
         user.is_active = body.is_active
@@ -354,6 +382,29 @@ def reset_password(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario nao encontrado")
+
+    # PROTECAO: nenhum admin pode resetar senha de outro admin (evita sequestro de conta).
+    # Cada admin so pode redefinir a propria senha por aqui ou pelo /auth/change-password.
+    if user.role == UserRole.ADMIN and user.id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Nao e possivel redefinir a senha de outro administrador. "
+                "O proprio admin deve usar 'Trocar senha' apos login."
+            ),
+        )
+
+    # Validacao de complexidade consistente com /auth/change-password
+    if len(body.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Nova senha deve ter no minimo 8 caracteres",
+        )
+    if not any(c.isalpha() for c in body.new_password) or not any(c.isdigit() for c in body.new_password):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Nova senha deve conter pelo menos uma letra e um numero",
+        )
 
     user.hashed_password = hash_password(body.new_password)
     user.must_change_password = True
@@ -398,19 +449,14 @@ def unlock_user(
 
 @router.get("/audit-logs")
 def list_audit_logs(
-    request: Request,
     page: int = 1,
     per_page: int = 50,
     action: str | None = None,
     user_id: str | None = None,
     success: bool | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("ADMIN")),
 ):
-    if _wants_html(request):
-        from app.main import templates
-
-        return templates.TemplateResponse(request, "admin/audit_logs.html", {})
-    _require_admin_from_request(request, db)
     page = max(page, 1)
     per_page = max(min(per_page, 100), 1)
     query = db.query(AuditLog)
@@ -476,13 +522,9 @@ class DepartmentRequest(BaseModel):
 
 @router.get("/departments")
 def list_departments(
-    request: Request,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("ADMIN")),
 ):
-    if _wants_html(request):
-        from app.main import templates
-        return templates.TemplateResponse(request, "admin/departments.html", {})
-    _require_admin_from_request(request, db)
     depts = db.query(Department).order_by(Department.name).all()
     return [
         {
@@ -574,7 +616,23 @@ def delete_department(
     if not dept:
         raise HTTPException(404, "Setor nao encontrado")
     if dept.members:
-        raise HTTPException(400, "Nao e possivel excluir setor com usuarios vinculados")
+        member_count = len(dept.members)
+        raise HTTPException(
+            400,
+            f"Nao e possivel excluir setor com {member_count} usuario(s) vinculado(s). "
+            "Realoque-os para outro setor primeiro.",
+        )
+    if dept.directors:
+        raise HTTPException(
+            400,
+            "Nao e possivel excluir setor com diretores designados. "
+            "Remova os diretores do setor antes.",
+        )
+    _add_audit_log(
+        db, request, current_user,
+        "DELETE_DEPARTMENT", dept.id,
+        f"Excluiu setor {dept.name}",
+    )
     db.delete(dept)
     db.commit()
 

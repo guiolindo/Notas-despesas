@@ -496,9 +496,20 @@ def delete_invoice(db: Session, invoice_id: str, user: User, ip: str | None = No
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Apenas notas em rascunho podem ser excluidas",
         )
+    # Tenta apagar o arquivo no R2; se falhar (rede/credencial/objeto sumido),
+    # registra mas NAO bloqueia a exclusao da nota no banco — evita estado
+    # inconsistente onde o usuario nao consegue deletar a propria nota.
+    storage_warning = None
     if invoice.drive_file_id:
-        drive_service.delete_file(invoice.drive_file_id)
-    _add_audit(db, user.id, "DELETE_INVOICE", invoice.id, ip=ip, port=port, http_method="DELETE")
+        try:
+            drive_service.delete_file(invoice.drive_file_id)
+        except Exception as exc:  # noqa: BLE001 — defensivo intencional
+            storage_warning = f"Falha ao remover arquivo {invoice.drive_file_id}: {exc}"
+    _add_audit(
+        db, user.id, "DELETE_INVOICE", invoice.id,
+        ip=ip, port=port, http_method="DELETE",
+        detail=storage_warning,
+    )
     db.delete(invoice)
     db.commit()
 
