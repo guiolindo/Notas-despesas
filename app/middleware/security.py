@@ -18,9 +18,21 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         # HSTS: força HTTPS por 1 ano (habilite apenas em producao com HTTPS)
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # CSP — script-src SEM unsafe-inline e a protecao critica contra XSS.
+        # style-src 'unsafe-inline' e aceitavel (baixo risco) e necessario porque
+        # varios templates usam style="..." inline para espacamento contextual.
         response.headers[
             "Content-Security-Policy"
-        ] = "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; script-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'self'"
+        ] = (
+            "default-src 'self'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src https://fonts.gstatic.com; "
+            "img-src 'self' data:; "
+            "script-src 'self'; "
+            "frame-src 'self' blob:; "
+            "object-src 'none'; "
+            "base-uri 'self'"
+        )
         return response
 
 
