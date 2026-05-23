@@ -80,6 +80,11 @@ def _run_schema_migrations() -> None:
         pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP"),
         pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS printed_by_id VARCHAR(36)"),
 
+        # Cleanup: coluna legacy 'department' (string) substituida por
+        # department_id (FK). DROP COLUMN IF EXISTS so no Postgres; SQLite
+        # nao suporta, mas em dev nao machuca deixar a coluna orfa.
+        pg("ALTER TABLE users DROP COLUMN IF EXISTS department"),
+
         # Indices para consultas frequentes
         pg("CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)"),
         pg("CREATE INDEX IF NOT EXISTS idx_invoices_created_by ON invoices(created_by_id)"),

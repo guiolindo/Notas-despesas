@@ -360,7 +360,7 @@ def cancel_invoice(
     invoice.director_id = None
     invoice.manager_id = None
     invoice.submitted_at = None
-    _add_history(db, invoice.id, user.id, ApprovalAction.CREATED,
+    _add_history(db, invoice.id, user.id, ApprovalAction.CANCELLED,
                  comment="Envio cancelado pelo criador", ip=ip, port=port)
     _add_audit(db, user.id, "CANCEL_INVOICE", invoice.id, ip=ip, port=port, http_method="POST")
     db.commit()

@@ -825,7 +825,7 @@ async function renderDetailActions(invoice) {
 
 function renderTimeline(history) {
   const icons = { CREATED: '+', SUBMITTED: '>', APPROVED_MANAGER: '✓', REJECTED_MANAGER: 'x', APPROVED_DIRECTOR: '✓', REJECTED_DIRECTOR: 'x', MARKED_PAID: '$' };
-  const labels = { CREATED: 'Criada', SUBMITTED: 'Enviada', APPROVED_MANAGER: 'Aprovada pelo gestor', REJECTED_MANAGER: 'Reprovada pelo gestor', APPROVED_DIRECTOR: 'Aprovada pelo diretor', REJECTED_DIRECTOR: 'Reprovada pelo diretor', MARKED_PAID: 'Marcada como lancada', PRINTED: 'Impressa' };
+  const labels = { CREATED: 'Criada', SUBMITTED: 'Enviada', CANCELLED: 'Envio cancelado', APPROVED_MANAGER: 'Aprovada pelo gestor', REJECTED_MANAGER: 'Reprovada pelo gestor', APPROVED_DIRECTOR: 'Aprovada pelo diretor', REJECTED_DIRECTOR: 'Reprovada pelo diretor', MARKED_PAID: 'Marcada como lancada', PRINTED: 'Impressa' };
   const el = document.getElementById('invoice-timeline');
   if (!el) return;
   el.innerHTML = history.map((item) => `
@@ -1908,7 +1908,7 @@ function _renderDrawerContent(invoice) {
   }
 
   const icons  = { CREATED: '+', SUBMITTED: '>', APPROVED_MANAGER: '✓', REJECTED_MANAGER: '✗', APPROVED_DIRECTOR: '✓', REJECTED_DIRECTOR: '✗', MARKED_PAID: '$', PRINTED: '🖨' };
-  const labels = { CREATED: 'Criada', SUBMITTED: 'Enviada', APPROVED_MANAGER: 'Aprovada gestor', REJECTED_MANAGER: 'Reprovada gestor', APPROVED_DIRECTOR: 'Aprovada diretor', REJECTED_DIRECTOR: 'Reprovada diretor', MARKED_PAID: 'Lancada', PRINTED: 'Comprovante impresso' };
+  const labels = { CREATED: 'Criada', SUBMITTED: 'Enviada', CANCELLED: 'Cancelada', APPROVED_MANAGER: 'Aprovada gestor', REJECTED_MANAGER: 'Reprovada gestor', APPROVED_DIRECTOR: 'Aprovada diretor', REJECTED_DIRECTOR: 'Reprovada diretor', MARKED_PAID: 'Lancada', PRINTED: 'Comprovante impresso' };
   document.getElementById('drawer-timeline').innerHTML = invoice.history.map((h) => `
     <div class="timeline-item">
       <div class="timeline-icon">${icons[h.action] || '·'}</div>

@@ -28,7 +28,8 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), nullable=False)
-    department = Column(String(120), nullable=True)
+    # 'department' (String) era a coluna antiga antes de virar FK. Removida do
+    # modelo; a migration abaixo derruba do DB via _run_schema_migrations.
     manager_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=utc_now, nullable=False)
