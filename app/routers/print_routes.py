@@ -88,6 +88,41 @@ def print_invoice(
     )
     invoice.printed_at = now
     invoice.printed_by_id = current_user.id
+
+    # Finalizacao automatica: impressao no Financeiro equivale a confirmacao
+    # de pagamento. Tira a nota da fila operacional sem clique extra.
+    if invoice.status == InvoiceStatus.APROVADO:
+        invoice.status = InvoiceStatus.PAGO
+        invoice.paid_at = now
+        invoice.finance_id = current_user.id
+        db.add(
+            ApprovalHistory(
+                id=str(uuid.uuid4()),
+                invoice_id=invoice.id,
+                user_id=current_user.id,
+                action=ApprovalAction.MARKED_PAID,
+                comment="Marcada como paga automaticamente apos impressao",
+                timestamp=now,
+                ip_address=_ip,
+                source_port=_port,
+            )
+        )
+        db.add(
+            AuditLog(
+                id=str(uuid.uuid4()),
+                user_id=current_user.id,
+                action="AUTO_MARK_PAID_ON_PRINT",
+                resource_type="INVOICE",
+                resource_id=invoice.id,
+                ip_address=_ip,
+                source_port=_port,
+                http_method=request.method,
+                user_agent=request.headers.get("user-agent"),
+                timestamp=now,
+                success=True,
+            )
+        )
+
     db.commit()
 
     safe_number = invoice.invoice_number.replace("/", "-").replace("\\", "-")
