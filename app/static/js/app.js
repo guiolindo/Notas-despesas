@@ -28,7 +28,19 @@ async function apiFetch(url, options = {}) {
   const contentType = response.headers.get('content-type') || '';
   const data = contentType.includes('application/json') ? await response.json() : await response.text();
   if (!response.ok) {
-    throw new Error(data.detail || data || 'Erro na requisicao');
+    // Erros 5xx vem com detail tecnico/stacktrace ou HTML. Mostra mensagem
+    // amigavel pro usuario; o detalhe vai pro console pra debug.
+    if (response.status >= 500) {
+      console.error('[apiFetch] 5xx:', response.status, data);
+      throw new Error('Erro no servidor. Tente novamente em alguns segundos.');
+    }
+    // Erros de validacao do Pydantic vem como array [{loc, msg, type}]
+    if (Array.isArray(data?.detail)) {
+      const first = data.detail[0];
+      const field = Array.isArray(first?.loc) ? first.loc[first.loc.length - 1] : '';
+      throw new Error(field ? `${field}: ${first.msg}` : (first?.msg || 'Dados invalidos'));
+    }
+    throw new Error(data?.detail || (typeof data === 'string' ? data : null) || 'Erro na requisicao');
   }
   return data;
 }
@@ -371,6 +383,12 @@ function initChangePasswordPage() {
   if (!Auth.getToken()) {
     window.location.href = '/login';
     return;
+  }
+  // Mostra banner amarelo se o usuario foi forcado a trocar senha (admin
+  // resetou ou e primeiro login). Senao, esta so trocando voluntariamente.
+  const user = Auth.getUser();
+  if (user?.must_change_password) {
+    document.getElementById('force-change-banner')?.classList.remove('hidden');
   }
   let changed = false;
   document.querySelectorAll('a').forEach((link) => {
@@ -724,7 +742,9 @@ function renderInvoiceDetail(invoice) {
     ['Setor', invoice.department_name || '-'], ['Descricao', invoice.description],
     ['Dados bancarios', invoice.bank_details || '-']
   ].map(([label, value]) => `<div class="detail-item"><span>${label}</span><strong>${escapeHtml(String(value))}</strong></div>`).join('');
-  const rejection = invoice.history.find((item) => item.action.startsWith('REJECTED'));
+  // Reprovacao MAIS RECENTE — se a nota foi reprovada, editada e reprovada de
+  // novo, o usuario precisa ver o motivo atual, nao o primeiro.
+  const rejection = [...invoice.history].reverse().find((item) => item.action.startsWith('REJECTED'));
   const box = document.getElementById('rejection-box');
   if (box) {
     if (rejection) {
@@ -1126,7 +1146,8 @@ function daysBadge(dueDate) {
 async function reviewInvoice(invoiceId, action, endpoint, directorId = null) {
   let comment = null;
   if (action === 'APPROVE') {
-    if (!(await confirmAction('Confirmar aprovacao desta nota?'))) return false;
+    // Sem confirmacao dupla pra aprovacao — usuario ja clicou no botao
+    // explicito 'Aprovar'. Reprovacao continua exigindo motivo (modal abaixo).
   } else {
     comment = await rejectReasonModal();
     if (!comment) return false;
@@ -1296,7 +1317,7 @@ async function initReviewDetail(role) {
 
 // ── Admin helpers ────────────────────────────────────────────────────────────
 
-const adminRoleLabels = { ...ROLE_LABELS, ADMIN: 'Admin', FINANCE: 'Despesas' };
+const adminRoleLabels = { ...ROLE_LABELS, ADMIN: 'Admin', FINANCE: 'Financeiro' };
 
 let adminUsersCache = [];
 let adminAuditState = { page: 1, pages: 1, filters: {} };
@@ -1879,7 +1900,7 @@ function _renderDrawerContent(invoice) {
     ['Dados bancarios', invoice.bank_details || '-'],
   ].map(([l, v]) => `<div class="detail-item"><span>${l}</span><strong>${escapeHtml(String(v))}</strong></div>`).join('');
 
-  const rejection = invoice.history.find((h) => h.action.startsWith('REJECTED'));
+  const rejection = [...invoice.history].reverse().find((h) => h.action.startsWith('REJECTED'));
   const rejBox = document.getElementById('drawer-rejection-box');
   if (rejection) {
     rejBox.innerHTML = `<strong>Motivo da reprovacao:</strong> ${escapeHtml(rejection.comment || '-')}`;
