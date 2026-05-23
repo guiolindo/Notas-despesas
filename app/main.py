@@ -29,21 +29,25 @@ Base.metadata.create_all(bind=engine)
 def _ensure_admin_exists() -> None:
     """Cria o usuario admin padrao se o banco estiver vazio (primeiro deploy)."""
     from sqlalchemy.orm import Session
+    from sqlalchemy.exc import IntegrityError
     from app.models import User, UserRole
     from app.security.hashing import hash_password
 
     with Session(engine) as db:
         if db.query(User).count() == 0:
-            admin = User(
-                name="Administrador",
-                email="admin@economart.com",
-                hashed_password=hash_password("Admin@2024!"),
-                role=UserRole.ADMIN,
-                must_change_password=True,
-                is_active=True,
-            )
-            db.add(admin)
-            db.commit()
+            try:
+                admin = User(
+                    name="Administrador",
+                    email="admin@economart.com",
+                    hashed_password=hash_password("Admin@2024!"),
+                    role=UserRole.ADMIN,
+                    must_change_password=True,
+                    is_active=True,
+                )
+                db.add(admin)
+                db.commit()
+            except IntegrityError:
+                db.rollback()  # outro worker ja criou — ignorar
 
 
 _ensure_admin_exists()
