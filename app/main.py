@@ -27,19 +27,30 @@ Base.metadata.create_all(bind=engine)
 
 
 def _run_schema_migrations() -> None:
-    """Adiciona colunas novas a tabelas existentes (seguro — ignora se ja existir)."""
-    migrations = [
-        "ALTER TABLE audit_logs ADD COLUMN source_port INTEGER",
-        "ALTER TABLE audit_logs ADD COLUMN http_method VARCHAR(10)",
-        "ALTER TABLE approval_history ADD COLUMN source_port INTEGER",
-    ]
+    """Adiciona colunas novas a tabelas existentes.
+    PostgreSQL: usa IF NOT EXISTS (nativo).
+    SQLite: tenta e ignora erro se ja existir (desenvolvimento local).
+    """
+    is_postgres = engine.dialect.name == "postgresql"
+    if is_postgres:
+        migrations = [
+            "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS source_port INTEGER",
+            "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS http_method VARCHAR(10)",
+            "ALTER TABLE approval_history ADD COLUMN IF NOT EXISTS source_port INTEGER",
+        ]
+    else:
+        migrations = [
+            "ALTER TABLE audit_logs ADD COLUMN source_port INTEGER",
+            "ALTER TABLE audit_logs ADD COLUMN http_method VARCHAR(10)",
+            "ALTER TABLE approval_history ADD COLUMN source_port INTEGER",
+        ]
     with engine.connect() as conn:
         for stmt in migrations:
             try:
                 conn.execute(text(stmt))
                 conn.commit()
             except Exception:
-                pass  # Coluna ja existe — ignorar
+                pass  # SQLite: coluna ja existe
 
 
 _run_schema_migrations()
