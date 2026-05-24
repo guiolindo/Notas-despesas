@@ -56,6 +56,14 @@ def change_password_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "change_password.html")
 
 
+@router.get("/configuracoes", response_class=HTMLResponse)
+def configuracoes_page(request: Request, db: Session = Depends(get_db)):
+    guard = require_page_login(request, db)
+    if not isinstance(guard, User):
+        return guard
+    return templates.TemplateResponse(request, "configuracoes.html")
+
+
 @router.get("/alerts", response_class=HTMLResponse)
 def alerts_page(request: Request, db: Session = Depends(get_db)):
     guard = require_page_login(request, db)

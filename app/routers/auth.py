@@ -179,6 +179,38 @@ def logout(response: Response):
     return {"message": "Logout realizado"}
 
 
+# ─── Preferencias do proprio usuario ───────────────────────────────────────
+
+class AvailabilityRequest(BaseModel):
+    unavailable: bool
+
+
+@router.put("/me/availability")
+def update_availability(
+    body: AvailabilityRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Diretor (ou gestor) marca a si proprio como temporariamente
+    indisponivel — nao recebe novas notas durante ferias / ausencia.
+    """
+    if current_user.role.value not in {"DIRECTOR", "MANAGER"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas gestores e diretores podem pausar recebimento.",
+        )
+    current_user.unavailable_for_notes = body.unavailable
+    db.commit()
+    return {
+        "unavailable_for_notes": current_user.unavailable_for_notes,
+        "message": (
+            "Voce esta marcado como INDISPONIVEL — nao recebera novas notas."
+            if body.unavailable else
+            "Voce esta DISPONIVEL — recebera notas normalmente."
+        ),
+    }
+
+
 # ─── Esqueci minha senha (codigo por email) ────────────────────────────────
 
 class ForgotPasswordRequest(BaseModel):
@@ -362,6 +394,7 @@ def me(current_user: User = Depends(get_current_user)):
         "department_id": current_user.department_id,
         "must_change_password": current_user.must_change_password,
         "submit_directly_to_director": getattr(current_user, "submit_directly_to_director", False),
+        "unavailable_for_notes": getattr(current_user, "unavailable_for_notes", False),
         "last_login": _as_utc(current_user.last_login).isoformat() if current_user.last_login else None,
     }
     if current_user.must_change_password:

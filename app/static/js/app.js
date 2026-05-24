@@ -232,6 +232,7 @@ async function initShell() {
   document.getElementById('header-user-name').textContent = user.name;
   document.getElementById('header-user-role').textContent = ROLE_LABELS[user.role] || user.role;
   addApprovalQueueLink(user.role);
+  renderGlobalAvailabilityBanner();
   try {
     const data = await apiFetch('/alerts/');
     const count = data.summary.total_alerts;
@@ -383,6 +384,64 @@ function invoiceApiPath(invoiceId = '') {
 
 function validatePassword(password) {
   return password.length >= 8 && /[A-Za-z]/.test(password) && /\d/.test(password);
+}
+
+async function initConfiguracoes() {
+  const user = Auth.getUser();
+  if (!user) return;
+  const card = document.getElementById('config-availability-card');
+  // So MANAGER e DIRECTOR podem pausar recebimento
+  if (!['MANAGER', 'DIRECTOR'].includes(user.role)) {
+    return;  // card fica oculto pra outros perfis
+  }
+  card.classList.remove('hidden');
+
+  // Le estado atual via /auth/me (mais fresh que cache)
+  const me = await apiFetch('/auth/me');
+  const toggle = document.getElementById('config-unavailable-toggle');
+  toggle.checked = Boolean(me.unavailable_for_notes);
+  document.getElementById('config-availability-status')
+    .classList.toggle('hidden', !me.unavailable_for_notes);
+
+  toggle.addEventListener('change', async () => {
+    try {
+      const resp = await apiFetch('/auth/me/availability', {
+        method: 'PUT',
+        body: JSON.stringify({ unavailable: toggle.checked }),
+      });
+      showToast(resp.message, 'success');
+      document.getElementById('config-availability-status')
+        .classList.toggle('hidden', !toggle.checked);
+      // Atualiza cache local para banner global aparecer/sumir
+      Auth.setUser({ ...user, unavailable_for_notes: toggle.checked });
+      renderGlobalAvailabilityBanner();
+    } catch (e) {
+      toggle.checked = !toggle.checked;  // reverte UI
+      showToast(e.message, 'error');
+    }
+  });
+}
+
+function renderGlobalAvailabilityBanner() {
+  // Banner amarelo no topo do conteudo quando o usuario marcou indisponivel
+  const user = Auth.getUser();
+  const content = document.querySelector('.content');
+  if (!content) return;
+  let banner = document.getElementById('global-availability-banner');
+  if (user?.unavailable_for_notes) {
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'global-availability-banner';
+      banner.className = 'alert-banner alert-warning';
+      banner.style.marginBottom = '1rem';
+      banner.innerHTML =
+        '<strong>Voce esta indisponivel para receber novas notas.</strong> ' +
+        '<a href="/configuracoes" style="color:inherit;text-decoration:underline">Reativar</a>';
+      content.prepend(banner);
+    }
+  } else if (banner) {
+    banner.remove();
+  }
 }
 
 function initChangePasswordPage() {
@@ -2408,6 +2467,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initShell().then(() => initAdminDepartments());
   } else if (page === 'admin-smtp') {
     initShell().then(() => initAdminSmtp());
+  } else if (page === 'configuracoes') {
+    initShell().then(() => initConfiguracoes());
   } else if (page === 'forgot-password') {
     initForgotPasswordPage();
   } else if (page === 'reset-password') {

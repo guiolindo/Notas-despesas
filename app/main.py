@@ -111,6 +111,9 @@ def _run_schema_migrations() -> None:
         # Snapshot de descricao no momento da reprovacao — exige edicao real
         # antes de permitir reenvio
         pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS description_at_rejection TEXT"),
+
+        # Auto-pausa de recebimento de notas (ferias do diretor)
+        pg("ALTER TABLE users ADD COLUMN IF NOT EXISTS unavailable_for_notes BOOLEAN DEFAULT FALSE"),
     ]
     import logging as _logging
     _log = _logging.getLogger(__name__)

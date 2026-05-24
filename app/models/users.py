@@ -45,6 +45,10 @@ class User(Base):
     department_id = Column(String(36), ForeignKey("departments.id"), nullable=True)
     # Se True, o funcionário envia nota diretamente ao diretor (sem gestor)
     submit_directly_to_director = Column(Boolean, default=False, nullable=False)
+    # Auto-pausa de recebimento (ex: ferias do diretor). Quando True, nao
+    # aparece na lista de selecao de diretor para novas notas. Notas ja
+    # atribuidas continuam visiveis e aprovaveis por ele.
+    unavailable_for_notes = Column(Boolean, default=False, nullable=False)
 
     manager = relationship("User", remote_side=[id], backref="team_members")
     created_invoices = relationship(

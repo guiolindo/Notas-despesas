@@ -261,6 +261,13 @@ def _get_director(db: Session, director_id: str) -> User:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Diretor nao encontrado ou inativo",
         )
+    # Diretor em ferias (unavailable_for_notes=True) nao aceita NOVA nota,
+    # mas a validacao acontece aqui no momento do envio — UI ja oculta.
+    if getattr(director, "unavailable_for_notes", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Este diretor esta temporariamente indisponivel. Escolha outro.",
+        )
     return director
 
 
@@ -720,10 +727,14 @@ def mark_paid(db: Session, invoice_id: str, finance_user: User, ip: str | None =
 
 
 def get_available_directors(db: Session, user: User) -> list[dict]:
-    """Retorna lista de diretores com indicação de compatibilidade com o setor do usuário."""
+    """Retorna lista de diretores ativos e DISPONIVEIS para receber notas.
+    Diretores em 'ferias' (unavailable_for_notes=True) sao omitidos —
+    pessoa que esta enviando nota nao deve poder escolher quem esta de
+    folga. Notas ja atribuidas seguem visiveis pro proprio diretor."""
     directors = db.query(User).filter(
         User.role == UserRole.DIRECTOR,
         User.is_active.is_(True),
+        User.unavailable_for_notes.is_(False),
     ).order_by(User.name).all()
 
     user_dept_id = user.department_id

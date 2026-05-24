@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Configuracoes{% endblock %}
+{% block page_id %}configuracoes{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Configuracoes</h1>
+  <p class="text-muted">Preferencias da sua conta.</p>
+</div>
+
+<div id="config-availability-card" class="card hidden" style="max-width:680px">
+  <div class="card-body">
+    <h2 class="section-title" style="font-size:1.1rem;margin-bottom:.5rem">Recebimento de notas</h2>
+    <p class="text-muted" style="margin-bottom:1rem">
+      Pause temporariamente o recebimento de novas notas (em caso de ferias ou ausencia).
+      Notas ja atribuidas a voce continuam visiveis para aprovacao.
+    </p>
+    <label class="checkbox-row" style="font-weight:600">
+      <input type="checkbox" id="config-unavailable-toggle">
+      Estou indisponivel — nao receber novas notas
+    </label>
+    <div id="config-availability-status" class="alert-banner alert-warning hidden" style="margin-top:1rem">
+      Voce esta marcado como <strong>indisponivel</strong>. Outros usuarios nao
+      poderao escolher voce ao enviar novas notas.
+    </div>
+  </div>
+</div>
+
+<div class="card" style="max-width:680px;margin-top:1rem">
+  <div class="card-body">
+    <h2 class="section-title" style="font-size:1.1rem;margin-bottom:.5rem">Senha</h2>
+    <p class="text-muted" style="margin-bottom:1rem">
+      Altere sua senha de acesso.
+    </p>
+    <a class="btn btn-ghost" href="/change-password">Trocar senha</a>
+  </div>
+</div>
+{% endblock %}
