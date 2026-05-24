@@ -50,7 +50,10 @@ def _ensure_admin_exists() -> None:
                 db.rollback()  # outro worker ja criou — ignorar
 
 
-_ensure_admin_exists()
+# A chamada de _ensure_admin_exists() acontece APOS _run_schema_migrations()
+# mais abaixo. Isso e critico — _ensure_admin faz db.query(User) que tenta
+# selecionar TODAS as colunas (incluindo as novas como password_changed_at).
+# Se rodar antes da migration, deploy quebra com UndefinedColumn em DB antigo.
 
 
 def _run_schema_migrations() -> None:
@@ -132,7 +135,12 @@ def _run_schema_migrations() -> None:
                 _log.warning("[migration] '%s' falhou: %s", stmt[:60], _exc)
 
 
+# CRITICO: migrations PRIMEIRO, admin DEPOIS — invertido causa
+# UndefinedColumn em colunas novas adicionadas ao modelo.
 _run_schema_migrations()
+_ensure_admin_exists()
+
+
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 app.add_middleware(SecurityHeadersMiddleware)
