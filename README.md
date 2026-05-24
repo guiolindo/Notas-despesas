@@ -1,147 +1,341 @@
 # Economart — Sistema de Aprovação de Notas Fiscais
 
-Sistema web para gestão e aprovação de notas fiscais com fluxo de aprovação multinível, armazenamento criptografado de PDFs e geração de comprovantes com QR Code.
+Aplicação web completa para gestão do fluxo de notas fiscais de despesa da
+Economart Atacadista — desde o lançamento por colaboradores, passando pela
+aprovação hierárquica (Gestor → Diretor), até o lançamento final pelo
+Financeiro.
+
+[![Deploy on Railway](https://img.shields.io/badge/Deploy-Railway-violet)](https://railway.app)
+[![Python](https://img.shields.io/badge/Python-3.12+-blue)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.136+-green)](https://fastapi.tiangolo.com/)
 
 ---
 
-## Início rápido
+## Sumário
 
-**Windows:** dê duplo clique em `iniciar.bat` (na pasta `ECONOMART/`).
-
-O script cria o ambiente, instala dependências, inicializa o banco e abre o navegador automaticamente em `http://localhost:7145`.
-
----
-
-## Instalação manual
-
-### Requisitos
-- Python 3.12 ou superior (testado com Python 3.14)
-- Conexão com internet para instalar pacotes na primeira execução
-
-### Passos
-
-```bash
-# 1. Entre na pasta do projeto
-cd economart_notas
-
-# 2. (Opcional) Crie e ative um ambiente virtual
-python -m venv venv
-venv\Scripts\activate      # Windows
-source venv/bin/activate   # Linux/macOS
-
-# 3. Instale as dependências
-pip install -r requirements.txt --prefer-binary
-
-# 4. Configure o ambiente
-copy .env.example .env     # Windows
-cp .env.example .env       # Linux/macOS
-
-# Gere as chaves de segurança e cole no .env:
-python generate_keys.py
-
-# 5. Inicialize o banco de dados
-python init_db.py
-
-# 6. Inicie o servidor
-python -m uvicorn app.main:app --host 0.0.0.0 --port 7145
-```
-
-Acesse em `http://localhost:7145`.
+- [Visão geral](#visão-geral)
+- [Stack tecnológica](#stack-tecnológica)
+- [Funcionalidades](#funcionalidades)
+- [Perfis de usuário](#perfis-de-usuário)
+- [Fluxo de aprovação](#fluxo-de-aprovação)
+- [Segurança e LGPD](#segurança-e-lgpd)
+- [Setup local](#setup-local)
+- [Deploy no Railway](#deploy-no-railway)
+- [Configurações](#configurações)
+- [Estrutura do projeto](#estrutura-do-projeto)
+- [Convenções de código](#convenções-de-código)
 
 ---
 
-## Configuração (.env)
+## Visão geral
 
-| Variável | Obrigatória | Descrição |
-|---|---|---|
-| `SECRET_KEY` | ✅ | Chave JWT (mín. 64 chars). Use `python generate_keys.py` |
-| `MASTER_ENCRYPTION_KEY` | ✅ | Chave Fernet para criptografar PDFs. Use `python generate_keys.py` |
-| `DATABASE_URL` | — | SQLite padrão: `sqlite:///./economart.db` |
-| `GOOGLE_DRIVE_CREDENTIALS_PATH` | — | Caminho para o JSON da service account |
-| `GOOGLE_DRIVE_FOLDER_ID` | — | ID da pasta no Drive para armazenar PDFs |
-| `ENVIRONMENT` | — | `DEV` cria usuários de teste. Use `PRODUCTION` em produção |
+O sistema digitaliza o fluxo de aprovação de notas fiscais com rastreabilidade
+fiscal (Art. 173 CTN) e conformidade LGPD. Cada nota passa por uma máquina de
+estados rigorosa (FSM), o PDF original é criptografado com AES (Fernet) e
+guardado na Cloudflare R2, e todas as ações geram registros de auditoria
+imutáveis com pseudonimização de IPs via HMAC-SHA256.
 
----
+## Stack tecnológica
 
-## Usuários criados automaticamente (ENVIRONMENT=DEV)
-
-| Usuário | Email | Senha |
-|---|---|---|
-| Administrador | admin@economart.com | Admin@2024! |
-| Gestor | gestor@economart.com | Dev@2024! |
-| Funcionário | funcionario@economart.com | Dev@2024! |
-| Diretor | diretor@economart.com | Dev@2024! |
-| Financeiro | financeiro@economart.com | Dev@2024! |
-
-> ⚠️ Troque todas as senhas após o primeiro acesso.
-
----
-
-## Perfis de acesso
-
-| Perfil | Permissões |
+| Camada | Tecnologia |
 |---|---|
-| **EMPLOYEE** | Criar, editar e enviar notas fiscais |
-| **MANAGER** | Aprovar ou reprovar notas (1ª etapa) |
-| **DIRECTOR** | Aprovar ou reprovar notas (2ª etapa) |
-| **FINANCE** | Visualizar aprovadas, imprimir comprovante, marcar como pago |
-| **ADMIN** | Gerenciar usuários, visualizar logs de auditoria |
+| Backend | FastAPI 0.136+ |
+| ORM | SQLAlchemy 2.x |
+| Banco | PostgreSQL (Railway) / SQLite (dev local) |
+| Templates | Jinja2 (autoescape habilitado) |
+| Frontend | HTML5 + CSS3 + JS vanilla (sem framework) |
+| Storage de PDFs | Cloudflare R2 (S3-compatible, criptografia client-side) |
+| Email | SMTP via `smtplib` (Gmail App Password recomendado) |
+| Auth | JWT (access 60min) + refresh token HttpOnly (7 dias) |
+| Servidor | Gunicorn + Uvicorn workers |
+| Deploy | Railway |
 
----
+## Funcionalidades
+
+### Para colaboradores
+- Criar nota fiscal com upload de PDF (até 10 MB)
+- Envio direto ao Gestor — ou ao Diretor (se configurado pelo Admin)
+- Editar/reenviar notas reprovadas
+- Cancelar notas pendentes (antes de qualquer aprovação)
+- Acompanhar status em timeline visual
+
+### Para gestores
+- Fila de notas aguardando aprovação
+- Aprovar (encaminha ao diretor) ou Reprovar (com motivo obrigatório)
+- Selecionar diretor responsável ao aprovar
+
+### Para diretores
+- Fila de notas aguardando revisão
+- Aprovar (libera para Financeiro) ou Reprovar (com motivo)
+- Visualização de notas já lançadas
+
+### Para financeiro
+- Fila de notas aprovadas pendentes de lançamento
+- Botão único: **Imprimir e Lançar** (gera comprovante PDF com QR code e marca como Lançada automaticamente)
+- Reimpressão de comprovantes a qualquer momento (sem poluir log)
+
+### Para admin
+- CRUD completo de usuários (com setor e gestor obrigatórios)
+- CRUD de setores com designação de diretores
+- Auditoria completa (filtros por ação, usuário, sucesso)
+- Configuração de SMTP (envio de email automático)
+- Anonimização LGPD de colaboradores desligados
+- Reset de senha de outros usuários (exceto outros admins)
+
+### Recursos transversais
+- **Busca instantânea** em todas as listagens com filtros combinados
+- **Totalizer**: contagem + soma R$ dos resultados filtrados
+- **Notificações automáticas por email** em cada transição de estado
+- **Recuperação de senha** via código de 6 dígitos enviado por email
+- **Alerta de conta bloqueada** após 5 tentativas falhas
+- **Página /privacidade** com aviso LGPD completo
+- **Verificação pública** de comprovantes via QR code
+
+## Perfis de usuário
+
+| Role | Função |
+|---|---|
+| `ADMIN` | Acesso total. Gerencia usuários, setores e configuração do sistema |
+| `EMPLOYEE` (Funcionário) | Cria notas e acompanha aprovação |
+| `MANAGER` (Gestor) | Aprova/reprova notas do seu setor |
+| `DIRECTOR` (Diretor) | Aprova/reprova após o gestor |
+| `FINANCE` (Financeiro) | Lança notas aprovadas e gera comprovantes |
 
 ## Fluxo de aprovação
 
 ```
-RASCUNHO → AGUARDANDO_GESTOR → AGUARDANDO_DIRETOR → APROVADO → PAGO
-                ↓                       ↓
-        REPROVADO_GESTOR        REPROVADO_DIRETOR
+                             ┌─────────────┐
+                             │  RASCUNHO   │ ← Funcionário criou
+                             └──────┬──────┘
+                                    │ envia
+                ┌───────────────────┴───────────────────┐
+                │ Setor normal                  Atalho │
+                ▼                                       ▼
+      ┌──────────────────┐                   ┌──────────────────┐
+      │ AGUARDANDO_      │                   │ AGUARDANDO_      │
+      │ GESTOR           │                   │ DIRETOR          │
+      └────────┬─────────┘                   └────────┬─────────┘
+        aprova │ reprova                       aprova │ reprova
+               │     ↓                                │     ↓
+               │  REPROVADO_GESTOR                    │  REPROVADO_DIRETOR
+               │                                      │
+               └──────────► AGUARDANDO_DIRETOR ◄──────┘
+                                    │
+                              aprova │
+                                    ▼
+                            ┌──────────────┐
+                            │   APROVADO   │ ← Financeiro vê na fila
+                            └──────┬───────┘
+                                   │ Imprimir + Lançar
+                                   ▼
+                            ┌──────────────┐
+                            │     PAGO     │ ← finalizada (alias UI: Lançada)
+                            └──────────────┘
 ```
 
-Gestores com perfil MANAGER também podem submeter diretamente ao diretor.
+Cada transição gera entrada em `approval_history` + `audit_logs` com:
+- ID do usuário responsável
+- Timestamp em UTC (exibido em -3 no frontend)
+- IP pseudonimizado (HMAC-SHA256, conforme LGPD Art. 46)
+- Porta de origem (Marco Civil Art. 15, individualização NAT)
+- Comentário (em reprovações)
 
----
+## Segurança e LGPD
 
-## Google Drive (opcional)
+### Autenticação
+- Senhas com **bcrypt** (cost factor padrão)
+- Validação de complexidade: mínimo 8 chars, letra + número
+- JWT access token (60 min) + refresh token HttpOnly cookie (7 dias, secure em PROD)
+- Rate limit de login: 5 tentativas → bloqueio 10 min
+- Race condition prevenida com `SELECT FOR UPDATE` no PostgreSQL
+- Refresh token revalida usuário no DB a cada uso (rebaixamento/desativação têm efeito imediato em 60 min)
 
-Se `GOOGLE_DRIVE_CREDENTIALS_PATH` não for configurado, os PDFs ficam em `uploads/` localmente (criptografados com AES-256).
+### Autorização
+- Páginas HTML protegidas via cookie + role check server-side
+- API protegida via Bearer token + `require_role`
+- Admin não pode resetar senha de outro admin (anti-sequestro)
+- Admin não pode desativar outro admin
+- Último admin do sistema não pode ser rebaixado/desativado
 
-Para ativar o Drive:
-1. Crie um projeto no [Google Cloud Console](https://console.cloud.google.com)
-2. Ative a **Google Drive API**
-3. Crie uma **Service Account** e baixe o JSON de credenciais
-4. Crie uma pasta no Drive e compartilhe com o e-mail da service account
-5. Configure `GOOGLE_DRIVE_CREDENTIALS_PATH` e `GOOGLE_DRIVE_FOLDER_ID` no `.env`
+### Dados
+- PDFs criptografados com **Fernet (AES)** client-side antes de subir ao R2
+- Senha SMTP criptografada com `MASTER_ENCRYPTION_KEY`
+- IPs pseudonimizados via HMAC-SHA256 (LGPD Art. 46)
+- Anonimização irreversível de colaboradores desligados (Art. 16, I)
+- Página `/privacidade` com aviso completo
 
----
+### Headers HTTP
+- `Content-Security-Policy` restritivo (script-src 'self')
+- `X-Frame-Options: SAMEORIGIN`
+- `X-Content-Type-Options: nosniff`
+- `Strict-Transport-Security` (HSTS 1 ano)
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy` desabilitando câmera/microfone/geolocalização
 
-## Verificação de notas (QR Code)
+### CORS
+- Em PROD: restrito ao domínio público do Railway
+- Em DEV: aberto para facilitar testes locais
 
-Cada comprovante impresso contém um QR Code que aponta para:
+## Setup local
+
+### Pré-requisitos
+- Python 3.12+
+- Git
+
+### Instalação
+
+```bash
+git clone https://github.com/guiolindo/Notas-despesas.git
+cd Notas-despesas
+pip install -r requirements.txt
 ```
-http://SEU_SERVIDOR:7145/verify/{id}
-```
-Esta rota é pública e exibe o status e a autenticidade da nota sem necessidade de login.
 
----
+### Variáveis de ambiente
+
+Copie `.env.example` para `.env`:
+
+```bash
+cp .env.example .env
+```
+
+Edite com valores reais:
+
+```env
+DATABASE_URL=sqlite:///./economart.db
+
+# Gere com: python -c "import secrets; print(secrets.token_hex(64))"
+SECRET_KEY=<sua chave de 128 chars hex>
+
+# Gere com: python generate_keys.py
+MASTER_ENCRYPTION_KEY=<chave Fernet>
+
+ENVIRONMENT=DEV
+
+# Cloudflare R2 (opcional em dev — sem isso, fallback para uploads/ local)
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_ENDPOINT_URL=
+R2_BUCKET_NAME=
+```
+
+### Rodar
+
+```bash
+python -m uvicorn app.main:app --reload --port 7145
+```
+
+Ou no Windows: dois cliques no `start.bat`.
+
+Acesse [http://localhost:7145](http://localhost:7145).
+
+**Login inicial**: `admin@economart.com` / `Admin@2024!`
+(troca obrigatória no primeiro acesso).
+
+## Deploy no Railway
+
+### 1. Criar serviços
+- Adicione um plugin **PostgreSQL** no projeto
+- Crie um serviço a partir do repo `guiolindo/Notas-despesas`
+
+### 2. Variáveis do serviço web
+
+| Variável | Valor |
+|---|---|
+| `DATABASE_URL` | Referência ao Postgres (`Add Reference` na UI do Railway) |
+| `SECRET_KEY` | 128 chars hex |
+| `MASTER_ENCRYPTION_KEY` | Chave Fernet (44 chars terminada em `=`) |
+| `ENVIRONMENT` | `PROD` |
+| `R2_ACCESS_KEY_ID` | Da API token do Cloudflare R2 |
+| `R2_SECRET_ACCESS_KEY` | Da API token do Cloudflare R2 |
+| `R2_ENDPOINT_URL` | `https://<account_id>.r2.cloudflarestorage.com` |
+| `R2_BUCKET_NAME` | nome do bucket |
+
+### 3. Configurações
+- O `Procfile` e `railway.toml` já definem `gunicorn ... --preload`
+- Healthcheck em `/health`
+- Restart on failure (10 retries)
+
+### 4. Storage R2
+- Crie conta grátis em [dash.cloudflare.com](https://dash.cloudflare.com)
+- R2 Object Storage → Create bucket
+- Manage R2 API Tokens → Create Account API Token com Object Read & Write
+
+### 5. Email SMTP (opcional, configurado depois pelo admin)
+- Crie conta Gmail dedicada
+- Ative 2FA → gere App Password em [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+- Acesse `/admin/smtp` no sistema e preencha
+
+## Configurações
+
+| Setting | Default | Descrição |
+|---|---|---|
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | 60 | Validade do access token |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | 7 | Validade do refresh token |
+| `MAX_LOGIN_ATTEMPTS` | 5 | Tentativas antes de bloquear |
+| `LOGIN_BLOCK_MINUTES` | 10 | Tempo de bloqueio após exceder |
 
 ## Estrutura do projeto
 
 ```
 economart_notas/
 ├── app/
-│   ├── main.py              # Ponto de entrada FastAPI
-│   ├── config.py            # Configurações via .env
-│   ├── database.py          # Conexão SQLAlchemy
-│   ├── models/              # Modelos ORM
-│   ├── routers/             # Rotas da API e páginas
-│   ├── services/            # Lógica de negócio
-│   ├── security/            # JWT, hashing, dependências
-│   ├── middleware/          # Rate limit, headers de segurança
-│   ├── schemas/             # Schemas Pydantic
-│   ├── templates/           # Templates Jinja2
-│   └── static/              # CSS, JS, imagens
-├── init_db.py               # Inicialização do banco e usuários
-├── generate_keys.py         # Geração de chaves seguras
+│   ├── main.py                      # FastAPI entry, middlewares, migrations
+│   ├── config.py                    # Settings via pydantic-settings
+│   ├── database.py                  # Engine SQLAlchemy + session
+│   ├── middleware/
+│   │   └── security.py              # CSP, HSTS, rate limit
+│   ├── models/                      # SQLAlchemy models
+│   │   ├── users.py
+│   │   ├── invoices.py              # FSM com 7 status
+│   │   ├── approval_history.py      # Trilha imutável
+│   │   ├── audit_logs.py
+│   │   ├── departments.py
+│   │   └── smtp_settings.py         # Config SMTP + PasswordResetCode
+│   ├── routers/                     # Endpoints
+│   │   ├── auth.py                  # Login, refresh, forgot/reset password
+│   │   ├── admin.py                 # /api/admin/* (users, depts, SMTP, audit)
+│   │   ├── invoices.py              # /api/invoices/* (CRUD + transições FSM)
+│   │   ├── pages.py                 # Páginas HTML com role guard
+│   │   ├── alerts.py                # Alertas (vencendo, atrasadas)
+│   │   └── print_routes.py          # Comprovante PDF + verify público
+│   ├── schemas/                     # Pydantic
+│   ├── security/
+│   │   ├── dependencies.py          # get_current_user, require_role
+│   │   ├── page_auth.py             # require_page_login/role
+│   │   ├── hashing.py               # bcrypt + HMAC pseudonymize
+│   │   └── jwt.py
+│   ├── services/                    # Business logic
+│   │   ├── invoice_service.py       # FSM, validações, triggers
+│   │   ├── drive_service.py         # R2 storage (criptografia Fernet)
+│   │   ├── email_service.py         # SMTP + templates
+│   │   ├── pdf_service.py           # Geração de comprovante
+│   │   └── alert_service.py
+│   ├── static/
+│   │   ├── css/main.css             # Design system unificado
+│   │   ├── js/app.js                # Vanilla JS, SPA-like
+│   │   └── img/logo.png
+│   └── templates/                   # Jinja2 com autoescape
 ├── requirements.txt
-└── .env.example
+├── Procfile                         # Gunicorn config Railway
+├── railway.toml                     # Build/deploy config
+└── .gitignore                       # Exclui .env, *.db, credentials.json, uploads/
 ```
+
+## Convenções de código
+
+- **Backend**: Python 3.12, type hints, snake_case
+- **Datas**: armazenadas em UTC, exibidas no frontend em `America/Sao_Paulo`
+- **IDs**: UUID4 string (36 chars)
+- **Senhas**: nunca logadas, nunca expostas em GET — sempre bcrypt
+- **Erros**: HTTPException com `status_code` e `detail` em PT-BR
+- **Audit log**: toda ação importante registra em `audit_logs`
+- **Histórico**: transições de invoice em `approval_history` (visível na UI)
+- **Sem framework JS**: o frontend é vanilla pra reduzir superficie de ataque e dependências
+
+## Licença
+
+Software proprietário Economart Atacadista. Uso interno.
+
+---
+
+**Suporte / dúvidas**: contato com o administrador do sistema.

@@ -50,6 +50,9 @@ service_account.json
 .DS_Store
 Thumbs.db
 
+# Documentação técnica interna (uso da equipe — não publica no GitHub)
+DOCUMENTACAO.md
+
 # Logs
 *.log
 
