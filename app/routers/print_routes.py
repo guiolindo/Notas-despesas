@@ -60,32 +60,38 @@ def print_invoice(
     now = datetime.now(timezone.utc)
     _ip = pseudonymize_ip(request.client.host if request.client else None)
     _port = request.client.port if request.client else None
-    db.add(
-        ApprovalHistory(
-            id=str(uuid.uuid4()),
-            invoice_id=invoice.id,
-            user_id=current_user.id,
-            action=ApprovalAction.PRINTED,
-            timestamp=now,
-            ip_address=_ip,
-            source_port=_port,
+
+    # Reimpressoes NAO geram log nem entrada no historico — apenas o evento
+    # de lancamento (1a impressao) e auditado, evitando spam de registros.
+    is_first_print = invoice.printed_at is None
+    if is_first_print:
+        db.add(
+            ApprovalHistory(
+                id=str(uuid.uuid4()),
+                invoice_id=invoice.id,
+                user_id=current_user.id,
+                action=ApprovalAction.PRINTED,
+                timestamp=now,
+                ip_address=_ip,
+                source_port=_port,
+            )
         )
-    )
-    db.add(
-        AuditLog(
-            id=str(uuid.uuid4()),
-            user_id=current_user.id,
-            action="PRINT_INVOICE",
-            resource_type="INVOICE",
-            resource_id=invoice.id,
-            ip_address=_ip,
-            source_port=_port,
-            http_method=request.method,
-            user_agent=request.headers.get("user-agent"),
-            timestamp=now,
-            success=True,
+        db.add(
+            AuditLog(
+                id=str(uuid.uuid4()),
+                user_id=current_user.id,
+                action="PRINT_INVOICE",
+                resource_type="INVOICE",
+                resource_id=invoice.id,
+                ip_address=_ip,
+                source_port=_port,
+                http_method=request.method,
+                user_agent=request.headers.get("user-agent"),
+                timestamp=now,
+                success=True,
+            )
         )
-    )
+    # printed_at sempre atualiza para refletir a impressao mais recente
     invoice.printed_at = now
     invoice.printed_by_id = current_user.id
 
