@@ -24,9 +24,11 @@
         <h1 class="login-title">Verificacao de Nota</h1>
         <p class="login-subtitle">Esta nota e autentica quando o status estiver APROVADO ou LANCADO.</p>
         {% set status_label = 'LANCADO' if invoice.status.value == 'PAGO' else invoice.status.value %}
+        {% set _dept = invoice.created_by.department_obj if invoice.created_by else None %}
         <div class="detail-grid">
           <div class="detail-item"><span>Status</span><strong>{{ status_label }}</strong></div>
           <div class="detail-item"><span>Numero</span><strong>{{ invoice.invoice_number }}</strong></div>
+          <div class="detail-item"><span>Setor</span><strong>{{ _dept.name if _dept else '-' }}</strong></div>
           <div class="detail-item"><span>Valor</span><strong>{{ amount_formatted }}</strong></div>
           <div class="detail-item"><span>Aprovacao Diretor</span><strong>{{ director_reviewed_at_br or '-' }}</strong></div>
           <div class="detail-item">

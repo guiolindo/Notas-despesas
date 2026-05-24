@@ -576,13 +576,14 @@ function renderInvoicesTable(items) {
     return;
   }
   el.innerHTML = `<table class="table">
-    <thead><tr><th>Numero</th><th>Valor</th><th>Emissao</th><th>Vencimento</th><th>Status</th><th>Acoes</th></tr></thead>
+    <thead><tr><th>Numero</th><th>Setor</th><th>Valor</th><th>Emissao</th><th>Vencimento</th><th>Status</th><th>Acoes</th></tr></thead>
     <tbody>${items.map((item) => {
       const canEdit = ['RASCUNHO', 'REPROVADO_GESTOR', 'REPROVADO_DIRETOR'].includes(item.status);
       const isDraft = item.status === 'RASCUNHO';
       const rejected = item.status.startsWith('REPROVADO');
       return `<tr class="${rejected ? 'rejected-row' : ''}">
         <td>${rejected ? '! ' : ''}${escapeHtml(item.invoice_number)}</td>
+        <td>${escapeHtml(item.department_name || '-')}</td>
         <td>${formatCurrency(item.amount)}</td>
         <td>${formatDate(item.issue_date)}</td>
         <td>${formatDate(item.due_date)}</td>
@@ -1239,12 +1240,13 @@ async function initReviewQueue(role) {
     }
     const directorExtraHead = role === 'director' ? '<th>Gestor</th><th>Aprovado pelo Gestor em</th>' : '';
     container.innerHTML = `<table class="table"><thead><tr>
-      <th>Funcionario</th><th>Numero da nota</th><th>Valor</th><th>Emissao</th><th>Vencimento</th><th>Dias ate vencer</th>${directorExtraHead}<th>Acoes</th>
+      <th>Funcionario</th><th>Setor</th><th>Numero da nota</th><th>Valor</th><th>Emissao</th><th>Vencimento</th><th>Dias ate vencer</th>${directorExtraHead}<th>Acoes</th>
     </tr></thead><tbody>${items.map((item) => {
       const canReview = item.status === statusFilter;
       const directorExtra = role === 'director' ? `<td>${escapeHtml(item.manager?.name || '-')}</td><td>${formatDateTime(item.manager_reviewed_at)}</td>` : '';
       return `<tr>
         <td>${escapeHtml(item.created_by.name)}</td>
+        <td>${escapeHtml(item.department_name || '-')}</td>
         <td>${escapeHtml(item.invoice_number)}</td>
         <td>${formatCurrency(item.amount)}</td>
         <td>${formatDate(item.issue_date)}</td>

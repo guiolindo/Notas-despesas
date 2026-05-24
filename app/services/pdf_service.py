@@ -144,8 +144,11 @@ def _build_cover_pdf(invoice: Invoice, base_url: str) -> bytes:
     ]
     story[1].setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), BRAND_ORANGE)]))
 
+    dept_obj = invoice.created_by.department_obj if invoice.created_by else None
+    sector_name = dept_obj.name if dept_obj else "-"
     data = [
         ["Numero da Nota", invoice.invoice_number],
+        ["Setor", sector_name],
         ["Data de Emissao", _format_date(invoice.issue_date)],
         ["Data de Vencimento", _format_date(invoice.due_date)],
         ["Valor", _format_currency(invoice.amount)],

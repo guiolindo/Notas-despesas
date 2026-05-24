@@ -58,34 +58,30 @@ def _as_utc(dt):
 
 
 def _compute_invoice_alerts(invoice) -> list[str]:
-    """Banners contextuais que aparecem no detalhe da nota.
+    """Avisos puramente informativos no detalhe da nota.
 
-    Alertam o criador, gestor, diretor e financeiro sobre:
-    - Nota emitida em mes anterior (atraso no envio)
-    - Vencimento muito proximo (<72h)
-    - Vencimento ja passou (urgencia maxima)
+    Comparacao contra a data de ENVIO (submitted_at). Se nota e rascunho,
+    usa hoje como preview. Sem linguagem de julgamento — apenas fatos.
+    Nota vencida nao chega aqui (envio bloqueado em submit_invoice).
     """
-    from datetime import date as _date, timedelta as _td
+    from datetime import date as _date
     alerts: list[str] = []
-    today = _date.today()
-    if invoice.issue_date:
-        # Emitida em mes anterior — atraso de envio
-        if (invoice.issue_date.year, invoice.issue_date.month) < (today.year, today.month):
-            alerts.append(
-                "Nota emitida em mes anterior — envio atrasado pode comprometer prazo fiscal."
-            )
-    if invoice.due_date and invoice.status not in {InvoiceStatus.PAGO, InvoiceStatus.REPROVADO_GESTOR, InvoiceStatus.REPROVADO_DIRETOR}:
-        delta = (invoice.due_date - today).days
-        if delta < 0:
-            alerts.append(
-                f"Vencimento ja passou ha {abs(delta)} dia(s). Risco de juros/multa."
-            )
-        elif delta == 0:
-            alerts.append("Vence hoje — prioridade maxima.")
-        elif delta < 3:
-            alerts.append(
-                f"Vencimento em {delta} dia(s) — menos de 72h. Acelere a aprovacao."
-            )
+
+    if invoice.submitted_at:
+        ref = invoice.submitted_at.date() if hasattr(invoice.submitted_at, "date") else invoice.submitted_at
+    else:
+        ref = _date.today()
+
+    # Emissao em mes anterior a referencia
+    if invoice.issue_date and (invoice.issue_date.year, invoice.issue_date.month) < (ref.year, ref.month):
+        alerts.append("Data de emissao em mes anterior ao envio.")
+
+    # Vencimento dentro de 72h da data de envio
+    if invoice.due_date:
+        delta = (invoice.due_date - ref).days
+        if 0 <= delta < 3:
+            label = "hoje" if delta == 0 else f"em {delta} dia(s)"
+            alerts.append(f"Vencimento {label} — prazo curto para aprovacao.")
     return alerts
 
 

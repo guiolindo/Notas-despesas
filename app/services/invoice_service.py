@@ -334,6 +334,14 @@ def _do_submit(
     port: int | None = None,
 ) -> None:
     """Lógica interna de envio — reutilizada em create e submit."""
+    # Bloqueio defensivo: nota vencida nao pode ser submetida (vale tambem
+    # para create_invoice com submit_now=True que chama esta funcao direto)
+    from datetime import date as _date
+    if invoice.due_date and invoice.due_date < _date.today():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nota com vencimento anterior a hoje nao pode ser enviada. Atualize o vencimento antes.",
+        )
     now = _now()
     invoice.submitted_at = now
 
@@ -389,6 +397,14 @@ def submit_invoice(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Nota no status {invoice.status.value} nao pode ser enviada",
+        )
+    # Bloqueio: nota com vencimento ja passado nao pode ser enviada.
+    # Aprovacao demoraria mais do que o titulo permite — sem sentido fiscal.
+    from datetime import date as _date
+    if invoice.due_date and invoice.due_date < _date.today():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nota com vencimento anterior a hoje nao pode ser enviada. Atualize o vencimento antes.",
         )
     # Anti-reenvio sem mudanca: se nota foi reprovada, exigir que a descricao
     # tenha sido editada antes do reenvio. Snapshot tirado na reprovacao
