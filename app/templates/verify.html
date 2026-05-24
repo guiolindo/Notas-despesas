@@ -28,8 +28,24 @@
           <div class="detail-item"><span>Numero</span><strong>{{ invoice.invoice_number }}</strong></div>
           <div class="detail-item"><span>Valor</span><strong>R$ {{ invoice.amount }}</strong></div>
           <div class="detail-item"><span>Aprovacao Diretor</span><strong>{{ director_reviewed_at_br or '-' }}</strong></div>
-          <div class="detail-item"><span>Gestor</span><strong>{{ invoice.manager.name if invoice.manager else '-' }}</strong></div>
-          <div class="detail-item"><span>Diretor</span><strong>{{ invoice.director.name if invoice.director else '-' }}</strong></div>
+          <div class="detail-item">
+            <span>Gestor</span>
+            <strong>
+              {{ invoice.manager.name if invoice.manager else '-' }}
+              {% if invoice.manager and invoice.manager.email %}
+                <br><small class="text-muted" style="font-weight:400">{{ invoice.manager.email }}</small>
+              {% endif %}
+            </strong>
+          </div>
+          <div class="detail-item">
+            <span>Diretor</span>
+            <strong>
+              {{ invoice.director.name if invoice.director else '-' }}
+              {% if invoice.director and invoice.director.email %}
+                <br><small class="text-muted" style="font-weight:400">{{ invoice.director.email }}</small>
+              {% endif %}
+            </strong>
+          </div>
           <div class="detail-item"><span>Assinatura Digital</span><strong>{{ auth_hash }}</strong></div>
         </div>
       {% endif %}

@@ -73,11 +73,30 @@ def _qr_image(url: str) -> Image:
     return Image(buffer, width=80, height=80)
 
 
-def _approval_row(invoice: Invoice, action: ApprovalAction, label: str, status_text: str):
+def _approval_row(invoice: Invoice, action: ApprovalAction, label: str, status_text: str, show_email: bool = False):
+    """show_email=True inclui email do responsavel (etapas de aprovacao)."""
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
     entry = _history_entry(invoice, action)
+    if entry and entry.user:
+        if show_email and entry.user.email:
+            # Nome em negrito + email pequeno embaixo
+            cell_styles = getSampleStyleSheet()
+            small = ParagraphStyle(
+                name=f"_small_{label}", parent=cell_styles["Normal"],
+                fontSize=7, leading=9, textColor=colors.HexColor("#4B5563"),
+            )
+            responsavel = Paragraph(
+                f"<b>{entry.user.name}</b><br/><font size=7>{entry.user.email}</font>",
+                cell_styles["Normal"],
+            )
+        else:
+            responsavel = entry.user.name
+    else:
+        responsavel = "-"
     return [
         label,
-        entry.user.name if entry and entry.user else "-",
+        responsavel,
         _format_datetime(entry.timestamp if entry else None),
         status_text if entry else "Pendente",
     ]
@@ -155,8 +174,8 @@ def _build_cover_pdf(invoice: Invoice, base_url: str) -> bytes:
         ["Etapa", "Responsavel", "Data/Hora", "Status"],
         _approval_row(invoice, ApprovalAction.CREATED, "Criacao", "Criado"),
         _approval_row(invoice, ApprovalAction.SUBMITTED, "Envio", "Enviado"),
-        _approval_row(invoice, ApprovalAction.APPROVED_MANAGER, "Aprovacao Gestor", "Aprovado"),
-        _approval_row(invoice, ApprovalAction.APPROVED_DIRECTOR, "Aprovacao Diretor", "Aprovado"),
+        _approval_row(invoice, ApprovalAction.APPROVED_MANAGER, "Aprovacao Gestor", "Aprovado", show_email=True),
+        _approval_row(invoice, ApprovalAction.APPROVED_DIRECTOR, "Aprovacao Diretor", "Aprovado", show_email=True),
         *paid_row,
     ]
     approval_table = Table(approval_data, colWidths=[45 * mm, 48 * mm, 42 * mm, 35 * mm])
