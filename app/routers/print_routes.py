@@ -142,6 +142,22 @@ def print_invoice(
 
 
 @router.get("/verify/{invoice_id}", response_class=HTMLResponse)
+def _mask_email(email: str | None) -> str | None:
+    """Mascara email mantendo dica de identidade.
+    'maria.silva@economart.com.br' -> 'maria.s****@economart.com.br'
+    Quem e da empresa reconhece, quem nao e nao consegue extrair o email completo.
+    """
+    if not email or "@" not in email:
+        return None
+    local, _, domain = email.partition("@")
+    if len(local) <= 2:
+        masked_local = local[0] + "****"
+    else:
+        keep = max(2, len(local) // 3)
+        masked_local = local[:keep] + "****"
+    return f"{masked_local}@{domain}"
+
+
 def verify_invoice(invoice_id: str, request: Request, db: Session = Depends(get_db)):
     invoice = _invoice_with_relations(db, invoice_id)
     context = {
@@ -150,6 +166,8 @@ def verify_invoice(invoice_id: str, request: Request, db: Session = Depends(get_
         "auth_hash": None,
         "director_reviewed_at_br": None,
         "amount_formatted": "-",
+        "manager_email_masked": None,
+        "director_email_masked": None,
     }
     if invoice:
         context["auth_hash"] = invoice_hash(invoice)
@@ -167,4 +185,7 @@ def verify_invoice(invoice_id: str, request: Request, db: Session = Depends(get_
             context["amount_formatted"] = f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         except Exception:  # noqa: BLE001
             context["amount_formatted"] = f"R$ {invoice.amount}"
+        # Emails mascarados (publico nao captura o email completo)
+        context["manager_email_masked"] = _mask_email(invoice.manager.email if invoice.manager else None)
+        context["director_email_masked"] = _mask_email(invoice.director.email if invoice.director else None)
     return templates.TemplateResponse(request, "verify.html", context)

@@ -31,18 +31,24 @@
           <div class="detail-item"><span>Aprovacao Diretor</span><strong>{{ director_reviewed_at_br or '-' }}</strong></div>
           <div class="detail-item">
             <span>Gestor</span>
-            <strong>{{ invoice.manager.name if invoice.manager else '-' }}</strong>
+            <strong>
+              {{ invoice.manager.name if invoice.manager else '-' }}
+              {% if manager_email_masked %}
+                <br><small class="text-muted" style="font-weight:400">{{ manager_email_masked }}</small>
+              {% endif %}
+            </strong>
           </div>
           <div class="detail-item">
             <span>Diretor</span>
-            <strong>{{ invoice.director.name if invoice.director else '-' }}</strong>
+            <strong>
+              {{ invoice.director.name if invoice.director else '-' }}
+              {% if director_email_masked %}
+                <br><small class="text-muted" style="font-weight:400">{{ director_email_masked }}</small>
+              {% endif %}
+            </strong>
           </div>
           <div class="detail-item"><span>Assinatura Digital</span><strong>{{ auth_hash }}</strong></div>
         </div>
-        <p class="text-muted" style="margin-top:1rem;font-size:.85rem">
-          Os emails de gestor e diretor nao sao exibidos em verificacao publica para proteger dados pessoais (LGPD).
-          Para auditoria interna completa, consulte o sistema autenticado.
-        </p>
       {% endif %}
     </div>
   </div>

@@ -285,10 +285,7 @@ def _get_manager_for_user(db: Session, user: User) -> User:
             return manager
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail=(
-            "Seu gestor nao esta mais ativo ou foi promovido para outra funcao. "
-            "Contate o administrador para atualizar seu cadastro."
-        ),
+        detail="Nao foi possivel identificar seu gestor responsavel. Contate o administrador.",
     )
 
 
