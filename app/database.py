@@ -15,10 +15,22 @@ def _build_engine():
         # check_same_thread só existe no SQLite (desenvolvimento local)
         kwargs["connect_args"] = {"check_same_thread": False}
     else:
-        # PostgreSQL: revalida conexao antes de cada uso (evita SSL EOF apos idle)
-        # e recicla conexoes mais velhas que 5 min
+        # PostgreSQL no Railway: o gateway derruba conexoes idle agressivamente
+        # (causa 'SSL SYSCALL error: EOF detected' em requests apos pausa).
+        # Combinacao para zerar isso:
+        #  - pool_pre_ping: valida conexao antes de usar (descarta mortas)
+        #  - pool_recycle 180s: forca renovacao antes do timeout do Railway
+        #  - TCP keepalives: pacote keep-alive a cada 30s impede o middleware
+        #    de marcar a conexao como ociosa
         kwargs["pool_pre_ping"] = True
-        kwargs["pool_recycle"] = 300
+        kwargs["pool_recycle"] = 180
+        kwargs["connect_args"] = {
+            "keepalives": 1,
+            "keepalives_idle": 30,
+            "keepalives_interval": 10,
+            "keepalives_count": 5,
+            "connect_timeout": 10,
+        }
 
     return create_engine(url, **kwargs)
 
