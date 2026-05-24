@@ -22,9 +22,10 @@
         <p class="login-subtitle">O codigo informado nao corresponde a uma nota fiscal registrada.</p>
       {% else %}
         <h1 class="login-title">Verificacao de Nota</h1>
-        <p class="login-subtitle">Esta nota foi aprovada e e autentica quando o status estiver APROVADO ou PAGO.</p>
+        <p class="login-subtitle">Esta nota e autentica quando o status estiver APROVADO ou LANCADO.</p>
+        {% set status_label = 'LANCADO' if invoice.status.value == 'PAGO' else invoice.status.value %}
         <div class="detail-grid">
-          <div class="detail-item"><span>Status</span><strong>{{ invoice.status.value }}</strong></div>
+          <div class="detail-item"><span>Status</span><strong>{{ status_label }}</strong></div>
           <div class="detail-item"><span>Numero</span><strong>{{ invoice.invoice_number }}</strong></div>
           <div class="detail-item"><span>Valor</span><strong>R$ {{ invoice.amount }}</strong></div>
           <div class="detail-item"><span>Aprovacao Diretor</span><strong>{{ director_reviewed_at_br or '-' }}</strong></div>

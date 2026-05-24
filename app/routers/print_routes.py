@@ -109,7 +109,7 @@ def print_invoice(
                 invoice_id=invoice.id,
                 user_id=current_user.id,
                 action=ApprovalAction.MARKED_PAID,
-                comment="Marcada como paga automaticamente apos impressao",
+                comment="Lancada automaticamente apos impressao",
                 timestamp=now,
                 ip_address=_ip,
                 source_port=_port,

@@ -169,7 +169,7 @@ def _build_cover_pdf(invoice: Invoice, base_url: str) -> bytes:
 
     paid_row = []
     if invoice.status.value == "PAGO":
-        paid_row = [["Lancamento", invoice.finance.name if invoice.finance else "-", _format_datetime(invoice.paid_at), "Pago"]]
+        paid_row = [["Lancamento", invoice.finance.name if invoice.finance else "-", _format_datetime(invoice.paid_at), "Lancada"]]
     approval_data = [
         ["Etapa", "Responsavel", "Data/Hora", "Status"],
         _approval_row(invoice, ApprovalAction.CREATED, "Criacao", "Criado"),
