@@ -107,6 +107,10 @@ def _run_schema_migrations() -> None:
         # Invalidacao de JWT apos reset de senha — tokens emitidos antes
         # desse timestamp sao rejeitados (forca relogin)
         pg("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP"),
+
+        # Snapshot de descricao no momento da reprovacao — exige edicao real
+        # antes de permitir reenvio
+        pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS description_at_rejection TEXT"),
     ]
     import logging as _logging
     _log = _logging.getLogger(__name__)

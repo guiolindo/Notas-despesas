@@ -54,6 +54,10 @@ class Invoice(Base):
     printed_at = Column(DateTime, nullable=True)
     printed_by_id = Column(String(36), ForeignKey("users.id"), nullable=True)
 
+    # Snapshot da descricao no momento da reprovacao. Reenvio so e permitido
+    # se a descricao atual diferir desta — evita reenvio sem alteracao real.
+    description_at_rejection = Column(Text, nullable=True)
+
     created_by = relationship(
         "User",
         foreign_keys=[created_by_id],

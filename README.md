@@ -78,18 +78,25 @@ imutáveis com pseudonimização de IPs via HMAC-SHA256.
 - CRUD completo de usuários (com setor e gestor obrigatórios)
 - CRUD de setores com designação de diretores
 - Auditoria completa (filtros por ação, usuário, sucesso)
-- Configuração de SMTP (envio de email automático)
+- **Configuração de email automático** — escolha entre SMTP (Gmail, Outlook,
+  SendGrid) ou Resend (HTTP API, funciona em Railway sem desbloqueio)
 - Anonimização LGPD de colaboradores desligados
-- Reset de senha de outros usuários (exceto outros admins)
+- Reset de senha de outros usuários (exceto outros admins, anti-sequestro)
 
 ### Recursos transversais
 - **Busca instantânea** em todas as listagens com filtros combinados
 - **Totalizer**: contagem + soma R$ dos resultados filtrados
+- **Alertas contextuais na nota**: banner amarelo no detalhe quando emissão é
+  do mês anterior, vencimento em <72h ou já vencida — visível para criador,
+  gestor, diretor e financeiro
 - **Notificações automáticas por email** em cada transição de estado
 - **Recuperação de senha** via código de 6 dígitos enviado por email
 - **Alerta de conta bloqueada** após 5 tentativas falhas
+- **Verify público** (QR code) com email do aprovador mascarado (LGPD)
 - **Página /privacidade** com aviso LGPD completo
-- **Verificação pública** de comprovantes via QR code
+- **Configuração SMTP/Resend pelo admin** (sem precisar redeploy)
+- **Reenvio de nota reprovada** exige edição da descrição (previne reenvio
+  vazio sem mudança real)
 
 ## Perfis de usuário
 
@@ -146,9 +153,13 @@ Cada transição gera entrada em `approval_history` + `audit_logs` com:
 - Senhas com **bcrypt** (cost factor padrão)
 - Validação de complexidade: mínimo 8 chars, letra + número
 - JWT access token (60 min) + refresh token HttpOnly cookie (7 dias, secure em PROD)
-- Rate limit de login: 5 tentativas → bloqueio 10 min
+- Rate limit de login: 5 tentativas → bloqueio 10 min (com email automático ao titular)
 - Race condition prevenida com `SELECT FOR UPDATE` no PostgreSQL
-- Refresh token revalida usuário no DB a cada uso (rebaixamento/desativação têm efeito imediato em 60 min)
+- Refresh token revalida usuário no DB a cada uso (rebaixamento/desativação têm efeito imediato)
+- **Tokens emitidos antes da última troca de senha são invalidados** — admin
+  reseta senha → todas as sessões abertas do usuário caem
+- **Esqueci minha senha** com código 6 dígitos via email (TTL 15 min, throttle
+  60s, bloqueio após 5 tentativas erradas)
 
 ### Autorização
 - Páginas HTML protegidas via cookie + role check server-side

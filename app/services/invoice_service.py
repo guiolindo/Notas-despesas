@@ -390,12 +390,23 @@ def submit_invoice(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Nota no status {invoice.status.value} nao pode ser enviada",
         )
+    # Anti-reenvio sem mudanca: se nota foi reprovada, exigir que a descricao
+    # tenha sido editada antes do reenvio. Snapshot tirado na reprovacao
+    # (manager_review/director_review REJECT).
+    if invoice.status in {InvoiceStatus.REPROVADO_GESTOR, InvoiceStatus.REPROVADO_DIRETOR}:
+        snapshot = invoice.description_at_rejection
+        if snapshot is not None and (invoice.description or "") == snapshot:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Edite a descricao antes de reenviar a nota.",
+            )
     # Limpa rastros do roteamento anterior — novo envio pode ir pra outro
     # gestor/diretor (transferencia, mudanca de fluxo)
     invoice.manager_id = None
     invoice.director_id = None
     invoice.manager_reviewed_at = None
     invoice.director_reviewed_at = None
+    invoice.description_at_rejection = None  # consumido — proxima reprovacao snapshot de novo
     _do_submit(db, invoice, user, director_id, ip, port)
     db.commit()
     return _get_invoice(db, invoice.id)
@@ -468,6 +479,8 @@ def manager_review(
         _notify_approver(db, director, invoice)
     else:
         invoice.status = InvoiceStatus.REPROVADO_GESTOR
+        # Snapshot da descricao para forcar edicao antes de reenviar
+        invoice.description_at_rejection = invoice.description or ""
         _add_history(db, invoice.id, manager.id, ApprovalAction.REJECTED_MANAGER, comment, ip, port)
         _add_audit(db, manager.id, "MANAGER_REJECT", invoice.id, ip=ip, port=port, http_method="POST")
         _notify_rejection(db, invoice, manager, comment)
@@ -502,6 +515,7 @@ def director_review(
         _notify_finance_team(db, invoice)
     else:
         invoice.status = InvoiceStatus.REPROVADO_DIRETOR
+        invoice.description_at_rejection = invoice.description or ""
         _add_history(db, invoice.id, director.id, ApprovalAction.REJECTED_DIRECTOR, comment, ip, port)
         _add_audit(db, director.id, "DIRECTOR_REJECT", invoice.id, ip=ip, port=port, http_method="POST")
         _notify_rejection(db, invoice, director, comment)

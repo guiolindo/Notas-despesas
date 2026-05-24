@@ -92,6 +92,8 @@ class InvoiceResponse(BaseModel):
     history: list[ApprovalHistoryResponse] = []
     department_name: Optional[str] = None
     can_cancel: bool = False
+    # Alertas contextuais (emissao antiga, vencimento curto) — banner no detalhe
+    alerts: list[str] = []
     model_config = {"from_attributes": True}
 
 

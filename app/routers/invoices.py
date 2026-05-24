@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import ApprovalHistory, Invoice, User, UserRole
+from app.models import ApprovalHistory, Invoice, InvoiceStatus, User, UserRole
 from app.schemas.invoice import (
     ApprovalHistoryResponse,
     InvoiceCreate,
@@ -55,6 +55,38 @@ def _as_utc(dt):
         return None
     from datetime import timezone as _tz
     return dt if dt.tzinfo else dt.replace(tzinfo=_tz.utc)
+
+
+def _compute_invoice_alerts(invoice) -> list[str]:
+    """Banners contextuais que aparecem no detalhe da nota.
+
+    Alertam o criador, gestor, diretor e financeiro sobre:
+    - Nota emitida em mes anterior (atraso no envio)
+    - Vencimento muito proximo (<72h)
+    - Vencimento ja passou (urgencia maxima)
+    """
+    from datetime import date as _date, timedelta as _td
+    alerts: list[str] = []
+    today = _date.today()
+    if invoice.issue_date:
+        # Emitida em mes anterior — atraso de envio
+        if (invoice.issue_date.year, invoice.issue_date.month) < (today.year, today.month):
+            alerts.append(
+                "Nota emitida em mes anterior — envio atrasado pode comprometer prazo fiscal."
+            )
+    if invoice.due_date and invoice.status not in {InvoiceStatus.PAGO, InvoiceStatus.REPROVADO_GESTOR, InvoiceStatus.REPROVADO_DIRETOR}:
+        delta = (invoice.due_date - today).days
+        if delta < 0:
+            alerts.append(
+                f"Vencimento ja passou ha {abs(delta)} dia(s). Risco de juros/multa."
+            )
+        elif delta == 0:
+            alerts.append("Vence hoje — prioridade maxima.")
+        elif delta < 3:
+            alerts.append(
+                f"Vencimento em {delta} dia(s) — menos de 72h. Acelere a aprovacao."
+            )
+    return alerts
 
 
 def _history_response(entry: ApprovalHistory) -> ApprovalHistoryResponse:
@@ -91,6 +123,7 @@ def invoice_response(invoice: Invoice) -> InvoiceResponse:
         history=[_history_response(entry) for entry in history],
         department_name=dept.name if dept else None,
         can_cancel=_can_cancel(invoice),
+        alerts=_compute_invoice_alerts(invoice),
     )
 
 

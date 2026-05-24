@@ -743,10 +743,34 @@ async function initInvoiceDetail() {
   if (invoice.has_attachment) loadPdfInline(invoiceId);
 }
 
+function renderInvoiceAlerts(invoice, containerId) {
+  // Banners contextuais (emissao antiga, vencimento curto).
+  // Insere/atualiza dinamicamente acima do container alvo.
+  const target = document.getElementById(containerId);
+  if (!target) return;
+  const alertsId = `${containerId}-alerts-banner`;
+  let banner = document.getElementById(alertsId);
+  const items = invoice?.alerts || [];
+  if (!items.length) {
+    if (banner) banner.remove();
+    return;
+  }
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = alertsId;
+    banner.className = 'alert-banner alert-warning';
+    banner.style.marginBottom = '1rem';
+    target.parentNode.insertBefore(banner, target);
+  }
+  banner.innerHTML = '<strong>Atencao:</strong><ul>' +
+    items.map((m) => `<li>${escapeHtml(m)}</li>`).join('') + '</ul>';
+}
+
 function renderInvoiceDetail(invoice) {
   document.getElementById('detail-title').textContent = `Nota ${invoice.invoice_number}`;
   document.getElementById('detail-subtitle').textContent = `Criada por ${invoice.created_by.name} em ${formatDateTime(invoice.created_at)}`;
   document.getElementById('detail-status').innerHTML = statusBadge(invoice.status);
+  renderInvoiceAlerts(invoice, 'detail-grid');
   document.getElementById('detail-grid').innerHTML = [
     ['Valor', formatCurrency(invoice.amount)], ['Emissao', formatDate(invoice.issue_date)],
     ['Vencimento', formatDate(invoice.due_date)], ['Criador', invoice.created_by.name],
@@ -1895,6 +1919,7 @@ function _renderDrawerContent(invoice) {
   document.getElementById('drawer-title').textContent = `Nota ${invoice.invoice_number}`;
   document.getElementById('drawer-subtitle').textContent =
     `${escapeHtml(invoice.created_by.name)} · ${formatDateTime(invoice.created_at)}`;
+  renderInvoiceAlerts(invoice, 'drawer-grid');
   document.getElementById('drawer-status').innerHTML = statusBadge(invoice.status);
 
   // Link para página completa (edição, etc.)
