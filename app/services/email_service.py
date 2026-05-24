@@ -7,10 +7,13 @@ apenas loga e segue, evitando que email caido impeca aprovacao de notas.
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import smtplib
 import ssl
 import threading
+import urllib.error
+import urllib.request
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
@@ -75,30 +78,36 @@ def send_email(
     html: str,
     text: Optional[str] = None,
 ) -> bool:
-    """Envia email se SMTP configurado e habilitado. Retorna True/False."""
+    """Envia email via provider configurado (SMTP ou Resend). Best-effort."""
     cfg = get_smtp_settings(db)
     if not cfg or not cfg.enabled:
-        logger.info(f"[email] SMTP nao habilitado — pulando envio para {to_email}")
+        logger.info(f"[email] desabilitado — pulando envio para {to_email}")
         return False
-    if not cfg.smtp_host or not cfg.smtp_user or not cfg.smtp_password_enc:
-        logger.warning("[email] SMTP habilitado mas configuracao incompleta")
+    if not cfg.smtp_password_enc:
+        logger.warning("[email] habilitado mas sem credencial (senha/API key)")
         return False
 
     try:
-        password = decrypt_password(cfg.smtp_password_enc)
+        secret = decrypt_password(cfg.smtp_password_enc)
     except Exception as exc:  # noqa: BLE001
-        logger.error(f"[email] falha ao descriptografar senha SMTP: {exc}")
+        logger.error(f"[email] falha ao descriptografar credencial: {exc}")
         return False
 
+    provider = (cfg.provider or "SMTP").upper()
+    if provider == "RESEND":
+        return _send_via_resend(cfg, secret, to_email, subject, html, text)
+    return _send_via_smtp(cfg, secret, to_email, subject, html, text)
+
+
+def _send_via_smtp(cfg, password, to_email, subject, html, text):
+    if not cfg.smtp_host or not cfg.smtp_user:
+        logger.warning("[email] SMTP sem host ou usuario configurado")
+        return False
     msg = _build_message(
         cfg.smtp_from_email or cfg.smtp_user,
         cfg.smtp_from_name or "Economart",
-        to_email,
-        subject,
-        html,
-        text,
+        to_email, subject, html, text,
     )
-
     try:
         if cfg.use_tls:
             ctx = ssl.create_default_context()
@@ -112,10 +121,52 @@ def send_email(
             with smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=15) as server:
                 server.login(cfg.smtp_user, password)
                 server.send_message(msg)
-        logger.info(f"[email] enviado para {to_email}: {subject}")
+        logger.info(f"[email-smtp] enviado para {to_email}: {subject}")
         return True
-    except Exception as exc:  # noqa: BLE001 — nao deve quebrar fluxo
-        logger.error(f"[email] falha ao enviar para {to_email}: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"[email-smtp] falha para {to_email}: {exc}")
+        return False
+
+
+def _send_via_resend(cfg, api_key, to_email, subject, html, text):
+    """Envia via Resend HTTP API. Funciona em Railway (sem bloqueio SMTP)."""
+    from_email = cfg.smtp_from_email or "onboarding@resend.dev"
+    from_name = cfg.smtp_from_name or "Economart"
+    payload = {
+        "from": f"{from_name} <{from_email}>",
+        "to": [to_email],
+        "subject": subject,
+        "html": html,
+        "text": text or "Esta mensagem requer um cliente que renderize HTML.",
+        "headers": {
+            "X-Auto-Response-Suppress": "All",
+            "Reply-To": "noreply@economart.local",
+        },
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=data,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = resp.read().decode("utf-8")
+            logger.info(f"[email-resend] enviado para {to_email}: {subject} ({resp.status})")
+            return True
+    except urllib.error.HTTPError as exc:
+        try:
+            err_body = exc.read().decode("utf-8")
+        except Exception:  # noqa: BLE001
+            err_body = "(sem corpo)"
+        logger.error(f"[email-resend] HTTP {exc.code} para {to_email}: {err_body}")
+        return False
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"[email-resend] falha para {to_email}: {exc}")
         return False
 
 

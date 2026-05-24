@@ -15,13 +15,20 @@ def utc_now() -> datetime:
 
 
 class SmtpSettings(Base):
+    """Configuracao de envio de email — suporta SMTP tradicional e HTTP API (Resend).
+
+    'provider' determina qual caminho usar:
+    - 'SMTP'   : usa smtp_host/port/user/password/use_tls (Gmail, Outlook, etc.)
+    - 'RESEND' : usa smtp_password_enc como API key, ignora demais campos SMTP
+    """
     __tablename__ = "smtp_settings"
 
     id = Column(Integer, primary_key=True, default=1)  # forca singleton
+    provider = Column(String(20), nullable=False, default="SMTP")  # SMTP | RESEND
     smtp_host = Column(String(255), nullable=False, default="")
     smtp_port = Column(Integer, nullable=False, default=587)
     smtp_user = Column(String(255), nullable=False, default="")
-    # Senha criptografada com Fernet via MASTER_ENCRYPTION_KEY
+    # SMTP: senha do app. RESEND: API key (re_...). Sempre criptografado com Fernet.
     smtp_password_enc = Column(Text, nullable=True)
     smtp_from_email = Column(String(255), nullable=False, default="")
     smtp_from_name = Column(String(255), nullable=False, default="Economart Notas")

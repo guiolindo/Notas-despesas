@@ -100,6 +100,9 @@ def _run_schema_migrations() -> None:
         # Password reset tokens (criados sob demanda)
         pg("CREATE INDEX IF NOT EXISTS idx_pwreset_user ON password_reset_codes(user_id)"),
         pg("ALTER TABLE password_reset_codes ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0"),
+
+        # Provedor de email (SMTP ou HTTP API tipo Resend)
+        pg("ALTER TABLE smtp_settings ADD COLUMN IF NOT EXISTS provider VARCHAR(20) DEFAULT 'SMTP'"),
     ]
     with engine.connect() as conn:
         for stmt in migrations:

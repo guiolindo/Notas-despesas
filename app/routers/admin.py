@@ -725,21 +725,30 @@ def anonymize_terminated_user(
 # ─── SMTP / Email automatico ────────────────────────────────────────────────
 
 class SmtpSettingsRequest(BaseModel):
-    smtp_host: str
+    provider: str = "SMTP"  # SMTP | RESEND
+    smtp_host: str = ""
     smtp_port: int = 587
-    smtp_user: str
-    smtp_password: str | None = None  # None = manter atual
+    smtp_user: str = ""
+    smtp_password: str | None = None  # None = manter atual (senha SMTP ou API key Resend)
     smtp_from_email: str
     smtp_from_name: str = "Economart Notas"
     use_tls: bool = True
     enabled: bool = True
 
-    @field_validator("smtp_host", "smtp_user", "smtp_from_email")
+    @field_validator("smtp_from_email")
     @classmethod
     def not_empty(cls, value: str) -> str:
         value = value.strip()
         if not value:
             raise ValueError("Campo obrigatorio")
+        return value
+
+    @field_validator("provider")
+    @classmethod
+    def valid_provider(cls, value: str) -> str:
+        value = (value or "SMTP").upper()
+        if value not in {"SMTP", "RESEND"}:
+            raise ValueError("Provider deve ser SMTP ou RESEND")
         return value
 
 
@@ -748,11 +757,12 @@ def get_smtp_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("ADMIN")),
 ):
-    """Retorna config SMTP atual (senha NUNCA exposta)."""
+    """Retorna config atual. Senha/API key NUNCA expostas."""
     cfg = email_service.get_smtp_settings(db)
     if not cfg:
         return {
             "configured": False,
+            "provider": "RESEND",  # default sugerido para o user
             "smtp_host": "",
             "smtp_port": 587,
             "smtp_user": "",
@@ -764,6 +774,7 @@ def get_smtp_config(
         }
     return {
         "configured": True,
+        "provider": cfg.provider or "SMTP",
         "smtp_host": cfg.smtp_host,
         "smtp_port": cfg.smtp_port,
         "smtp_user": cfg.smtp_user,
@@ -788,6 +799,7 @@ def update_smtp_config(
         cfg = SmtpSettings(id=1)
         db.add(cfg)
 
+    cfg.provider = body.provider
     cfg.smtp_host = body.smtp_host.strip()
     cfg.smtp_port = body.smtp_port
     cfg.smtp_user = body.smtp_user.strip()
@@ -795,7 +807,7 @@ def update_smtp_config(
     cfg.smtp_from_name = body.smtp_from_name.strip() or "Economart Notas"
     cfg.use_tls = body.use_tls
     cfg.enabled = body.enabled
-    if body.smtp_password:  # so atualiza se nova senha foi enviada
+    if body.smtp_password:  # SMTP password OR Resend API key
         cfg.smtp_password_enc = email_service.encrypt_password(body.smtp_password)
     cfg.updated_at = _now()
     cfg.updated_by_id = current_user.id
@@ -803,10 +815,10 @@ def update_smtp_config(
     _add_audit_log(
         db, request, current_user,
         "UPDATE_SMTP_CONFIG", "smtp_settings",
-        f"Atualizou config SMTP: host={cfg.smtp_host} from={cfg.smtp_from_email} enabled={cfg.enabled}",
+        f"Atualizou config email: provider={cfg.provider} from={cfg.smtp_from_email} enabled={cfg.enabled}",
     )
     db.commit()
-    return {"message": "Configuracao SMTP atualizada"}
+    return {"message": "Configuracao atualizada"}
 
 
 @router.post("/smtp/test")
