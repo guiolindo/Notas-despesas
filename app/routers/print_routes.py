@@ -149,6 +149,7 @@ def verify_invoice(invoice_id: str, request: Request, db: Session = Depends(get_
         "invoice": invoice,
         "auth_hash": None,
         "director_reviewed_at_br": None,
+        "amount_formatted": "-",
     }
     if invoice:
         context["auth_hash"] = invoice_hash(invoice)
@@ -160,4 +161,10 @@ def verify_invoice(invoice_id: str, request: Request, db: Session = Depends(get_
                 dt = dt.replace(tzinfo=_tz.utc)
             br = dt.astimezone(_tz(_td(hours=-3)))
             context["director_reviewed_at_br"] = br.strftime("%d/%m/%Y %H:%M")
+        # Formatacao monetaria pt-BR (1.234,56)
+        try:
+            v = float(invoice.amount)
+            context["amount_formatted"] = f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        except Exception:  # noqa: BLE001
+            context["amount_formatted"] = f"R$ {invoice.amount}"
     return templates.TemplateResponse(request, "verify.html", context)

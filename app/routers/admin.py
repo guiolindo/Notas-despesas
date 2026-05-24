@@ -422,6 +422,7 @@ def reset_password(
         )
 
     user.hashed_password = hash_password(body.new_password)
+    user.password_changed_at = datetime.now(timezone.utc)
     user.must_change_password = True
     user.login_attempts = 0
     user.blocked_until = None
@@ -794,10 +795,20 @@ def update_smtp_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("ADMIN")),
 ):
+    from sqlalchemy.exc import IntegrityError
     cfg = email_service.get_smtp_settings(db)
     if not cfg:
         cfg = SmtpSettings(id=1)
         db.add(cfg)
+        # Tenta flush para detectar conflito antes de aplicar mudancas (race
+        # com outro admin salvando simultaneamente)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            cfg = email_service.get_smtp_settings(db)  # le o que o outro salvou
+            if not cfg:
+                raise HTTPException(500, "Falha ao salvar configuracao. Tente novamente.")
 
     cfg.provider = body.provider
     cfg.smtp_host = body.smtp_host.strip()

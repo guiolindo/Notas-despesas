@@ -270,16 +270,17 @@ def reset_password(
 ):
     from app.models import PasswordResetCode
 
+    # Valida complexidade ANTES de tocar no DB. Senao, atacante distingue
+    # email cadastrado de nao cadastrado pelo status code 422 vs 400.
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Codigo invalido ou expirado")
+    if not any(c.isalpha() for c in body.new_password) or not any(c.isdigit() for c in body.new_password):
+        raise HTTPException(status_code=400, detail="Codigo invalido ou expirado")
+
     email = sanitize_email(body.email)
     user = db.query(User).filter(User.email == email, User.is_active.is_(True)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Codigo invalido ou expirado")
-
-    # Validacao de complexidade
-    if len(body.new_password) < 8:
-        raise HTTPException(status_code=422, detail="Senha deve ter no minimo 8 caracteres")
-    if not any(c.isalpha() for c in body.new_password) or not any(c.isdigit() for c in body.new_password):
-        raise HTTPException(status_code=422, detail="Senha deve conter letra e numero")
 
     now = datetime.now(timezone.utc)
     # Busca codigos ativos do usuario que ainda nao excederam tentativas
@@ -335,6 +336,7 @@ def reset_password(
     # Aplica
     matched.used_at = now
     user.hashed_password = hash_password(body.new_password)
+    user.password_changed_at = datetime.now(timezone.utc)
     user.must_change_password = False
     user.login_attempts = 0
     user.blocked_until = None
@@ -389,6 +391,8 @@ def change_password(
         )
 
     current_user.hashed_password = hash_password(body.new_password)
+    current_user.password_changed_at = datetime.now(timezone.utc)
+    user.password_changed_at = datetime.now(timezone.utc)
     current_user.must_change_password = False
     db.add(
         AuditLog(

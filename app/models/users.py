@@ -37,6 +37,9 @@ class User(Base):
     login_attempts = Column(Integer, default=0, nullable=False)
     blocked_until = Column(DateTime, nullable=True)
     must_change_password = Column(Boolean, default=False, nullable=False)
+    # Marca o instante da ultima troca de senha. Tokens emitidos ANTES desse
+    # timestamp sao considerados invalidos (forca relogin apos reset).
+    password_changed_at = Column(DateTime, default=utc_now, nullable=True)
 
     # Setor ao qual o usuário pertence
     department_id = Column(String(36), ForeignKey("departments.id"), nullable=True)

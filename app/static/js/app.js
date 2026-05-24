@@ -390,20 +390,25 @@ function initChangePasswordPage() {
     window.location.href = '/login';
     return;
   }
-  // Mostra banner amarelo se o usuario foi forcado a trocar senha (admin
-  // resetou ou e primeiro login). Senao, esta so trocando voluntariamente.
+  // Banner so se forcado. Bloqueio de navegacao tambem so se forcado —
+  // troca voluntaria nao deve prender o usuario na pagina.
   const user = Auth.getUser();
-  if (user?.must_change_password) {
+  const isForced = Boolean(user?.must_change_password);
+  if (isForced) {
     document.getElementById('force-change-banner')?.classList.remove('hidden');
   }
   let changed = false;
-  document.querySelectorAll('a').forEach((link) => {
-    link.addEventListener('click', (event) => {
-      if (!changed) event.preventDefault();
+  // So bloqueia navegacao se a troca foi FORCADA (admin resetou ou e primeiro
+  // login). Troca voluntaria deve permitir cancelar.
+  if (isForced) {
+    document.querySelectorAll('a').forEach((link) => {
+      link.addEventListener('click', (event) => {
+        if (!changed) event.preventDefault();
+      });
     });
-  });
+  }
   window.addEventListener('beforeunload', (event) => {
-    if (!changed) {
+    if (!changed && isForced) {
       event.preventDefault();
       event.returnValue = '';
     }
@@ -2289,6 +2294,32 @@ async function initAdminDepartments() {
     if (e.target === document.getElementById('dept-modal')) closeDeptModal();
   });
 }
+
+// ── Listeners globais (ESC fecha modal, click no backdrop fecha) ────────────
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    // Fecha o ultimo modal visivel (z-index mais alto)
+    const open = document.querySelectorAll('.modal-backdrop:not(.hidden)');
+    if (open.length) {
+      open[open.length - 1].classList.add('hidden');
+      event.stopPropagation();
+    }
+    // Fecha drawer aberto
+    const drawer = document.querySelector('.drawer-backdrop:not(.hidden)');
+    if (drawer) drawer.classList.add('hidden');
+  }
+});
+document.addEventListener('click', (event) => {
+  // Click no backdrop (nao no conteudo interno) fecha o modal
+  if (event.target.classList?.contains('modal-backdrop')) {
+    event.target.classList.add('hidden');
+  }
+  if (event.target.classList?.contains('drawer-backdrop')) {
+    event.target.classList.add('hidden');
+  }
+});
+
 
 // ── DOMContentLoaded dispatch ────────────────────────────────────────────────
 

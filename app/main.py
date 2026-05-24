@@ -103,14 +103,26 @@ def _run_schema_migrations() -> None:
 
         # Provedor de email (SMTP ou HTTP API tipo Resend)
         pg("ALTER TABLE smtp_settings ADD COLUMN IF NOT EXISTS provider VARCHAR(20) DEFAULT 'SMTP'"),
+
+        # Invalidacao de JWT apos reset de senha — tokens emitidos antes
+        # desse timestamp sao rejeitados (forca relogin)
+        pg("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP"),
     ]
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
     with engine.connect() as conn:
         for stmt in migrations:
             try:
                 conn.execute(text(stmt))
                 conn.commit()
-            except Exception:
-                pass  # SQLite: coluna/indice ja existe
+            except Exception as _exc:
+                # SQLite: coluna/indice ja existe (esperado). Mas se for outro
+                # tipo de erro em PG, queremos pelo menos um aviso no log.
+                msg = str(_exc).lower()
+                if ("already exists" in msg or "duplicate column" in msg
+                        or "duplicate object" in msg):
+                    continue
+                _log.warning("[migration] '%s' falhou: %s", stmt[:60], _exc)
 
 
 _run_schema_migrations()

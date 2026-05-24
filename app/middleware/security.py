@@ -56,4 +56,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             timestamps.append(now)
             login_attempts_by_ip[ip] = timestamps
 
+            # Evita memory leak: a cada 100 requests faz sweep removendo
+            # IPs cujas janelas expiraram. Sem isso, atacante distribuido
+            # com IPs diferentes inflaria o dict indefinidamente.
+            if len(login_attempts_by_ip) > 1000 and len(login_attempts_by_ip) % 100 == 0:
+                expired = [
+                    k for k, v in login_attempts_by_ip.items()
+                    if not any(t > window_start for t in v)
+                ]
+                for k in expired:
+                    del login_attempts_by_ip[k]
+
         return await call_next(request)

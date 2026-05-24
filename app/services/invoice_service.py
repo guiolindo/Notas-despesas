@@ -267,13 +267,18 @@ def _get_director(db: Session, director_id: str) -> User:
 def _get_manager_for_user(db: Session, user: User) -> User:
     """Retorna o gestor do setor do funcionario.
 
-    Exige que o gestor esteja ATIVO. Sem isso, funcionario com gestor
-    desligado mandaria a nota para um destino que nunca aprovaria.
+    Exige que o gestor: (a) esteja ATIVO e (b) ainda tenha role MANAGER.
+    Sem (b), funcionario com chefe promovido a DIRECTOR teria nota presa
+    porque manager_review exige role MANAGER do aprovador.
     """
     if user.manager_id:
         manager = (
             db.query(User)
-            .filter(User.id == user.manager_id, User.is_active.is_(True))
+            .filter(
+                User.id == user.manager_id,
+                User.is_active.is_(True),
+                User.role == UserRole.MANAGER,
+            )
             .first()
         )
         if manager:
@@ -281,7 +286,7 @@ def _get_manager_for_user(db: Session, user: User) -> User:
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=(
-            "Seu gestor nao esta mais ativo no sistema ou voce nao tem gestor cadastrado. "
+            "Seu gestor nao esta mais ativo ou foi promovido para outra funcao. "
             "Contate o administrador para atualizar seu cadastro."
         ),
     )
@@ -377,11 +382,23 @@ def submit_invoice(
     invoice = _get_invoice(db, invoice_id)
     if invoice.created_by_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissao insuficiente")
-    if invoice.status != InvoiceStatus.RASCUNHO:
+    # Aceita reenvio de notas reprovadas (apos edicao) — usuario nao precisa
+    # criar nota nova a cada reprovacao.
+    if invoice.status not in {
+        InvoiceStatus.RASCUNHO,
+        InvoiceStatus.REPROVADO_GESTOR,
+        InvoiceStatus.REPROVADO_DIRETOR,
+    }:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Nota no status {invoice.status.value} nao pode ser enviada",
         )
+    # Limpa rastros do roteamento anterior — novo envio pode ir pra outro
+    # gestor/diretor (transferencia, mudanca de fluxo)
+    invoice.manager_id = None
+    invoice.director_id = None
+    invoice.manager_reviewed_at = None
+    invoice.director_reviewed_at = None
     _do_submit(db, invoice, user, director_id, ip, port)
     db.commit()
     return _get_invoice(db, invoice.id)
@@ -656,6 +673,10 @@ def update_invoice(
 
 
 def mark_paid(db: Session, invoice_id: str, finance_user: User, ip: str | None = None, port: int | None = None) -> Invoice:
+    # Defesa em profundidade: router ja exige role FINANCE, mas validamos
+    # tambem aqui caso esta funcao seja chamada de outro contexto.
+    if finance_user.role not in {UserRole.FINANCE, UserRole.ADMIN}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissao insuficiente")
     invoice = _get_invoice(db, invoice_id)
     if invoice.status != InvoiceStatus.APROVADO:
         raise HTTPException(
