@@ -6,9 +6,10 @@ from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import AuditLog, Department, User, UserRole
+from app.models import AuditLog, Department, SmtpSettings, User, UserRole
 from app.security.dependencies import require_role
 from app.security.hashing import hash_password, pseudonymize_ip
+from app.services import email_service
 
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
@@ -719,3 +720,125 @@ def anonymize_terminated_user(
         "message": "Pseudonimizacao concluida. Dados de identificacao civil substituidos. "
                    "Historico fiscal e de aprovacoes preservado (conformidade Art. 16, I — LGPD).",
     }
+
+
+# ─── SMTP / Email automatico ────────────────────────────────────────────────
+
+class SmtpSettingsRequest(BaseModel):
+    smtp_host: str
+    smtp_port: int = 587
+    smtp_user: str
+    smtp_password: str | None = None  # None = manter atual
+    smtp_from_email: str
+    smtp_from_name: str = "Economart Notas"
+    use_tls: bool = True
+    enabled: bool = True
+
+    @field_validator("smtp_host", "smtp_user", "smtp_from_email")
+    @classmethod
+    def not_empty(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Campo obrigatorio")
+        return value
+
+
+@router.get("/smtp")
+def get_smtp_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("ADMIN")),
+):
+    """Retorna config SMTP atual (senha NUNCA exposta)."""
+    cfg = email_service.get_smtp_settings(db)
+    if not cfg:
+        return {
+            "configured": False,
+            "smtp_host": "",
+            "smtp_port": 587,
+            "smtp_user": "",
+            "smtp_from_email": "",
+            "smtp_from_name": "Economart Notas",
+            "use_tls": True,
+            "enabled": False,
+            "has_password": False,
+        }
+    return {
+        "configured": True,
+        "smtp_host": cfg.smtp_host,
+        "smtp_port": cfg.smtp_port,
+        "smtp_user": cfg.smtp_user,
+        "smtp_from_email": cfg.smtp_from_email,
+        "smtp_from_name": cfg.smtp_from_name,
+        "use_tls": cfg.use_tls,
+        "enabled": cfg.enabled,
+        "has_password": bool(cfg.smtp_password_enc),
+        "updated_at": _utc_iso(cfg.updated_at),
+    }
+
+
+@router.put("/smtp")
+def update_smtp_config(
+    body: SmtpSettingsRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("ADMIN")),
+):
+    cfg = email_service.get_smtp_settings(db)
+    if not cfg:
+        cfg = SmtpSettings(id=1)
+        db.add(cfg)
+
+    cfg.smtp_host = body.smtp_host.strip()
+    cfg.smtp_port = body.smtp_port
+    cfg.smtp_user = body.smtp_user.strip()
+    cfg.smtp_from_email = body.smtp_from_email.strip()
+    cfg.smtp_from_name = body.smtp_from_name.strip() or "Economart Notas"
+    cfg.use_tls = body.use_tls
+    cfg.enabled = body.enabled
+    if body.smtp_password:  # so atualiza se nova senha foi enviada
+        cfg.smtp_password_enc = email_service.encrypt_password(body.smtp_password)
+    cfg.updated_at = _now()
+    cfg.updated_by_id = current_user.id
+
+    _add_audit_log(
+        db, request, current_user,
+        "UPDATE_SMTP_CONFIG", "smtp_settings",
+        f"Atualizou config SMTP: host={cfg.smtp_host} from={cfg.smtp_from_email} enabled={cfg.enabled}",
+    )
+    db.commit()
+    return {"message": "Configuracao SMTP atualizada"}
+
+
+@router.post("/smtp/test")
+def test_smtp_config(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("ADMIN")),
+):
+    """Envia email de teste para o admin que solicitou."""
+    cfg = email_service.get_smtp_settings(db)
+    if not cfg or not cfg.smtp_password_enc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Configuracao SMTP incompleta — salve antes de testar.",
+        )
+    if not current_user.email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seu usuario nao tem email cadastrado para receber o teste.",
+        )
+
+    # Forca enabled=True temporariamente apenas para esse envio
+    was_enabled = cfg.enabled
+    cfg.enabled = True
+    subject, html, text = email_service.template_smtp_test(current_user.name)
+    ok = email_service.send_email(db, current_user.email, subject, html, text)
+    cfg.enabled = was_enabled
+    db.commit()
+
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Falha ao enviar email. Verifique host/porta/credenciais nos logs do servidor.",
+        )
+    return {"message": f"Email de teste enviado para {current_user.email}"}

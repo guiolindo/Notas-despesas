@@ -18,6 +18,16 @@ def login_page(request: Request):
     return templates.TemplateResponse(request, "login.html")
 
 
+@router.get("/forgot-password", response_class=HTMLResponse)
+def forgot_password_page(request: Request):
+    return templates.TemplateResponse(request, "forgot_password.html")
+
+
+@router.get("/reset-password", response_class=HTMLResponse)
+def reset_password_page(request: Request):
+    return templates.TemplateResponse(request, "reset_password.html")
+
+
 @router.get("/privacidade", response_class=HTMLResponse)
 def privacy_page(request: Request):
     return templates.TemplateResponse(request, "privacy.html")
@@ -184,3 +194,11 @@ def admin_departments_page(request: Request, db: Session = Depends(get_db)):
     if not isinstance(guard, User):
         return guard
     return templates.TemplateResponse(request, "admin/departments.html", {})
+
+
+@router.get("/admin/smtp", response_class=HTMLResponse)
+def admin_smtp_page(request: Request, db: Session = Depends(get_db)):
+    guard = require_page_role(request, db, "ADMIN")
+    if not isinstance(guard, User):
+        return guard
+    return templates.TemplateResponse(request, "admin/smtp.html", {})

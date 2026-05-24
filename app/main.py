@@ -96,6 +96,9 @@ def _run_schema_migrations() -> None:
         pg("CREATE INDEX IF NOT EXISTS idx_history_invoice ON approval_history(invoice_id)"),
         pg("CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)"),
         pg("CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active)"),
+
+        # Password reset tokens (criados sob demanda)
+        pg("CREATE INDEX IF NOT EXISTS idx_pwreset_user ON password_reset_codes(user_id)"),
     ]
     with engine.connect() as conn:
         for stmt in migrations:

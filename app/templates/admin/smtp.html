@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Email Automatico - Configuracao{% endblock %}
+{% block page_id %}admin-smtp{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Email automatico (SMTP)</h1>
+  <p class="text-muted">Configure o servidor de email que enviara notificacoes automaticas.</p>
+</div>
+
+<div id="smtp-summary" class="card hidden">
+  <div class="card-body">
+    <p><strong>Status:</strong> <span id="smtp-status-badge"></span></p>
+    <p><strong>Servidor:</strong> <span id="smtp-summary-host"></span></p>
+    <p><strong>Email remetente:</strong> <span id="smtp-summary-from"></span></p>
+    <p class="text-muted" id="smtp-summary-updated"></p>
+    <div class="form-actions">
+      <button class="btn btn-ghost" id="smtp-edit-btn" type="button">Editar</button>
+      <button class="btn btn-primary" id="smtp-test-btn" type="button">Enviar email de teste</button>
+    </div>
+  </div>
+</div>
+
+<form class="form-card hidden" id="smtp-form">
+  <div class="form-grid">
+    <div class="form-group">
+      <label for="smtp-host">Servidor SMTP <span class="field-required">*</span></label>
+      <input class="form-input" id="smtp-host" placeholder="smtp.gmail.com" required>
+      <div class="field-help">Gmail: smtp.gmail.com — Outlook: smtp.office365.com</div>
+    </div>
+    <div class="form-group">
+      <label for="smtp-port">Porta <span class="field-required">*</span></label>
+      <input class="form-input" id="smtp-port" type="number" value="587" required>
+      <div class="field-help">587 com TLS (padrao) ou 465 com SSL</div>
+    </div>
+    <div class="form-group">
+      <label for="smtp-user">Usuario / Email <span class="field-required">*</span></label>
+      <input class="form-input" id="smtp-user" type="email" placeholder="despesas@gmail.com" required>
+    </div>
+    <div class="form-group">
+      <label for="smtp-password">Senha do app <span class="field-required" id="smtp-password-required">*</span></label>
+      <input class="form-input" id="smtp-password" type="password" placeholder="••••••••••••••••">
+      <div class="field-help">No Gmail: ative 2FA e gere um App Password em myaccount.google.com/apppasswords</div>
+    </div>
+    <div class="form-group">
+      <label for="smtp-from-email">Email remetente <span class="field-required">*</span></label>
+      <input class="form-input" id="smtp-from-email" type="email" required>
+      <div class="field-help">Geralmente o mesmo do usuario acima</div>
+    </div>
+    <div class="form-group">
+      <label for="smtp-from-name">Nome remetente</label>
+      <input class="form-input" id="smtp-from-name" value="Economart Notas">
+    </div>
+  </div>
+  <label class="checkbox-row">
+    <input type="checkbox" id="smtp-use-tls" checked>
+    Usar TLS (recomendado)
+  </label>
+  <label class="checkbox-row">
+    <input type="checkbox" id="smtp-enabled" checked>
+    Habilitar envio automatico de emails
+  </label>
+  <div class="form-actions">
+    <button class="btn btn-ghost" type="button" id="smtp-cancel-btn">Cancelar</button>
+    <button class="btn btn-primary" type="submit">Salvar configuracao</button>
+  </div>
+</form>
+{% endblock %}

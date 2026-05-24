@@ -263,8 +263,14 @@ function addApprovalQueueLink(role) {
     audit.id = 'nav-admin-audit';
     audit.className = 'nav-item';
     audit.innerHTML = '<span class="nav-icon">&#9998;</span> Auditoria';
+    const smtp = document.createElement('a');
+    smtp.href = '/admin/smtp';
+    smtp.id = 'nav-admin-smtp';
+    smtp.className = 'nav-item';
+    smtp.innerHTML = '<span class="nav-icon">&#9993;</span> Email automatico';
     nav.insertBefore(users, document.getElementById('nav-alerts'));
     nav.insertBefore(depts, document.getElementById('nav-alerts'));
+    nav.insertBefore(smtp, document.getElementById('nav-alerts'));
     nav.insertBefore(audit, document.getElementById('nav-alerts'));
   }
   if (['MANAGER', 'DIRECTOR'].includes(role) && !document.getElementById('nav-approval-queue')) {
@@ -2342,7 +2348,175 @@ document.addEventListener('DOMContentLoaded', () => {
     initShell().then(() => initAdminAuditLogs());
   } else if (page === 'admin-departments') {
     initShell().then(() => initAdminDepartments());
+  } else if (page === 'admin-smtp') {
+    initShell().then(() => initAdminSmtp());
+  } else if (page === 'forgot-password') {
+    initForgotPasswordPage();
+  } else if (page === 'reset-password') {
+    initResetPasswordPage();
   } else if (document.querySelector('.layout')) {
     initShell();
   }
 });
+
+
+// ─── Esqueci minha senha ──────────────────────────────────────────────────
+
+function initForgotPasswordPage() {
+  document.getElementById('forgot-password-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const email = document.getElementById('forgot-email').value.trim();
+    if (!email) return;
+    const msgEl = document.getElementById('forgot-message');
+    try {
+      await fetch('/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      msgEl.textContent = 'Se este email estiver cadastrado, voce recebera um codigo em alguns segundos. Verifique sua caixa de entrada e spam.';
+      msgEl.classList.remove('hidden');
+      setTimeout(() => { window.location.href = `/reset-password?email=${encodeURIComponent(email)}`; }, 2500);
+    } catch (e) {
+      showToast('Erro ao processar pedido. Tente novamente.', 'error');
+    }
+  });
+}
+
+function initResetPasswordPage() {
+  // Pre-preenche email se veio via querystring
+  const params = new URLSearchParams(window.location.search);
+  const emailParam = params.get('email');
+  if (emailParam) document.getElementById('reset-email').value = emailParam;
+
+  document.getElementById('reset-password-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const errorEl = document.getElementById('reset-error');
+    errorEl.classList.add('hidden');
+    const payload = {
+      email: document.getElementById('reset-email').value.trim(),
+      code: document.getElementById('reset-code').value.trim(),
+      new_password: document.getElementById('reset-new-password').value
+    };
+    try {
+      const resp = await fetch('/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Erro');
+      showToast('Senha redefinida! Faca login com a nova senha.', 'success');
+      setTimeout(() => { window.location.href = '/login'; }, 1500);
+    } catch (e) {
+      errorEl.textContent = e.message;
+      errorEl.classList.remove('hidden');
+    }
+  });
+}
+
+
+// ─── Admin SMTP ───────────────────────────────────────────────────────────
+
+async function initAdminSmtp() {
+  document.getElementById('smtp-form')?.addEventListener('submit', saveAdminSmtp);
+  document.getElementById('smtp-edit-btn')?.addEventListener('click', showSmtpForm);
+  document.getElementById('smtp-cancel-btn')?.addEventListener('click', loadAdminSmtp);
+  document.getElementById('smtp-test-btn')?.addEventListener('click', testSmtp);
+  await loadAdminSmtp();
+}
+
+async function loadAdminSmtp() {
+  try {
+    const cfg = await apiFetch('/api/admin/smtp');
+    const summary = document.getElementById('smtp-summary');
+    const form = document.getElementById('smtp-form');
+    if (cfg.configured && cfg.has_password) {
+      // Mostra so resumo, esconde form (dados sensiveis nao expostos)
+      document.getElementById('smtp-status-badge').innerHTML = cfg.enabled
+        ? '<span class="status-badge status-aprovado">Ativo</span>'
+        : '<span class="status-badge status-rascunho">Desabilitado</span>';
+      document.getElementById('smtp-summary-host').textContent = cfg.smtp_host + ':' + cfg.smtp_port;
+      document.getElementById('smtp-summary-from').textContent = cfg.smtp_from_email;
+      document.getElementById('smtp-summary-updated').textContent =
+        cfg.updated_at ? `Atualizado em ${formatDateTime(cfg.updated_at)}` : '';
+      summary.classList.remove('hidden');
+      form.classList.add('hidden');
+    } else {
+      // Sem config — mostra form vazio
+      summary.classList.add('hidden');
+      showSmtpForm(null, cfg);
+    }
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+function showSmtpForm(_evt, cfg) {
+  const form = document.getElementById('smtp-form');
+  const summary = document.getElementById('smtp-summary');
+  // Se nao recebeu cfg, busca atual via async
+  if (!cfg) {
+    apiFetch('/api/admin/smtp').then((data) => populateSmtpForm(data));
+  } else {
+    populateSmtpForm(cfg);
+  }
+  form.classList.remove('hidden');
+  summary.classList.add('hidden');
+}
+
+function populateSmtpForm(cfg) {
+  document.getElementById('smtp-host').value = cfg.smtp_host || '';
+  document.getElementById('smtp-port').value = cfg.smtp_port || 587;
+  document.getElementById('smtp-user').value = cfg.smtp_user || '';
+  document.getElementById('smtp-from-email').value = cfg.smtp_from_email || '';
+  document.getElementById('smtp-from-name').value = cfg.smtp_from_name || 'Economart Notas';
+  document.getElementById('smtp-use-tls').checked = cfg.use_tls !== false;
+  document.getElementById('smtp-enabled').checked = cfg.enabled !== false;
+  document.getElementById('smtp-password').value = '';
+  // Se ja existe senha, indica que pode deixar em branco para manter
+  const passwordHelp = document.getElementById('smtp-password-required');
+  if (cfg.has_password) {
+    passwordHelp.textContent = '(deixe em branco para manter atual)';
+    document.getElementById('smtp-password').placeholder = '••••••••••••••••';
+  } else {
+    passwordHelp.textContent = '*';
+  }
+}
+
+async function saveAdminSmtp(event) {
+  event.preventDefault();
+  const payload = {
+    smtp_host: document.getElementById('smtp-host').value.trim(),
+    smtp_port: parseInt(document.getElementById('smtp-port').value, 10) || 587,
+    smtp_user: document.getElementById('smtp-user').value.trim(),
+    smtp_from_email: document.getElementById('smtp-from-email').value.trim(),
+    smtp_from_name: document.getElementById('smtp-from-name').value.trim(),
+    use_tls: document.getElementById('smtp-use-tls').checked,
+    enabled: document.getElementById('smtp-enabled').checked,
+  };
+  const password = document.getElementById('smtp-password').value;
+  if (password) payload.smtp_password = password;
+  try {
+    await apiFetch('/api/admin/smtp', { method: 'PUT', body: JSON.stringify(payload) });
+    showToast('Configuracao salva com sucesso.', 'success');
+    await loadAdminSmtp();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function testSmtp() {
+  const btn = document.getElementById('smtp-test-btn');
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+  try {
+    const resp = await apiFetch('/api/admin/smtp/test', { method: 'POST' });
+    showToast(resp.message || 'Email de teste enviado!', 'success');
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Enviar email de teste';
+  }
+}

@@ -13,6 +13,7 @@ from app.models import (
     UserRole,
 )
 from app.services.drive_service import drive_service
+from app.services import email_service
 
 
 FSM_TRANSITIONS = {
@@ -35,6 +36,70 @@ def _sanitize_text(value: str | None) -> str | None:
     if value is None:
         return None
     return value.strip().replace("\x00", "")
+
+
+def _safe_currency(value) -> str:
+    try:
+        return f"R$ {float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except Exception:  # noqa: BLE001
+        return str(value)
+
+
+def _notify_approver(db: Session, recipient: User, invoice: Invoice) -> None:
+    """Envia email avisando que ha nota nova para aprovar. Best-effort."""
+    if not recipient or not recipient.email or not recipient.is_active:
+        return
+    subject, html, text = email_service.template_new_invoice_for_approver(
+        approver_name=recipient.name,
+        creator_name=invoice.created_by.name if invoice.created_by else "Sistema",
+        invoice_number=invoice.invoice_number,
+        amount=_safe_currency(invoice.amount),
+        public_url=f"/invoices/{invoice.id}",
+    )
+    try:
+        email_service.send_email(db, recipient.email, subject, html, text)
+    except Exception:  # noqa: BLE001 — nunca quebra fluxo
+        pass
+
+
+def _notify_rejection(db: Session, invoice: Invoice, rejected_by: User, reason: str | None) -> None:
+    creator = invoice.created_by
+    if not creator or not creator.email or not creator.is_active:
+        return
+    subject, html, text = email_service.template_invoice_rejected(
+        creator_name=creator.name,
+        invoice_number=invoice.invoice_number,
+        rejected_by=rejected_by.name if rejected_by else "Sistema",
+        reason=reason or "",
+        public_url=f"/invoices/{invoice.id}",
+    )
+    try:
+        email_service.send_email(db, creator.email, subject, html, text)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _notify_finance_team(db: Session, invoice: Invoice) -> None:
+    """Quando diretor aprova, avisa TODOS do financeiro."""
+    finance_users = (
+        db.query(User)
+        .filter(User.role == UserRole.FINANCE, User.is_active.is_(True))
+        .all()
+    )
+    for fu in finance_users:
+        if not fu.email:
+            continue
+        subject, html, text = email_service.template_new_invoice_for_approver(
+            approver_name=fu.name,
+            creator_name=invoice.created_by.name if invoice.created_by else "Sistema",
+            invoice_number=invoice.invoice_number,
+            amount=_safe_currency(invoice.amount),
+            public_url=f"/invoices/{invoice.id}",
+        )
+        try:
+            email_service.send_email(db, fu.email, subject, html, text)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _add_history(
@@ -304,6 +369,7 @@ def _do_submit(
         else:
             _add_history(db, invoice.id, user.id, ApprovalAction.SUBMITTED, ip=ip, port=port)
         _add_audit(db, user.id, "SUBMIT_DIRECT_TO_DIRECTOR", invoice.id, ip=ip, port=port, http_method="POST")
+        _notify_approver(db, director, invoice)
     else:
         # Envia para o gestor do setor
         manager = _get_manager_for_user(db, user)
@@ -311,6 +377,7 @@ def _do_submit(
         invoice.manager_id = manager.id
         _add_history(db, invoice.id, user.id, ApprovalAction.SUBMITTED, ip=ip, port=port)
         _add_audit(db, user.id, "SUBMIT_INVOICE", invoice.id, ip=ip, port=port, http_method="POST")
+        _notify_approver(db, manager, invoice)
 
 
 def submit_invoice(
@@ -398,10 +465,12 @@ def manager_review(
         invoice.status = InvoiceStatus.AGUARDANDO_DIRETOR
         _add_history(db, invoice.id, manager.id, ApprovalAction.APPROVED_MANAGER, comment, ip, port)
         _add_audit(db, manager.id, "MANAGER_APPROVE", invoice.id, ip=ip, port=port, http_method="POST")
+        _notify_approver(db, director, invoice)
     else:
         invoice.status = InvoiceStatus.REPROVADO_GESTOR
         _add_history(db, invoice.id, manager.id, ApprovalAction.REJECTED_MANAGER, comment, ip, port)
         _add_audit(db, manager.id, "MANAGER_REJECT", invoice.id, ip=ip, port=port, http_method="POST")
+        _notify_rejection(db, invoice, manager, comment)
 
     db.commit()
     return _get_invoice(db, invoice.id)
@@ -430,10 +499,12 @@ def director_review(
         invoice.status = InvoiceStatus.APROVADO
         _add_history(db, invoice.id, director.id, ApprovalAction.APPROVED_DIRECTOR, comment, ip, port)
         _add_audit(db, director.id, "DIRECTOR_APPROVE", invoice.id, ip=ip, port=port, http_method="POST")
+        _notify_finance_team(db, invoice)
     else:
         invoice.status = InvoiceStatus.REPROVADO_DIRETOR
         _add_history(db, invoice.id, director.id, ApprovalAction.REJECTED_DIRECTOR, comment, ip, port)
         _add_audit(db, director.id, "DIRECTOR_REJECT", invoice.id, ip=ip, port=port, http_method="POST")
+        _notify_rejection(db, invoice, director, comment)
 
     db.commit()
     return _get_invoice(db, invoice.id)
