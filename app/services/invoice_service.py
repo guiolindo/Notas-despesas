@@ -185,11 +185,9 @@ def _can_view(invoice: Invoice, user: User) -> bool:
             invoice.created_by is not None and invoice.created_by.manager_id == user.id
         )
     if user.role == UserRole.DIRECTOR:
-        # Vê notas atribuídas a ele
-        return invoice.director_id == user.id or invoice.status in {
-            InvoiceStatus.APROVADO,
-            InvoiceStatus.PAGO,
-        }
+        # Isolamento por setor: diretor so ve notas atribuidas a ele mesmo
+        # (continua acessivel apos aprovacao pois director_id permanece preenchido)
+        return invoice.director_id == user.id
     if user.role == UserRole.FINANCE:
         return invoice.status in {InvoiceStatus.APROVADO, InvoiceStatus.PAGO}
     return False
@@ -204,11 +202,8 @@ def _query_visible_invoices(db: Session, user: User):
     if user.role == UserRole.MANAGER:
         return query.filter(Invoice.manager_id == user.id)
     if user.role == UserRole.DIRECTOR:
-        # Vê notas destinadas a ele + notas aprovadas/pagas
-        return query.filter(
-            (Invoice.director_id == user.id)
-            | Invoice.status.in_([InvoiceStatus.APROVADO, InvoiceStatus.PAGO])
-        )
+        # Isolamento por setor: lista so o que foi atribuido a ele
+        return query.filter(Invoice.director_id == user.id)
     if user.role == UserRole.FINANCE:
         return query.filter(Invoice.status.in_([InvoiceStatus.APROVADO, InvoiceStatus.PAGO]))
     return query.filter(False)
