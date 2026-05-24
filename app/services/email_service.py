@@ -10,6 +10,7 @@ import base64
 import logging
 import smtplib
 import ssl
+import threading
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
@@ -116,6 +117,30 @@ def send_email(
     except Exception as exc:  # noqa: BLE001 — nao deve quebrar fluxo
         logger.error(f"[email] falha ao enviar para {to_email}: {exc}")
         return False
+
+
+def send_email_async(
+    to_email: str,
+    subject: str,
+    html: str,
+    text: Optional[str] = None,
+) -> None:
+    """Envia email em thread daemon — request retorna sem esperar SMTP.
+
+    Trade-off: se o worker do gunicorn reiniciar durante o envio, o email
+    se perde. Para notificacoes de transicao de nota isso e aceitavel
+    (proxima transicao ainda dispara um novo email). Para dados criticos
+    (recuperacao de senha), usar BackgroundTasks do FastAPI no endpoint.
+    """
+    def _worker():
+        from app.database import SessionLocal
+        try:
+            with SessionLocal() as session:
+                send_email(session, to_email, subject, html, text)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"[email-async] worker falhou para {to_email}: {exc}")
+
+    threading.Thread(target=_worker, daemon=True, name=f"email-{to_email[:20]}").start()
 
 
 # ─── Templates ─────────────────────────────────────────────────────────────

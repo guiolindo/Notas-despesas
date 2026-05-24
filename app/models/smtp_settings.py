@@ -41,3 +41,5 @@ class PasswordResetCode(Base):
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
+    # Anti brute-force: invalida apos N tentativas erradas
+    attempts = Column(Integer, default=0, nullable=False)

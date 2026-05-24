@@ -46,7 +46,7 @@ def _safe_currency(value) -> str:
 
 
 def _notify_approver(db: Session, recipient: User, invoice: Invoice) -> None:
-    """Envia email avisando que ha nota nova para aprovar. Best-effort."""
+    """Avisa por email que ha nota nova pra aprovar. Async (nao bloqueia request)."""
     if not recipient or not recipient.email or not recipient.is_active:
         return
     subject, html, text = email_service.template_new_invoice_for_approver(
@@ -56,10 +56,7 @@ def _notify_approver(db: Session, recipient: User, invoice: Invoice) -> None:
         amount=_safe_currency(invoice.amount),
         public_url=f"/invoices/{invoice.id}",
     )
-    try:
-        email_service.send_email(db, recipient.email, subject, html, text)
-    except Exception:  # noqa: BLE001 — nunca quebra fluxo
-        pass
+    email_service.send_email_async(recipient.email, subject, html, text)
 
 
 def _notify_rejection(db: Session, invoice: Invoice, rejected_by: User, reason: str | None) -> None:
@@ -73,14 +70,11 @@ def _notify_rejection(db: Session, invoice: Invoice, rejected_by: User, reason: 
         reason=reason or "",
         public_url=f"/invoices/{invoice.id}",
     )
-    try:
-        email_service.send_email(db, creator.email, subject, html, text)
-    except Exception:  # noqa: BLE001
-        pass
+    email_service.send_email_async(creator.email, subject, html, text)
 
 
 def _notify_finance_team(db: Session, invoice: Invoice) -> None:
-    """Quando diretor aprova, avisa TODOS do financeiro."""
+    """Quando diretor aprova, avisa TODOS do financeiro (em paralelo)."""
     finance_users = (
         db.query(User)
         .filter(User.role == UserRole.FINANCE, User.is_active.is_(True))
@@ -96,10 +90,7 @@ def _notify_finance_team(db: Session, invoice: Invoice) -> None:
             amount=_safe_currency(invoice.amount),
             public_url=f"/invoices/{invoice.id}",
         )
-        try:
-            email_service.send_email(db, fu.email, subject, html, text)
-        except Exception:  # noqa: BLE001
-            pass
+        email_service.send_email_async(fu.email, subject, html, text)
 
 
 def _add_history(

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
@@ -92,14 +92,14 @@ def login(
             user.blocked_until = now + timedelta(minutes=settings.LOGIN_BLOCK_MINUTES)
             user.login_attempts = 0
             db.commit()
-            # Notifica o titular da conta — best effort, nao bloqueia resposta
+            # Notifica o titular em background — request retorna sem esperar
             try:
                 if user.email:
                     from app.services import email_service
                     subject, html, text = email_service.template_account_blocked(
                         user.name, settings.LOGIN_BLOCK_MINUTES,
                     )
-                    email_service.send_email(db, user.email, subject, html, text)
+                    email_service.send_email_async(user.email, subject, html, text)
             except Exception:  # noqa: BLE001
                 pass
             raise HTTPException(
@@ -194,11 +194,15 @@ class ResetPasswordRequest(BaseModel):
 @router.post("/forgot-password")
 def forgot_password(
     body: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Gera codigo de 6 digitos e envia por email.
 
-    Por seguranca, responde SEMPRE 200 — nao revela se email existe ou nao.
+    Protecoes:
+    - Resposta SEMPRE 200 (anti-enumeracao de emails)
+    - Throttle: 1 pedido por 60 segundos por email (evita spam)
+    - Envio via BackgroundTasks (request retorna rapido)
     """
     import secrets as _secrets
     import uuid as _uuid
@@ -208,31 +212,53 @@ def forgot_password(
     email = sanitize_email(body.email)
     user = db.query(User).filter(User.email == email, User.is_active.is_(True)).first()
     if user:
+        now = datetime.now(timezone.utc)
+        # Throttle: bloqueia se ja gerou codigo nos ultimos 60 segundos
+        recent = (
+            db.query(PasswordResetCode)
+            .filter(
+                PasswordResetCode.user_id == user.id,
+                PasswordResetCode.created_at > now - timedelta(seconds=60),
+            )
+            .order_by(PasswordResetCode.created_at.desc())
+            .first()
+        )
+        if recent:
+            # Resposta generica — atacante nao sabe se foi rate-limited ou nao
+            return {"message": "Se o email estiver cadastrado, voce recebera um codigo em alguns segundos."}
+
         # Gera codigo 6 digitos. Armazena bcrypt do codigo, nao plain.
         code = f"{_secrets.randbelow(10**6):06d}"
-        expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+        expires = now + timedelta(minutes=15)
         # Invalida codigos anteriores deste usuario
         db.query(PasswordResetCode).filter(
             PasswordResetCode.user_id == user.id,
             PasswordResetCode.used_at.is_(None),
-        ).update({"used_at": datetime.now(timezone.utc)})
+        ).update({"used_at": now})
 
         db.add(PasswordResetCode(
             id=str(_uuid.uuid4()),
             user_id=user.id,
             code_hash=hash_password(code),
             expires_at=expires,
+            attempts=0,
         ))
         db.commit()
 
-        # Envia email
-        try:
-            subject, html, text = email_service.template_password_reset_code(
-                user.name, code, minutes_valid=15,
-            )
-            email_service.send_email(db, user.email, subject, html, text)
-        except Exception:  # noqa: BLE001
-            pass
+        # Envia email em background — request retorna sem esperar SMTP
+        _user_name = user.name
+        _user_email = user.email
+        def _send_in_bg():
+            try:
+                from app.database import SessionLocal
+                with SessionLocal() as session:
+                    subject, html, text = email_service.template_password_reset_code(
+                        _user_name, code, minutes_valid=15,
+                    )
+                    email_service.send_email(session, _user_email, subject, html, text)
+            except Exception:  # noqa: BLE001
+                pass
+        background_tasks.add_task(_send_in_bg)
 
     return {"message": "Se o email estiver cadastrado, voce recebera um codigo em alguns segundos."}
 
@@ -256,7 +282,8 @@ def reset_password(
         raise HTTPException(status_code=422, detail="Senha deve conter letra e numero")
 
     now = datetime.now(timezone.utc)
-    # Busca codigos ativos do usuario (pode ter mais de um caso request duplicado)
+    # Busca codigos ativos do usuario que ainda nao excederam tentativas
+    MAX_ATTEMPTS = 5
     active_codes = (
         db.query(PasswordResetCode)
         .filter(
@@ -266,13 +293,44 @@ def reset_password(
         )
         .all()
     )
+    # Filtra os que ja foram bloqueados por tentativas
+    available_codes = [c for c in active_codes if (c.attempts or 0) < MAX_ATTEMPTS]
+    if not available_codes:
+        # Se havia codigos mas todos exauriram tentativas, registra
+        if active_codes:
+            db.add(AuditLog(
+                user_id=user.id,
+                action="PASSWORD_RESET_BRUTE_FORCE_BLOCKED",
+                resource_type="USER",
+                resource_id=user.id,
+                timestamp=now,
+                success=False,
+                detail=f"Codigo invalidado apos {MAX_ATTEMPTS} tentativas",
+            ))
+            db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Codigo invalido, expirado ou excedeu tentativas. Solicite um novo codigo.",
+        )
+
     matched = None
-    for c in active_codes:
+    for c in available_codes:
         if verify_password(body.code, c.code_hash):
             matched = c
             break
+
     if not matched:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Codigo invalido ou expirado")
+        # Incrementa attempts em TODOS os codigos ativos do user
+        # (atacante nao sabe qual codigo esta tentando — protege todos)
+        for c in available_codes:
+            c.attempts = (c.attempts or 0) + 1
+            if c.attempts >= MAX_ATTEMPTS:
+                c.used_at = now  # invalida
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Codigo invalido ou expirado",
+        )
 
     # Aplica
     matched.used_at = now
