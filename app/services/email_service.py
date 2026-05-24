@@ -150,6 +150,10 @@ def _send_via_resend(cfg, api_key, to_email, subject, html, text):
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            # Cloudflare bloqueia User-Agent padrao do urllib (Python-urllib/X.Y)
+            # com erro 1010. Identificamo-nos como aplicacao real.
+            "User-Agent": "Economart-Notas/1.0 (+https://economart.com.br)",
+            "Accept": "application/json",
         },
         method="POST",
     )
