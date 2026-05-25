@@ -889,27 +889,13 @@ function renderInvoiceAlerts(invoice, containerId) {
 }
 
 function renderAttachmentsBlock(invoice, targetSelector) {
-  // Renderiza lista de anexos para download abaixo do iframe principal
+  // Multi-anexo agora e mesclado no proprio iframe via /api/invoices/{id}/attachment
+  // (que concatena todos os PDFs). Esta funcao apenas remove banners antigos
+  // se restarem na DOM (compat com versoes anteriores).
   const target = document.querySelector(targetSelector);
   if (!target) return;
-  const attachments = invoice.attachments || [];
-  // Remove banner antigo se houver
   const oldEl = target.querySelector('.attachments-block');
   if (oldEl) oldEl.remove();
-  if (attachments.length <= 1) return;  // 1 anexo ja aparece no iframe principal
-  const html = `<div class="attachments-block">
-    <strong>Outros anexos desta nota:</strong>
-    <ul class="attachments-ul">
-      ${attachments.slice(1).map((a) => `
-        <li>
-          <a href="/api/invoices/${escapeHtml(invoice.id)}/attachments/${escapeHtml(a.id)}" target="_blank" rel="noopener">
-            ${escapeHtml(a.drive_file_name || 'anexo.pdf')}
-          </a>
-          <span class="text-muted" style="font-size:.8rem">${(a.size_bytes/1024).toFixed(0)} KB</span>
-        </li>`).join('')}
-    </ul>
-  </div>`;
-  target.insertAdjacentHTML('beforeend', html);
 }
 
 function renderInvoiceDetail(invoice) {

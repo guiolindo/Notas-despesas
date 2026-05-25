@@ -425,7 +425,6 @@ def change_password(
 
     current_user.hashed_password = hash_password(body.new_password)
     current_user.password_changed_at = datetime.now(timezone.utc)
-    user.password_changed_at = datetime.now(timezone.utc)
     current_user.must_change_password = False
     db.add(
         AuditLog(
