@@ -64,6 +64,16 @@ def configuracoes_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "configuracoes.html")
 
 
+@router.get("/faq", response_class=HTMLResponse)
+def faq_page(request: Request, db: Session = Depends(get_db)):
+    guard = require_page_login(request, db)
+    if not isinstance(guard, User):
+        return guard
+    return templates.TemplateResponse(
+        request, "faq.html", {"user_role": guard.role.value}
+    )
+
+
 @router.get("/alerts", response_class=HTMLResponse)
 def alerts_page(request: Request, db: Session = Depends(get_db)):
     guard = require_page_login(request, db)

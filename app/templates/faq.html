@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Perguntas frequentes{% endblock %}
+{% block page_id %}faq{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Perguntas frequentes</h1>
+  <p class="text-muted">Duvidas comuns sobre o uso do sistema.</p>
+</div>
+
+{# Helper local — macro que renderiza um item da FAQ (pergunta + resposta accordion) #}
+{% macro qa(question, answer) %}
+  <details class="faq-item">
+    <summary>{{ question }}</summary>
+    <div class="faq-answer">{{ answer | safe }}</div>
+  </details>
+{% endmacro %}
+
+{# ─── Geral (todos os perfis veem) ─────────────────────────────────────── #}
+<section class="card" style="max-width:860px;margin-bottom:1rem">
+  <div class="card-body">
+    <h2 class="section-title">Geral</h2>
+    {{ qa("Como troco minha senha?",
+      "Clique em <strong>Configuracoes</strong> no topo direito, depois em <em>Trocar senha</em>. Sua nova senha precisa ter no minimo 8 caracteres, com pelo menos uma letra e um numero.") }}
+    {{ qa("Esqueci minha senha. O que faco?",
+      "Na tela de login clique em <strong>Esqueci minha senha</strong>. Voce recebera um codigo de 6 digitos no seu email cadastrado (validade de 15 minutos). Use o codigo + nova senha para redefinir.") }}
+    {{ qa("Minha conta foi bloqueada. O que aconteceu?",
+      "Apos 5 tentativas seguidas de login com senha incorreta, sua conta e bloqueada temporariamente por 10 minutos como medida de seguranca. Voce recebe um email avisando. Espere o tempo e tente novamente.") }}
+    {{ qa("Por que aparecem avisos amarelos no topo da nota?",
+      "Sao alertas informativos: se a nota foi enviada com data de emissao do mes anterior, ou se o vencimento esta proximo (menos de 72h). Sao apenas avisos — nao bloqueiam o fluxo.") }}
+    {{ qa("O sistema esta lento ou da erro. O que faco?",
+      "Recarregue a pagina (Ctrl+F5). Se persistir, faca logout e login novamente. Se ainda assim nao funcionar, contate o administrador.") }}
+  </div>
+</section>
+
+{# ─── Funcionario ──────────────────────────────────────────────────────── #}
+{% if user_role in ["EMPLOYEE", "ADMIN"] %}
+<section class="card" style="max-width:860px;margin-bottom:1rem">
+  <div class="card-body">
+    <h2 class="section-title">Para funcionarios</h2>
+    {{ qa("Como crio uma nota fiscal?",
+      "Acesse <strong>Notas Fiscais</strong> no menu lateral e clique em <em>Nova Nota</em>. Preencha numero, datas, valor, descricao e anexe o PDF (maximo 10 MB). Voce pode salvar como rascunho ou enviar direto pro seu gestor.") }}
+    {{ qa("Minha nota foi reprovada. E agora?",
+      "Acesse a nota, clique em <em>Editar</em>, ajuste a descricao conforme o motivo apontado e clique em <em>Reenviar</em>. <strong>Voce e obrigado a editar a descricao</strong> antes de reenviar — sem alteracao o sistema bloqueia.") }}
+    {{ qa("Posso cancelar uma nota que ja enviei?",
+      "Sim, enquanto estiver em status <em>Aguardando gestor</em> ou <em>Aguardando diretor</em> e ninguem ainda tiver aprovado. Apos a primeira aprovacao, o cancelamento nao e mais possivel.") }}
+    {{ qa("Por que nao consigo enviar minha nota?",
+      "Possiveis razoes: (1) o vencimento ja passou — atualize a data de vencimento; (2) voce nao tem gestor cadastrado — contate o admin; (3) o PDF e maior que 10 MB.") }}
+    {{ qa("Quanto tempo demora pra aprovacao?",
+      "Depende do gestor e do diretor responsaveis. Apos cada aprovacao, voce e notificado por email. Notas com vencimento proximo ficam destacadas para acelerar a fila.") }}
+    {{ qa("O que e 'enviar direto ao diretor'?",
+      "Algumas pessoas tem essa opcao habilitada pelo admin — pulam a etapa de aprovacao do gestor e enviam direto pro diretor. Se a opcao nao aparece pra voce, e porque o fluxo padrao do seu setor passa pelo gestor.") }}
+  </div>
+</section>
+{% endif %}
+
+{# ─── Gestor ───────────────────────────────────────────────────────────── #}
+{% if user_role in ["MANAGER", "ADMIN"] %}
+<section class="card" style="max-width:860px;margin-bottom:1rem">
+  <div class="card-body">
+    <h2 class="section-title">Para gestores</h2>
+    {{ qa("Como aprovo uma nota?",
+      "Acesse <strong>Fila de aprovacao</strong> no menu, clique em <em>Aprovar</em>. Voce precisa selecionar qual diretor vai receber em seguida — depois clica em <em>Confirmar</em>. Diretores em ferias nao aparecem na lista.") }}
+    {{ qa("Como reprovo uma nota?",
+      "Clique em <em>Reprovar</em>, escreva o motivo no modal (minimo 10 caracteres). O criador e notificado por email com o motivo e pode reenviar apos editar a descricao.") }}
+    {{ qa("Vejo notas de outros setores?",
+      "Nao. Voce so ve notas dos colaboradores que tem voce como gestor direto.") }}
+    {{ qa("Vou tirar ferias. Como pausar o recebimento?",
+      "Va em <strong>Configuracoes</strong> e marque <em>Estou indisponivel</em>. Funcionarios nao poderao mais te selecionar pra notas novas. As notas que ja chegaram pra voce continuam pendentes — alguem precisa cobrir ou voce precisa aprovar antes de sair.") }}
+    {{ qa("Posso transferir uma nota que ja recebi pra outro gestor?",
+      "Nao diretamente. Voce pode reprovar pedindo pro funcionario reenviar — mas isso so funciona se ele tem outro gestor cadastrado. Alternativa: contate o admin para reatribuir.") }}
+  </div>
+</section>
+{% endif %}
+
+{# ─── Diretor ──────────────────────────────────────────────────────────── #}
+{% if user_role in ["DIRECTOR", "ADMIN"] %}
+<section class="card" style="max-width:860px;margin-bottom:1rem">
+  <div class="card-body">
+    <h2 class="section-title">Para diretores</h2>
+    {{ qa("Como aprovo uma nota?",
+      "Acesse <strong>Fila de aprovacao</strong>, abra a nota e clique em <em>Aprovar</em>. Apos sua aprovacao a nota fica disponivel pra todo o Financeiro lancar.") }}
+    {{ qa("Como reprovo uma nota?",
+      "Clique em <em>Reprovar</em> e escreva o motivo no modal (minimo 10 caracteres). O criador e notificado por email e pode editar e reenviar.") }}
+    {{ qa("Vejo notas de outros diretores?",
+      "Nao. Voce so ve as notas atribuidas a voce especificamente. O isolamento entre setores e total.") }}
+    {{ qa("Vou tirar ferias. Como pausar recebimento de novas notas?",
+      "Va em <strong>Configuracoes</strong> e ative <em>Estou indisponivel</em>. Gestores nao poderao mais te encaminhar notas novas. As notas pendentes na sua fila continuam — voce precisa aprovar antes de sair ou alguem precisa cobrir.") }}
+    {{ qa("Posso ver notas que ja aprovei e foram lancadas?",
+      "Sim. As notas que voce aprovou ficam visiveis na sua lista mesmo apos o lancamento.") }}
+  </div>
+</section>
+{% endif %}
+
+{# ─── Financeiro ───────────────────────────────────────────────────────── #}
+{% if user_role in ["FINANCE", "ADMIN"] %}
+<section class="card" style="max-width:860px;margin-bottom:1rem">
+  <div class="card-body">
+    <h2 class="section-title">Para o Financeiro</h2>
+    {{ qa("Como lanco uma nota?",
+      "Acesse <strong>Lancamentos</strong> no menu, abra a nota aprovada e clique em <em>Imprimir e Lancar Nota</em>. O sistema gera o comprovante PDF e marca a nota como <em>Lancada</em> automaticamente, tirando-a da fila operacional.") }}
+    {{ qa("Posso reimprimir um comprovante depois?",
+      "Sim. Abra qualquer nota ja lancada e clique em <em>Re-imprimir Comprovante</em>. O sistema NAO registra reimpressao no historico (evita poluicao de logs).") }}
+    {{ qa("Vejo notas antes do diretor aprovar?",
+      "Nao. Voce so ve notas com status <em>Aprovado</em> (prontas pra lancar) ou <em>Lancada</em> (ja finalizadas). Notas em rascunho ou aguardando aprovacao nao aparecem pra voce.") }}
+    {{ qa("O sistema executa o pagamento?",
+      "Nao. O sistema apenas <strong>registra</strong> que a nota foi lancada (impressa e arquivada). O pagamento efetivo e feito por processo externo (banco, ERP, etc).") }}
+    {{ qa("Posso ver notas de setores especificos?",
+      "Sim. Voce ve todas as notas aprovadas/lancadas. Use os filtros (setor, valor, vencimento) para focar.") }}
+  </div>
+</section>
+{% endif %}
+
+{# ─── Admin ────────────────────────────────────────────────────────────── #}
+{% if user_role == "ADMIN" %}
+<section class="card" style="max-width:860px;margin-bottom:1rem">
+  <div class="card-body">
+    <h2 class="section-title">Para administradores</h2>
+    {{ qa("Como crio um usuario?",
+      "Va em <strong>Usuarios</strong> e clique em <em>Novo Usuario</em>. Setor e obrigatorio para Funcionario/Gestor/Diretor/Financeiro. Funcionario precisa ter gestor OU marcar <em>Envia direto ao diretor</em>. Sem isso, o fluxo trava no envio da nota.") }}
+    {{ qa("Por que nao consigo resetar a senha de outro admin?",
+      "Protecao contra sequestro de conta. Apenas o proprio admin pode redefinir a propria senha (via 'Esqueci minha senha' ou 'Trocar senha' apos login).") }}
+    {{ qa("Como configuro o envio de email automatico?",
+      "Va em <strong>Email automatico</strong> no menu. Recomendamos o provedor <em>Resend</em> (HTTP API) — funciona no Railway sem precisar fazer upgrade de plano. SMTP do Gmail e bloqueado pelo Railway nos planos Trial/Hobby.") }}
+    {{ qa("Como anonimizo um colaborador que se desligou?",
+      "Primeiro <em>Desative</em> o usuario. Depois use o botao <em>Anonimizar (LGPD)</em>. Nome e email sao substituidos por placeholders irreversiveis, mas o historico de aprovacoes fiscais e preservado (obrigacao legal — 5 anos CTN).") }}
+    {{ qa("O que sao os 'alertas' que aparecem no topo das notas?",
+      "Banners amarelos informativos quando: (1) emissao em mes anterior ao envio, (2) vencimento em menos de 72h. Sao puramente informativos — nao bloqueiam fluxo. Notas com vencimento JA PASSADO sao bloqueadas no envio (nao geram alerta).") }}
+    {{ qa("Posso ver tudo no sistema?",
+      "Sim. Admin tem acesso total a todas as notas, todos os usuarios, todos os setores e todos os logs de auditoria. Use isso com responsabilidade.") }}
+    {{ qa("Como funciona o bloqueio de 5 tentativas?",
+      "Apos 5 tentativas de login com senha errada, a conta e bloqueada por 10 minutos. O usuario recebe email. Voce pode <em>Desbloquear</em> manualmente em <strong>Usuarios</strong> sem esperar.") }}
+  </div>
+</section>
+{% endif %}
+
+<footer class="faq-footer">
+  Sobre dados pessoais e protecao da informacao: <a href="/privacidade">aviso de privacidade (LGPD)</a>.
+</footer>
+{% endblock %}
