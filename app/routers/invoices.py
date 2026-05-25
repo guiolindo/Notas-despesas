@@ -58,30 +58,47 @@ def _as_utc(dt):
 
 
 def _compute_invoice_alerts(invoice) -> list[str]:
-    """Avisos puramente informativos no detalhe da nota.
+    """Avisos informativos no detalhe da nota.
 
-    Comparacao contra a data de ENVIO (submitted_at). Se nota e rascunho,
-    usa hoje como preview. Sem linguagem de julgamento — apenas fatos.
+    Sempre comparados contra a data de ENVIO (submitted_at) — apontam
+    decisoes do criador no momento do envio, nao demora dos aprovadores.
+    Se nota e rascunho, usa hoje como preview ao proprio criador.
+
+    Frases sao construidas de modo a deixar claro que e situacao DA
+    NOTA NO ENVIO (nao um julgamento ao aprovador atual). Apenas fatos.
     Nota vencida nao chega aqui (envio bloqueado em submit_invoice).
     """
     from datetime import date as _date
     alerts: list[str] = []
 
-    if invoice.submitted_at:
+    is_submitted = bool(invoice.submitted_at)
+    if is_submitted:
         ref = invoice.submitted_at.date() if hasattr(invoice.submitted_at, "date") else invoice.submitted_at
     else:
         ref = _date.today()
 
     # Emissao em mes anterior a referencia
     if invoice.issue_date and (invoice.issue_date.year, invoice.issue_date.month) < (ref.year, ref.month):
-        alerts.append("Data de emissao em mes anterior ao envio.")
+        if is_submitted:
+            alerts.append("Esta nota foi enviada com data de emissao do mes anterior.")
+        else:
+            alerts.append("Data de emissao e do mes anterior — atenta-se ao prazo fiscal antes de enviar.")
 
     # Vencimento dentro de 72h da data de envio
     if invoice.due_date:
         delta = (invoice.due_date - ref).days
         if 0 <= delta < 3:
-            label = "hoje" if delta == 0 else f"em {delta} dia(s)"
-            alerts.append(f"Vencimento {label} — prazo curto para aprovacao.")
+            if delta == 0:
+                when = "no proprio dia do vencimento"
+            elif delta == 1:
+                when = "a apenas 1 dia do vencimento"
+            else:
+                when = f"a apenas {delta} dias do vencimento"
+            if is_submitted:
+                alerts.append(f"Esta nota foi enviada {when}.")
+            else:
+                # rascunho — preview pro proprio criador
+                alerts.append(f"Se enviar agora, ficara {when}.")
     return alerts
 
 
