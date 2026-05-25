@@ -141,7 +141,6 @@ def print_invoice(
     )
 
 
-@router.get("/verify/{invoice_id}", response_class=HTMLResponse)
 def _mask_email(email: str | None) -> str | None:
     """Mascara email mantendo dica de identidade.
     'maria.silva@economart.com.br' -> 'maria.s****@economart.com.br'
@@ -158,6 +157,7 @@ def _mask_email(email: str | None) -> str | None:
     return f"{masked_local}@{domain}"
 
 
+@router.get("/verify/{invoice_id}", response_class=HTMLResponse)
 def verify_invoice(invoice_id: str, request: Request, db: Session = Depends(get_db)):
     invoice = _invoice_with_relations(db, invoice_id)
     context = {
