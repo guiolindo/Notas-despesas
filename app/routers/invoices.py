@@ -77,12 +77,21 @@ def _compute_invoice_alerts(invoice) -> list[str]:
     else:
         ref = _date.today()
 
-    # Emissao em mes anterior a referencia
+    # Emissao em ano/mes anterior a referencia — mensagem mais especifica pra ano
     if invoice.issue_date and (invoice.issue_date.year, invoice.issue_date.month) < (ref.year, ref.month):
-        if is_submitted:
-            alerts.append("Esta nota foi enviada com data de emissao do mes anterior.")
+        if invoice.issue_date.year < ref.year:
+            # Ano anterior — caso mais grave para fiscal
+            year_label = f"de {invoice.issue_date.year}" if (ref.year - invoice.issue_date.year) == 1 else f"de {invoice.issue_date.year} (ha {ref.year - invoice.issue_date.year} anos)"
+            if is_submitted:
+                alerts.append(f"Esta nota foi enviada com data de emissao {year_label}.")
+            else:
+                alerts.append(f"Data de emissao {year_label} — atenta-se ao prazo fiscal antes de enviar.")
         else:
-            alerts.append("Data de emissao e do mes anterior — atenta-se ao prazo fiscal antes de enviar.")
+            # Mesmo ano, mes anterior
+            if is_submitted:
+                alerts.append("Esta nota foi enviada com data de emissao do mes anterior.")
+            else:
+                alerts.append("Data de emissao e do mes anterior — atenta-se ao prazo fiscal antes de enviar.")
 
     # Vencimento dentro de 72h da data de envio
     if invoice.due_date:
