@@ -72,3 +72,9 @@ class Invoice(Base):
         back_populates="invoice",
         cascade="all, delete-orphan",
     )
+    attachments = relationship(
+        "InvoiceAttachment",
+        back_populates="invoice",
+        cascade="all, delete-orphan",
+        order_by="InvoiceAttachment.uploaded_at",
+    )

@@ -53,7 +53,8 @@ imutáveis com pseudonimização de IPs via HMAC-SHA256.
 ## Funcionalidades
 
 ### Para colaboradores
-- Criar nota fiscal com upload de PDF (até 10 MB)
+- Criar nota fiscal com upload de **até 5 PDFs** (nota + boletos + comprovantes,
+  10 MB cada, 25 MB total)
 - Envio direto ao Gestor — ou ao Diretor (se configurado pelo Admin)
 - Editar/reenviar notas reprovadas
 - Cancelar notas pendentes (antes de qualquer aprovação)
@@ -71,7 +72,7 @@ imutáveis com pseudonimização de IPs via HMAC-SHA256.
 
 ### Para financeiro
 - Fila de notas aprovadas pendentes de lançamento
-- Botão único: **Imprimir e Lançar** (gera comprovante PDF com QR code e marca como Lançada automaticamente)
+- Botão único: **Imprimir e Lançar** — comprovante PDF **concatena capa + TODOS os anexos** da nota (QR code + nota + boletos)
 - Reimpressão de comprovantes a qualquer momento (sem poluir log)
 
 ### Para admin

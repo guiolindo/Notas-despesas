@@ -8,10 +8,15 @@ from app.models import (
     ApprovalHistory,
     AuditLog,
     Invoice,
+    InvoiceAttachment,
     InvoiceStatus,
     User,
     UserRole,
 )
+
+
+MAX_ATTACHMENTS_PER_INVOICE = 5
+MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024  # 25 MB
 from app.services.drive_service import drive_service
 from app.services import email_service
 
@@ -150,6 +155,7 @@ def _invoice_options() -> tuple:
         selectinload(Invoice.manager),
         selectinload(Invoice.director),
         selectinload(Invoice.finance),
+        selectinload(Invoice.attachments),
     )
 
 
@@ -221,33 +227,83 @@ def _status_from_filter(status_filter: str | None) -> InvoiceStatus | None:
         ) from exc
 
 
-def _replace_attachment(
-    invoice: Invoice,
-    file_bytes: bytes | None,
-    filename: str | None,
-) -> None:
-    """Substitui o anexo da nota.
-
-    ATENCAO ordem: faz upload do novo primeiro; so depois deleta o antigo.
-    Se inverter, uma falha no upload deixa a nota sem anexo (antigo ja foi
-    apagado e o novo nunca chegou).
+def _sanitize_attachment_name(name: str | None) -> str:
+    """Sanitiza nome do arquivo preservando legibilidade.
+    Remove path traversal, caracteres especiais e limita tamanho.
     """
-    if file_bytes is None:
+    if not name:
+        return "anexo.pdf"
+    from pathlib import Path
+    import re
+    base = Path(name).name  # remove path
+    # Permite letras, numeros, espacos, ponto, hifen, underscore, parenteses
+    safe = re.sub(r"[^\w\s\.\-\(\)]", "_", base)[:120]
+    if not safe.lower().endswith(".pdf"):
+        safe = safe + ".pdf"
+    return safe or "anexo.pdf"
+
+
+def _validate_attachment_limits(
+    db: Session, invoice: Invoice, new_files: list[tuple[bytes, str]]
+) -> None:
+    """Checa que o conjunto (existentes + novos) cabe nos limites."""
+    existing = invoice.attachments or []
+    total_count = len(existing) + len(new_files)
+    if total_count > MAX_ATTACHMENTS_PER_INVOICE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Maximo de {MAX_ATTACHMENTS_PER_INVOICE} arquivos por nota.",
+        )
+    existing_size = sum((a.size_bytes or 0) for a in existing)
+    new_size = sum(len(b) for b, _ in new_files)
+    if existing_size + new_size > MAX_TOTAL_ATTACHMENT_BYTES:
+        mb_max = MAX_TOTAL_ATTACHMENT_BYTES / (1024 * 1024)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Tamanho total dos anexos excede {mb_max:.0f} MB.",
+        )
+
+
+def _add_attachments(
+    db: Session,
+    invoice: Invoice,
+    files: list[tuple[bytes, str]],
+    uploaded_by_id: str | None = None,
+) -> None:
+    """Adiciona N arquivos como anexos da nota. Cada um eh criptografado
+    individualmente. Falha de upload de QUALQUER um aborta a operacao
+    (rollback do commit) — usuario nao fica com nota meio-vazia.
+    """
+    if not files:
         return
-    old_file_id = invoice.drive_file_id
-    drive_file_id, encrypted_key = drive_service.upload_encrypted_file(
-        file_bytes,
-        filename or "nota.pdf",
-    )
-    invoice.drive_file_id = drive_file_id
-    invoice.drive_file_name = filename
-    invoice.encryption_key_enc = encrypted_key
-    # Apaga o antigo apenas apos o novo estar persistido (best-effort)
-    if old_file_id:
+    _validate_attachment_limits(db, invoice, files)
+    for file_bytes, filename in files:
+        if not file_bytes:
+            continue
+        safe_name = _sanitize_attachment_name(filename)
+        drive_file_id, encrypted_key = drive_service.upload_encrypted_file(
+            file_bytes, safe_name,
+        )
+        db.add(InvoiceAttachment(
+            invoice_id=invoice.id,
+            drive_file_id=drive_file_id,
+            drive_file_name=safe_name,
+            encryption_key_enc=encrypted_key,
+            size_bytes=len(file_bytes),
+            uploaded_by_id=uploaded_by_id,
+        ))
+
+
+def _delete_attachment(db: Session, attachment: InvoiceAttachment) -> None:
+    """Apaga um anexo individual — arquivo no R2 + linha no banco.
+    Best-effort no R2: se falhar, segue deletando o registro pra nao
+    travar o usuario."""
+    if attachment.drive_file_id:
         try:
-            drive_service.delete_file(old_file_id)
+            drive_service.delete_file(attachment.drive_file_id)
         except Exception:  # noqa: BLE001
-            pass  # arquivo antigo orfao — log mas nao bloqueia operacao
+            pass  # arquivo orfao no R2 — registrado mas nao bloqueia
+    db.delete(attachment)
 
 
 def _get_director(db: Session, director_id: str) -> User:
@@ -300,13 +356,13 @@ def create_invoice(
     db: Session,
     data,
     user: User,
-    file_bytes: bytes | None = None,
-    filename: str | None = None,
+    files: list[tuple[bytes, str]] | None = None,
     ip: str | None = None,
     port: int | None = None,
     submit_now: bool = False,
     director_id: str | None = None,
 ) -> Invoice:
+    """Cria nota com lista de arquivos (1-5 anexos PDF)."""
     invoice = Invoice(
         id=str(uuid.uuid4()),
         invoice_number=_sanitize_text(data.invoice_number),
@@ -319,9 +375,10 @@ def create_invoice(
         created_by_id=user.id,
         created_at=_now(),
     )
-    _replace_attachment(invoice, file_bytes, filename)
     db.add(invoice)
-    db.flush()
+    db.flush()  # garante invoice.id antes de criar attachments
+    if files:
+        _add_attachments(db, invoice, files, uploaded_by_id=user.id)
     _add_history(db, invoice.id, user.id, ApprovalAction.CREATED, ip=ip, port=port)
     _add_audit(db, user.id, "CREATE_INVOICE", invoice.id, ip=ip, port=port, http_method="POST")
 
@@ -630,13 +687,30 @@ def get_invoice_or_403(db: Session, invoice_id: str, user: User) -> Invoice:
     return invoice
 
 
-def get_attachment(db: Session, invoice_id: str, user: User, ip: str | None = None, port: int | None = None) -> bytes:
+def get_attachment(
+    db: Session,
+    invoice_id: str,
+    user: User,
+    attachment_id: str | None = None,
+    ip: str | None = None,
+    port: int | None = None,
+) -> tuple[bytes, str]:
+    """Baixa um anexo especifico (se attachment_id passado) ou o primeiro
+    anexo da nota (compatibilidade com codigo antigo).
+    Retorna (bytes do PDF descriptografado, nome do arquivo)."""
     invoice = get_invoice_or_403(db, invoice_id, user)
-    if not invoice.drive_file_id or not invoice.encryption_key_enc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anexo nao encontrado")
+    if not invoice.attachments:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nenhum anexo encontrado")
+    if attachment_id:
+        att = next((a for a in invoice.attachments if a.id == attachment_id), None)
+        if not att:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anexo nao encontrado")
+    else:
+        att = invoice.attachments[0]
     _add_audit(db, user.id, "DOWNLOAD_PDF", invoice.id, ip=ip, port=port, http_method="GET")
     db.commit()
-    return drive_service.download_and_decrypt(invoice.drive_file_id, invoice.encryption_key_enc)
+    data = drive_service.download_and_decrypt(att.drive_file_id, att.encryption_key_enc)
+    return data, att.drive_file_name or "anexo.pdf"
 
 
 def delete_invoice(db: Session, invoice_id: str, user: User, ip: str | None = None, port: int | None = None) -> None:
@@ -648,21 +722,50 @@ def delete_invoice(db: Session, invoice_id: str, user: User, ip: str | None = No
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Apenas notas em rascunho podem ser excluidas",
         )
-    # Tenta apagar o arquivo no R2; se falhar (rede/credencial/objeto sumido),
-    # registra mas NAO bloqueia a exclusao da nota no banco — evita estado
-    # inconsistente onde o usuario nao consegue deletar a propria nota.
-    storage_warning = None
-    if invoice.drive_file_id:
-        try:
-            drive_service.delete_file(invoice.drive_file_id)
-        except Exception as exc:  # noqa: BLE001 — defensivo intencional
-            storage_warning = f"Falha ao remover arquivo {invoice.drive_file_id}: {exc}"
+    # Apaga TODOS os anexos no R2 (best-effort por arquivo)
+    storage_warnings = []
+    for att in list(invoice.attachments):
+        if att.drive_file_id:
+            try:
+                drive_service.delete_file(att.drive_file_id)
+            except Exception as exc:  # noqa: BLE001
+                storage_warnings.append(f"{att.drive_file_id}: {exc}")
     _add_audit(
         db, user.id, "DELETE_INVOICE", invoice.id,
         ip=ip, port=port, http_method="DELETE",
-        detail=storage_warning,
+        detail="; ".join(storage_warnings) if storage_warnings else None,
     )
-    db.delete(invoice)
+    db.delete(invoice)  # cascade=delete-orphan apaga attachments do banco
+    db.commit()
+
+
+def delete_attachment(
+    db: Session, invoice_id: str, attachment_id: str, user: User,
+    ip: str | None = None, port: int | None = None,
+) -> None:
+    """Remove um anexo individual de uma nota (so o criador, status editavel)."""
+    invoice = _get_invoice(db, invoice_id)
+    if invoice.created_by_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissao insuficiente")
+    if invoice.status not in {
+        InvoiceStatus.RASCUNHO,
+        InvoiceStatus.REPROVADO_GESTOR,
+        InvoiceStatus.REPROVADO_DIRETOR,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Anexos so podem ser removidos enquanto a nota e editavel",
+        )
+    att = next((a for a in invoice.attachments if a.id == attachment_id), None)
+    if not att:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anexo nao encontrado")
+    if len(invoice.attachments) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A nota precisa ter pelo menos 1 anexo. Adicione outro antes de remover este.",
+        )
+    _delete_attachment(db, att)
+    _add_audit(db, user.id, "DELETE_ATTACHMENT", invoice.id, ip=ip, port=port, http_method="DELETE")
     db.commit()
 
 
@@ -671,8 +774,7 @@ def update_invoice(
     invoice_id: str,
     data,
     user: User,
-    file_bytes: bytes | None = None,
-    filename: str | None = None,
+    new_files: list[tuple[bytes, str]] | None = None,
     ip: str | None = None,
     port: int | None = None,
 ) -> Invoice:
@@ -700,7 +802,10 @@ def update_invoice(
             detail="Vencimento deve ser igual ou posterior a data de emissao",
         )
 
-    _replace_attachment(invoice, file_bytes, filename)
+    # Adiciona novos anexos (nao substitui existentes — pra trocar, usar
+    # DELETE /attachments/{id} primeiro)
+    if new_files:
+        _add_attachments(db, invoice, new_files, uploaded_by_id=user.id)
     _add_audit(db, user.id, "UPDATE_INVOICE", invoice.id, ip=ip, port=port, http_method="PATCH")
     db.commit()
     return _get_invoice(db, invoice.id)

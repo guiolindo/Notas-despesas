@@ -71,6 +71,14 @@ class ApprovalHistoryResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AttachmentBrief(BaseModel):
+    id: str
+    drive_file_name: Optional[str] = None
+    size_bytes: int = 0
+    uploaded_at: datetime
+    model_config = {"from_attributes": True}
+
+
 class InvoiceResponse(BaseModel):
     id: str
     invoice_number: str
@@ -80,7 +88,8 @@ class InvoiceResponse(BaseModel):
     bank_details: Optional[str]
     amount: Decimal
     status: str
-    has_attachment: bool
+    has_attachment: bool  # legado — True se tem qualquer anexo
+    attachments: list[AttachmentBrief] = []
     created_by: UserBrief
     manager: Optional[UserBrief]
     director: Optional[UserBrief]

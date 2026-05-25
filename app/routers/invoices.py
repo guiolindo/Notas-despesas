@@ -96,8 +96,18 @@ def _history_response(entry: ApprovalHistory) -> ApprovalHistoryResponse:
 
 
 def invoice_response(invoice: Invoice) -> InvoiceResponse:
+    from app.schemas.invoice import AttachmentBrief
     history = sorted(invoice.approval_history, key=lambda item: item.timestamp)
     dept = invoice.created_by.department_obj if invoice.created_by else None
+    attachments = [
+        AttachmentBrief(
+            id=a.id,
+            drive_file_name=a.drive_file_name,
+            size_bytes=a.size_bytes or 0,
+            uploaded_at=_as_utc(a.uploaded_at),
+        )
+        for a in (invoice.attachments or [])
+    ]
     return InvoiceResponse(
         id=invoice.id,
         invoice_number=invoice.invoice_number,
@@ -107,7 +117,8 @@ def invoice_response(invoice: Invoice) -> InvoiceResponse:
         bank_details=invoice.bank_details,
         amount=invoice.amount,
         status=invoice.status.value,
-        has_attachment=bool(invoice.drive_file_id),
+        has_attachment=bool(invoice.attachments),
+        attachments=attachments,
         created_by=UserBrief.model_validate(invoice.created_by),
         manager=UserBrief.model_validate(invoice.manager) if invoice.manager else None,
         director=UserBrief.model_validate(invoice.director) if invoice.director else None,
@@ -236,6 +247,29 @@ class ManagerReviewAction(BaseModel):
             raise HTTPException(400, "Selecione o diretor para encaminhar a nota")
 
 
+async def _read_pdf_uploads(files: list[UploadFile] | None) -> list[tuple[bytes, str]]:
+    """Le, valida e retorna lista de (bytes, filename_original) para multi-upload."""
+    if not files:
+        return []
+    result = []
+    for f in files:
+        if f is None:
+            continue
+        # Ignora inputs vazios (alguns navegadores enviam UploadFile com filename vazio)
+        if not f.filename:
+            continue
+        file_bytes = await f.read()
+        if not file_bytes:
+            continue
+        if len(file_bytes) > MAX_PDF_SIZE:
+            raise HTTPException(400, f"Arquivo '{f.filename}' excede o limite de 10MB por arquivo")
+        if not file_bytes.startswith(b"%PDF"):
+            raise HTTPException(400, f"'{f.filename}' nao parece ser um PDF valido")
+        _check_pdf_safety(file_bytes)
+        result.append((file_bytes, f.filename))
+    return result
+
+
 @router.post("/", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_invoice(
     request: Request,
@@ -247,11 +281,11 @@ async def create_invoice(
     amount: Decimal = Form(...),
     submit_now: bool = Form(default=True),
     director_id: Optional[str] = Form(default=None),
-    file: UploadFile | None = File(default=None),
+    files: list[UploadFile] = File(default_factory=list),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value)),
 ):
-    file_bytes, filename = await _read_pdf_upload(file)
+    parsed_files = await _read_pdf_uploads(files)
     data = InvoiceCreate(
         invoice_number=invoice_number,
         issue_date=issue_date,
@@ -264,8 +298,7 @@ async def create_invoice(
         db,
         data,
         current_user,
-        file_bytes=file_bytes,
-        filename=filename,
+        files=parsed_files,
         ip=_client_ip(request),
         port=_client_port(request),
         submit_now=submit_now,
@@ -419,20 +452,57 @@ def director_review(
 
 
 @router.get("/{invoice_id}/attachment")
-def get_attachment(
+def get_attachment_primary(
     invoice_id: str,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    invoice = invoice_service.get_invoice_or_403(db, invoice_id, current_user)
-    pdf_bytes = invoice_service.get_attachment(db, invoice_id, current_user, ip=_client_ip(request), port=_client_port(request))
-    filename = f"nota_{invoice.invoice_number}.pdf"
+    """Compat: baixa o PRIMEIRO anexo. Use /attachments/{att_id} para um especifico."""
+    pdf_bytes, original_name = invoice_service.get_attachment(
+        db, invoice_id, current_user, ip=_client_ip(request), port=_client_port(request),
+    )
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={"Content-Disposition": f'inline; filename="{original_name}"'},
     )
+
+
+@router.get("/{invoice_id}/attachments/{attachment_id}")
+def get_attachment_by_id(
+    invoice_id: str,
+    attachment_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Baixa um anexo especifico da nota (suporta multi-PDF)."""
+    pdf_bytes, original_name = invoice_service.get_attachment(
+        db, invoice_id, current_user, attachment_id=attachment_id,
+        ip=_client_ip(request), port=_client_port(request),
+    )
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{original_name}"'},
+    )
+
+
+@router.delete("/{invoice_id}/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_attachment(
+    invoice_id: str,
+    attachment_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value)),
+):
+    """Remove um anexo individual da nota (so criador, status editavel)."""
+    invoice_service.delete_attachment(
+        db, invoice_id, attachment_id, current_user,
+        ip=_client_ip(request), port=_client_port(request),
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete("/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -456,11 +526,13 @@ async def update_invoice(
     description: Optional[str] = Form(default=None),
     bank_details: Optional[str] = Form(default=None),
     amount: Optional[Decimal] = Form(default=None),
-    file: UploadFile | None = File(default=None),
+    files: list[UploadFile] = File(default_factory=list),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.EMPLOYEE.value)),
 ):
-    file_bytes, filename = await _read_pdf_upload(file)
+    """PATCH adiciona NOVOS anexos (nao substitui). Pra remover use
+    DELETE /{invoice_id}/attachments/{attachment_id}."""
+    new_files = await _read_pdf_uploads(files)
     data = InvoiceUpdate(
         **{
             key: value
@@ -480,8 +552,7 @@ async def update_invoice(
         invoice_id,
         data,
         current_user,
-        file_bytes=file_bytes,
-        filename=filename,
+        new_files=new_files,
         ip=_client_ip(request),
         port=_client_port(request),
     )

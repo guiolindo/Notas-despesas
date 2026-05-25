@@ -27,13 +27,20 @@
     <textarea id="bank-details" class="form-input" rows="2" maxlength="500" placeholder="Banco, Agencia, Conta, PIX..."></textarea>
   </div>
   <div class="form-group">
-    <label for="invoice-file">PDF da nota <span class="required-mark">*</span></label>
+    <label for="invoice-file">Anexos (PDF) <span class="required-mark">*</span></label>
     <div class="drop-zone" id="drop-zone">
-      <input type="file" id="invoice-file" accept=".pdf,application/pdf">
-      <strong>Arraste o PDF aqui</strong>
-      <span>ou clique para selecionar</span>
+      <input type="file" id="invoice-file" accept=".pdf,application/pdf" multiple>
+      <strong>Arraste ate 5 PDFs aqui</strong>
+      <span>ou clique para selecionar (nota fiscal + boletos, comprovantes...)</span>
       <small id="selected-file-name">Nenhum arquivo selecionado</small>
     </div>
+    <div class="field-help">Maximo 5 arquivos, 10 MB cada, 25 MB no total.</div>
+  </div>
+
+  <!-- Lista de anexos JA existentes (modo edicao) — usuario pode remover individualmente -->
+  <div class="form-group hidden" id="existing-attachments-group">
+    <label>Anexos atuais</label>
+    <div id="existing-attachments-list" class="attachments-list"></div>
   </div>
 
   <!-- Seleção de diretor (visível apenas para quem vai direto ao diretor) -->

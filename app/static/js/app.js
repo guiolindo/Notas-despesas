@@ -673,7 +673,20 @@ function setupInvoiceFileInput() {
   const input = document.getElementById('invoice-file');
   const label = document.getElementById('selected-file-name');
   if (!dropZone || !input) return;
-  const updateName = () => { label.textContent = input.files?.[0]?.name || 'Nenhum arquivo selecionado'; };
+  const MAX_FILES = 5;
+
+  const updateName = () => {
+    const files = Array.from(input.files || []);
+    if (!files.length) {
+      label.textContent = 'Nenhum arquivo selecionado';
+      return;
+    }
+    if (files.length === 1) {
+      label.textContent = files[0].name;
+    } else {
+      label.textContent = `${files.length} arquivos: ${files.map(f => f.name).join(', ')}`;
+    }
+  };
   ['dragenter', 'dragover'].forEach((eventName) => {
     dropZone.addEventListener(eventName, (event) => {
       event.preventDefault();
@@ -687,18 +700,30 @@ function setupInvoiceFileInput() {
     });
   });
   dropZone.addEventListener('drop', (event) => {
-    const file = event.dataTransfer.files?.[0];
-    if (!file) return;
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      showToast('Selecione um arquivo PDF.', 'error');
+    const dropped = Array.from(event.dataTransfer.files || []);
+    const pdfs = dropped.filter((f) =>
+      f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+    );
+    if (!pdfs.length) {
+      showToast('Selecione arquivos PDF.', 'error');
+      return;
+    }
+    if (pdfs.length > MAX_FILES) {
+      showToast(`Maximo ${MAX_FILES} arquivos por nota.`, 'error');
       return;
     }
     const transfer = new DataTransfer();
-    transfer.items.add(file);
+    pdfs.forEach((f) => transfer.items.add(f));
     input.files = transfer.files;
     updateName();
   });
-  input.addEventListener('change', updateName);
+  input.addEventListener('change', () => {
+    if ((input.files?.length || 0) > MAX_FILES) {
+      showToast(`Maximo ${MAX_FILES} arquivos. Selecione menos.`, 'error');
+      input.value = '';
+    }
+    updateName();
+  });
 }
 
 async function initInvoiceForm(mode) {
@@ -746,13 +771,44 @@ function fillInvoiceForm(invoice) {
   document.getElementById('description').value = invoice.description;
   document.getElementById('description-count').textContent = invoice.description.length;
   document.getElementById('bank-details').value = invoice.bank_details || '';
-  if (invoice.has_attachment) {
-    const box = document.getElementById('current-attachment');
-    if (box) {
-      box.innerHTML = `<strong>PDF atual:</strong> <a href="/api/invoices/${invoice.id}/attachment" target="_blank" rel="noopener">abrir anexo</a>. Selecione outro PDF para substituir.`;
-      box.classList.remove('hidden');
-    }
+  renderExistingAttachmentsList(invoice);
+}
+
+function renderExistingAttachmentsList(invoice) {
+  const group = document.getElementById('existing-attachments-group');
+  const list = document.getElementById('existing-attachments-list');
+  if (!group || !list) return;
+  const attachments = invoice.attachments || [];
+  if (!attachments.length) {
+    group.classList.add('hidden');
+    return;
   }
+  group.classList.remove('hidden');
+  list.innerHTML = attachments.map((att) => {
+    const sizeKb = (att.size_bytes / 1024).toFixed(0);
+    const canRemove = attachments.length > 1;
+    return `<div class="attachment-row">
+      <a href="/api/invoices/${escapeHtml(invoice.id)}/attachments/${escapeHtml(att.id)}" target="_blank" rel="noopener">
+        ${escapeHtml(att.drive_file_name || 'anexo.pdf')}
+      </a>
+      <span class="text-muted" style="font-size:.8rem">${sizeKb} KB</span>
+      ${canRemove ? `<button type="button" class="btn btn-ghost btn-sm" data-remove-attachment="${escapeHtml(att.id)}">Remover</button>` : ''}
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-remove-attachment]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const attId = btn.dataset.removeAttachment;
+      if (!(await confirmAction('Remover este anexo?'))) return;
+      try {
+        await apiFetch(`/api/invoices/${invoice.id}/attachments/${attId}`, { method: 'DELETE' });
+        showToast('Anexo removido.', 'success');
+        const fresh = await apiFetch(`/api/invoices/${invoice.id}`);
+        renderExistingAttachmentsList(fresh);
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    });
+  });
 }
 
 async function saveInvoice(event, mode, submitNow = true) {
@@ -760,12 +816,17 @@ async function saveInvoice(event, mode, submitNow = true) {
   const issueDate = document.getElementById('issue-date').value;
   const dueDate = document.getElementById('due-date').value;
   const description = document.getElementById('description').value.trim();
-  const file = document.getElementById('invoice-file').files?.[0];
+  const filesInput = document.getElementById('invoice-file');
+  const files = Array.from(filesInput?.files || []);
   if (dueDate < issueDate) return showToast('Vencimento nao pode ser anterior a emissao.', 'error');
   if (description.length < 10) return showToast('Descricao deve ter ao menos 10 caracteres.', 'error');
-  if (file && !file.name.toLowerCase().endsWith('.pdf')) return showToast('Selecione um arquivo PDF.', 'error');
-  // PDF obrigatorio para novas notas
-  if (mode !== 'edit' && !file) return showToast('Anexe o PDF da nota fiscal antes de continuar.', 'error');
+  const invalidFile = files.find((f) => !f.name.toLowerCase().endsWith('.pdf'));
+  if (invalidFile) return showToast(`'${invalidFile.name}' nao e um PDF.`, 'error');
+  // Pelo menos 1 PDF obrigatorio para novas notas
+  if (mode !== 'edit' && files.length === 0) {
+    return showToast('Anexe ao menos um PDF (nota fiscal) antes de continuar.', 'error');
+  }
+  if (files.length > 5) return showToast('Maximo 5 arquivos por nota.', 'error');
   const form = new FormData();
   form.append('invoice_number', document.getElementById('invoice-number').value.trim());
   form.append('amount', document.getElementById('amount').value);
@@ -773,7 +834,8 @@ async function saveInvoice(event, mode, submitNow = true) {
   form.append('due_date', dueDate);
   form.append('description', description);
   form.append('bank_details', document.getElementById('bank-details').value.trim());
-  if (file) form.append('file', file);
+  // FastAPI le 'files' (plural) como list[UploadFile]
+  files.forEach((f) => form.append('files', f));
   if (mode !== 'edit') {
     form.append('submit_now', submitNow ? 'true' : 'false');
     const directorId = document.getElementById('chosen-director-id')?.value;
@@ -826,11 +888,36 @@ function renderInvoiceAlerts(invoice, containerId) {
     items.map((m) => `<li>${escapeHtml(m)}</li>`).join('') + '</ul>';
 }
 
+function renderAttachmentsBlock(invoice, targetSelector) {
+  // Renderiza lista de anexos para download abaixo do iframe principal
+  const target = document.querySelector(targetSelector);
+  if (!target) return;
+  const attachments = invoice.attachments || [];
+  // Remove banner antigo se houver
+  const oldEl = target.querySelector('.attachments-block');
+  if (oldEl) oldEl.remove();
+  if (attachments.length <= 1) return;  // 1 anexo ja aparece no iframe principal
+  const html = `<div class="attachments-block">
+    <strong>Outros anexos desta nota:</strong>
+    <ul class="attachments-ul">
+      ${attachments.slice(1).map((a) => `
+        <li>
+          <a href="/api/invoices/${escapeHtml(invoice.id)}/attachments/${escapeHtml(a.id)}" target="_blank" rel="noopener">
+            ${escapeHtml(a.drive_file_name || 'anexo.pdf')}
+          </a>
+          <span class="text-muted" style="font-size:.8rem">${(a.size_bytes/1024).toFixed(0)} KB</span>
+        </li>`).join('')}
+    </ul>
+  </div>`;
+  target.insertAdjacentHTML('beforeend', html);
+}
+
 function renderInvoiceDetail(invoice) {
   document.getElementById('detail-title').textContent = `Nota ${invoice.invoice_number}`;
   document.getElementById('detail-subtitle').textContent = `Criada por ${invoice.created_by.name} em ${formatDateTime(invoice.created_at)}`;
   document.getElementById('detail-status').innerHTML = statusBadge(invoice.status);
   renderInvoiceAlerts(invoice, 'detail-grid');
+  renderAttachmentsBlock(invoice, '#pdf-panel');
   document.getElementById('detail-grid').innerHTML = [
     ['Valor', formatCurrency(invoice.amount)], ['Emissao', formatDate(invoice.issue_date)],
     ['Vencimento', formatDate(invoice.due_date)], ['Criador', invoice.created_by.name],
@@ -1981,6 +2068,7 @@ function _renderDrawerContent(invoice) {
   document.getElementById('drawer-subtitle').textContent =
     `${escapeHtml(invoice.created_by.name)} · ${formatDateTime(invoice.created_at)}`;
   renderInvoiceAlerts(invoice, 'drawer-grid');
+  renderAttachmentsBlock(invoice, '#drawer-pdf-panel');
   document.getElementById('drawer-status').innerHTML = statusBadge(invoice.status);
 
   // Link para página completa (edição, etc.)

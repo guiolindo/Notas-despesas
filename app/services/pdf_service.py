@@ -220,19 +220,35 @@ def _build_cover_pdf(invoice: Invoice, base_url: str) -> bytes:
 
 
 def generate_print_pdf(invoice: Invoice, base_url: str) -> bytes:
+    """Gera comprovante: capa + TODOS os anexos da nota concatenados.
+
+    Anexos sao baixados/descriptografados em ordem de upload e mesclados
+    em um unico PDF de comprovante. Se algum anexo falhar (R2 fora,
+    chave invalida), apenas pula esse anexo — comprovante segue valido
+    com os outros.
+    """
     cover_pdf = _build_cover_pdf(invoice, base_url)
-    if not invoice.drive_file_id or not invoice.encryption_key_enc:
+    attachments = invoice.attachments or []
+    if not attachments:
         return cover_pdf
 
-    original_pdf = drive_service.download_and_decrypt(
-        invoice.drive_file_id,
-        invoice.encryption_key_enc,
-    )
     writer = PdfWriter()
+    # Capa primeiro
     for page in PdfReader(io.BytesIO(cover_pdf)).pages:
         writer.add_page(page)
-    for page in PdfReader(io.BytesIO(original_pdf)).pages:
-        writer.add_page(page)
+
+    # Cada anexo, em ordem
+    for att in attachments:
+        if not att.drive_file_id or not att.encryption_key_enc:
+            continue
+        try:
+            att_bytes = drive_service.download_and_decrypt(
+                att.drive_file_id, att.encryption_key_enc,
+            )
+            for page in PdfReader(io.BytesIO(att_bytes)).pages:
+                writer.add_page(page)
+        except Exception:  # noqa: BLE001 — defensivo, comprovante nao deve quebrar
+            continue
 
     output = io.BytesIO()
     writer.write(output)
