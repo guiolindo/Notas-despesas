@@ -64,3 +64,4 @@ htmlcov/
 # Cache mypy / ruff
 .mypy_cache/
 .ruff_cache/
+test_pdfs/
