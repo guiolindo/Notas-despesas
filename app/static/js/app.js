@@ -1642,6 +1642,11 @@ function renderAdminUsersTable(users) {
     const unlockBtn = (blocked && !isAdmin)
       ? `<button class="btn btn-ghost btn-sm" data-action="unlock" data-id="${user.id}">Desbloquear</button>`
       : '';
+    // Anonimizar (LGPD): so para usuarios INATIVOS, nao-admin, nao o proprio.
+    // O endpoint backend exige is_active=False antes (desativar primeiro).
+    const anonymizeBtn = (!isAdmin && !isSelf && !user.is_active)
+      ? `<button class="btn btn-danger btn-sm" data-action="anonymize" data-id="${user.id}" data-name="${escapeHtml(user.name)}">Anonimizar (LGPD)</button>`
+      : '';
     return `<tr${isAdmin ? ' class="row-admin"' : ''}>
       <td>${escapeHtml(user.name)}${isSelf ? ' <span class="badge-self">voce</span>' : ''}</td>
       <td>${escapeHtml(user.email)}</td>
@@ -1653,7 +1658,7 @@ function renderAdminUsersTable(users) {
         <a class="btn btn-ghost btn-sm" href="/admin/users/${user.id}/edit">Editar</a>
         <button class="btn btn-ghost btn-sm" data-action="quick-edit" data-id="${user.id}">Editar rapido</button>
         <button class="btn btn-ghost btn-sm" data-action="reset" data-id="${user.id}">Redefinir senha</button>
-        ${unlockBtn}${toggleBtn}
+        ${unlockBtn}${toggleBtn}${anonymizeBtn}
       </td>
     </tr>`;
   }).join('');
@@ -1668,6 +1673,24 @@ async function handleAdminUserAction(button) {
   if (action === 'reset') openAdminResetModal(id);
   if (action === 'unlock') await unlockAdminUser(id);
   if (action === 'toggle') await toggleAdminUserActive(id, button.dataset.active === 'true');
+  if (action === 'anonymize') await anonymizeAdminUser(id, button.dataset.name);
+}
+
+async function anonymizeAdminUser(userId, userName) {
+  const msg =
+    `Anonimizar "${userName}" conforme LGPD?\n\n` +
+    `Nome, email e senha serao substituidos por placeholders irreversiveis. ` +
+    `O usuario NUNCA mais conseguira logar.\n\n` +
+    `Historico de aprovacoes fiscais e PRESERVADO (obrigacao legal 5 anos CTN).\n\n` +
+    `Esta acao NAO pode ser desfeita.`;
+  if (!(await confirmAction(msg))) return;
+  try {
+    const resp = await apiFetch(`/api/admin/users/${userId}/anonymize`, { method: 'POST' });
+    showToast(resp.message || 'Usuario anonimizado.', 'success');
+    await loadAdminUsers();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
 }
 
 async function openAdminEditModal(userId) {
