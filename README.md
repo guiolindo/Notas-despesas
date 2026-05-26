@@ -54,20 +54,25 @@ imutáveis com pseudonimização de IPs via HMAC-SHA256.
 
 ### Para colaboradores
 - Criar nota fiscal com upload de **até 5 PDFs** (nota + boletos + comprovantes,
-  10 MB cada, 25 MB total)
+  10 MB cada, 25 MB total). Viewer mostra todos os anexos mesclados.
 - Envio direto ao Gestor — ou ao Diretor (se configurado pelo Admin)
-- Editar/reenviar notas reprovadas
+- Editar/reenviar notas reprovadas (obrigatório alterar a descrição)
+- **Excluir notas reprovadas** que não vai reenviar (sem esperar auto-delete)
 - Cancelar notas pendentes (antes de qualquer aprovação)
 - Acompanhar status em timeline visual
+- **Bloqueio de envio com vencimento já passado** (atualiza a data antes)
 
 ### Para gestores
 - Fila de notas aguardando aprovação
-- Aprovar (encaminha ao diretor) ou Reprovar (com motivo obrigatório)
+- Aprovar (encaminha ao diretor) ou Reprovar (com motivo obrigatório de 10+ chars)
 - Selecionar diretor responsável ao aprovar
+- **Pausar recebimento** durante férias (Configurações → Indisponível)
 
 ### Para diretores
 - Fila de notas aguardando revisão
 - Aprovar (libera para Financeiro) ou Reprovar (com motivo)
+- **Criar nota própria** que vai direto ao Financeiro (auto-aprovação)
+- **Pausar recebimento** durante férias
 - Visualização de notas já lançadas
 
 ### Para financeiro
@@ -81,15 +86,19 @@ imutáveis com pseudonimização de IPs via HMAC-SHA256.
 - Auditoria completa (filtros por ação, usuário, sucesso)
 - **Configuração de email automático** — escolha entre SMTP (Gmail, Outlook,
   SendGrid) ou Resend (HTTP API, funciona em Railway sem desbloqueio)
-- Anonimização LGPD de colaboradores desligados
+- **Anonimização LGPD via botão na lista de usuários** (só para inativos não-admin)
+- **Purge manual de reprovadas** (`/api/admin/maintenance/purge-rejected`)
 - Reset de senha de outros usuários (exceto outros admins, anti-sequestro)
 
 ### Recursos transversais
 - **Busca instantânea** em todas as listagens com filtros combinados
 - **Totalizer**: contagem + soma R$ dos resultados filtrados
+- **FAQ filtrado por perfil** (rodapé "Perguntas frequentes") — cada papel só
+  vê instruções relevantes; admin vê tudo
 - **Alertas contextuais na nota**: banner amarelo no detalhe quando emissão é
-  do mês anterior, vencimento em <72h ou já vencida — visível para criador,
-  gestor, diretor e financeiro
+  do mês anterior/ano anterior, vencimento curto, ou nota reprovada (com motivo)
+- **Categoria "Reprovadas (suas)"** no dashboard — só pro criador
+- **Auto-delete de reprovadas após 90 dias** (PDFs também removidos do R2)
 - **Notificações automáticas por email** em cada transição de estado
 - **Recuperação de senha** via código de 6 dígitos enviado por email
 - **Alerta de conta bloqueada** após 5 tentativas falhas
@@ -98,6 +107,9 @@ imutáveis com pseudonimização de IPs via HMAC-SHA256.
 - **Configuração SMTP/Resend pelo admin** (sem precisar redeploy)
 - **Reenvio de nota reprovada** exige edição da descrição (previne reenvio
   vazio sem mudança real)
+- **PDFs com JavaScript embutido bloqueados** no upload (anti-malware leve)
+- **Modo férias** — Gestor/Diretor pausam recebimento de notas em
+  Configurações; banner amarelo confirma estado indisponível
 
 ## Perfis de usuário
 
@@ -175,6 +187,12 @@ Cada transição gera entrada em `approval_history` + `audit_logs` com:
 - IPs pseudonimizados via HMAC-SHA256 (LGPD Art. 46)
 - Anonimização irreversível de colaboradores desligados (Art. 16, I)
 - Página `/privacidade` com aviso completo
+
+### Upload de PDF — 3 camadas
+1. **Magic bytes** (`%PDF-`) — bloqueia arquivos renomeados (`.exe` → `.pdf`)
+2. **Detecção de JavaScript embutido** — bloqueia PDFs com `/JS`, `/JavaScript`,
+   `/OpenAction` (vetores típicos de exploit)
+3. **Sanitização de filename** — UUID + extensão (anti header injection)
 
 ### Headers HTTP
 - `Content-Security-Policy` restritivo (script-src 'self')
