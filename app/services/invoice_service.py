@@ -17,6 +17,8 @@ from app.models import (
 
 MAX_ATTACHMENTS_PER_INVOICE = 5
 MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024  # 25 MB
+
+REJECTED_AUTO_DELETE_DAYS = 90  # notas reprovadas sao apagadas apos N dias
 from app.services.drive_service import drive_service
 from app.services import email_service
 
@@ -727,6 +729,53 @@ def get_attachment(
     db.commit()
     data = drive_service.download_and_decrypt(att.drive_file_id, att.encryption_key_enc)
     return data, att.drive_file_name or "anexo.pdf"
+
+
+def purge_old_rejected_invoices(db: Session) -> int:
+    """Apaga notas reprovadas ha mais de REJECTED_AUTO_DELETE_DAYS dias.
+
+    Roda no startup do app (idempotente — se ja apagado, no-op).
+    Apaga arquivos no R2 + linha no banco (cascade limpa anexos+historico).
+    Retorna quantidade apagada.
+
+    Notas APROVADAS/LANCADAS NUNCA sao apagadas — obrigacao fiscal CTN 5 anos.
+    """
+    from datetime import datetime, timezone, timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=REJECTED_AUTO_DELETE_DAYS)
+    # Tira tzinfo pra comparar com coluna DateTime naive
+    cutoff_naive = cutoff.replace(tzinfo=None)
+
+    old_rejected = (
+        db.query(Invoice)
+        .options(*_invoice_options())
+        .filter(
+            Invoice.status.in_([InvoiceStatus.REPROVADO_GESTOR, InvoiceStatus.REPROVADO_DIRETOR]),
+            # Usa o mais recente entre director_reviewed_at e manager_reviewed_at
+            # — basta uma das datas ser velha o suficiente
+            ((Invoice.director_reviewed_at != None) & (Invoice.director_reviewed_at < cutoff_naive))
+            | ((Invoice.director_reviewed_at == None) & (Invoice.manager_reviewed_at < cutoff_naive)),
+        )
+        .all()
+    )
+    count = 0
+    for inv in old_rejected:
+        # Apaga anexos no R2 (best-effort)
+        for att in list(inv.attachments):
+            if att.drive_file_id:
+                try:
+                    drive_service.delete_file(att.drive_file_id)
+                except Exception:  # noqa: BLE001
+                    pass  # arquivo orfao — registrado e nao bloqueia
+        # Audit ANTES de deletar (resource_id da referencia que vai sumir)
+        _add_audit(
+            db, None, "AUTO_DELETE_REJECTED", inv.id,
+            detail=f"Removida automaticamente apos {REJECTED_AUTO_DELETE_DAYS} dias de reprovacao",
+        )
+        db.delete(inv)
+        count += 1
+    if count:
+        db.commit()
+    return count
 
 
 def delete_invoice(db: Session, invoice_id: str, user: User, ip: str | None = None, port: int | None = None) -> None:

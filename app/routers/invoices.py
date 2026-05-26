@@ -60,16 +60,42 @@ def _as_utc(dt):
 def _compute_invoice_alerts(invoice) -> list[str]:
     """Avisos informativos no detalhe da nota.
 
-    Sempre comparados contra a data de ENVIO (submitted_at) — apontam
-    decisoes do criador no momento do envio, nao demora dos aprovadores.
-    Se nota e rascunho, usa hoje como preview ao proprio criador.
-
-    Frases sao construidas de modo a deixar claro que e situacao DA
-    NOTA NO ENVIO (nao um julgamento ao aprovador atual). Apenas fatos.
-    Nota vencida nao chega aqui (envio bloqueado em submit_invoice).
+    Para notas REPROVADAS: alertas focam na reprovacao (motivo + auto-delete).
+    Para demais: alertas sobre o momento do ENVIO (emissao antiga, prazo curto).
     """
-    from datetime import date as _date
+    from datetime import date as _date, timedelta as _td
     alerts: list[str] = []
+
+    # Notas REPROVADAS: alerta focado, nao tem mais relevancia o vencimento
+    if invoice.status in {InvoiceStatus.REPROVADO_GESTOR, InvoiceStatus.REPROVADO_DIRETOR}:
+        # Motivo da reprovacao mais recente
+        rejection = next(
+            (h for h in reversed(invoice.approval_history or [])
+             if h.action.value.startswith("REJECTED")), None,
+        )
+        if rejection:
+            reason = rejection.comment or "(motivo nao informado)"
+            who = rejection.user.name if rejection.user else "aprovador"
+            alerts.append(f"Reprovada por {who}: {reason}")
+
+        # Aviso de auto-delete (apos 90 dias da reprovacao)
+        ref_time = invoice.director_reviewed_at or invoice.manager_reviewed_at
+        if ref_time:
+            ref_date = ref_time.date() if hasattr(ref_time, "date") else ref_time
+            days_since = (_date.today() - ref_date).days
+            days_left = 90 - days_since
+            if days_left <= 0:
+                alerts.append("Esta nota sera removida automaticamente em breve (mais de 90 dias reprovada).")
+            elif days_left <= 14:
+                alerts.append(
+                    f"Esta nota sera removida automaticamente em {days_left} dia(s). "
+                    f"Edite a descricao e reenvie, ou aceite que ela sera arquivada."
+                )
+            else:
+                alerts.append(
+                    f"Reprovada ha {days_since} dia(s). Notas reprovadas sao removidas apos 90 dias."
+                )
+        return alerts
 
     is_submitted = bool(invoice.submitted_at)
     if is_submitted:

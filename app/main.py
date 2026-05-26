@@ -141,6 +141,28 @@ _run_schema_migrations()
 _ensure_admin_exists()
 
 
+def _purge_old_rejected_on_startup() -> None:
+    """Limpa notas reprovadas ha mais de 90 dias. Roda no boot.
+    Best-effort — falha aqui nao impede o app de subir.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.services.invoice_service import purge_old_rejected_invoices
+        with SessionLocal() as db:
+            n = purge_old_rejected_invoices(db)
+            if n:
+                import logging
+                logging.getLogger(__name__).info(
+                    f"[startup] purgeu {n} nota(s) reprovada(s) >90 dias"
+                )
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).warning(f"[startup] purge falhou: {exc}")
+
+
+_purge_old_rejected_on_startup()
+
+
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 app.add_middleware(SecurityHeadersMiddleware)
