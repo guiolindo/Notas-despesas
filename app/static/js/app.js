@@ -889,13 +889,8 @@ function renderInvoiceAlerts(invoice, containerId) {
 }
 
 function renderAttachmentsBlock(invoice, targetSelector) {
-  // Multi-anexo agora e mesclado no proprio iframe via /api/invoices/{id}/attachment
-  // (que concatena todos os PDFs). Esta funcao apenas remove banners antigos
-  // se restarem na DOM (compat com versoes anteriores).
-  const target = document.querySelector(targetSelector);
-  if (!target) return;
-  const oldEl = target.querySelector('.attachments-block');
-  if (oldEl) oldEl.remove();
+  // No-op: multi-anexo agora e mesclado pelo backend em PDF unico no
+  // iframe principal. Mantido pra compat com chamadas antigas.
 }
 
 function renderInvoiceDetail(invoice) {
