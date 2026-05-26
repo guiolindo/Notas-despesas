@@ -782,10 +782,16 @@ def delete_invoice(db: Session, invoice_id: str, user: User, ip: str | None = No
     invoice = _get_invoice(db, invoice_id)
     if invoice.created_by_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissao insuficiente")
-    if invoice.status != InvoiceStatus.RASCUNHO:
+    # Status excluiveis: rascunho (nunca enviada) e reprovadas (saiu do fluxo).
+    # Aprovadas/Pagas nao podem ser apagadas — obrigacao fiscal.
+    if invoice.status not in {
+        InvoiceStatus.RASCUNHO,
+        InvoiceStatus.REPROVADO_GESTOR,
+        InvoiceStatus.REPROVADO_DIRETOR,
+    }:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Apenas notas em rascunho podem ser excluidas",
+            detail="So e possivel excluir notas em rascunho ou reprovadas",
         )
     # Apaga TODOS os anexos no R2 (best-effort por arquivo)
     storage_warnings = []

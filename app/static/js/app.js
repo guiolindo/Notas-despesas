@@ -640,7 +640,8 @@ function renderInvoicesTable(items) {
     <thead><tr><th>Numero</th><th>Setor</th><th>Valor</th><th>Emissao</th><th>Vencimento</th><th>Status</th><th>Acoes</th></tr></thead>
     <tbody>${items.map((item) => {
       const canEdit = ['RASCUNHO', 'REPROVADO_GESTOR', 'REPROVADO_DIRETOR'].includes(item.status);
-      const isDraft = item.status === 'RASCUNHO';
+      // Excluivel: rascunho ou reprovada
+      const canDelete = canEdit;
       const rejected = item.status.startsWith('REPROVADO');
       return `<tr class="${rejected ? 'rejected-row' : ''}">
         <td>${rejected ? '! ' : ''}${escapeHtml(item.invoice_number)}</td>
@@ -652,7 +653,7 @@ function renderInvoicesTable(items) {
         <td class="table-actions">
           <button class="btn btn-ghost btn-sm" data-drawer="${escapeHtml(item.id)}">Ver</button>
           ${canEdit ? `<a class="btn btn-ghost btn-sm" href="/invoices/${item.id}/edit">Editar</a>` : ''}
-          ${isDraft ? `<button class="btn btn-danger btn-sm" data-action="delete" data-id="${item.id}">Excluir</button>` : ''}
+          ${canDelete ? `<button class="btn btn-danger btn-sm" data-action="delete" data-id="${item.id}">Excluir</button>` : ''}
         </td>
       </tr>`;
     }).join('')}</tbody></table>`;
@@ -948,6 +949,7 @@ async function renderDetailActions(invoice) {
   }
   if (invoice.status.startsWith('REPROVADO')) {
     buttons.push(`<a class="btn btn-primary" href="/invoices/${invoice.id}/edit">Editar e Reenviar</a>`);
+    buttons.push('<button class="btn btn-danger" data-action="delete">Excluir</button>');
   }
   let directorHtml = '';
   if (invoice.status === 'RASCUNHO' && isDirect) {
@@ -2133,6 +2135,7 @@ async function _renderDrawerActions(invoice, user) {
   }
   if (invoice.status.startsWith('REPROVADO')) {
     buttons.push(`<a class="btn btn-primary" href="/invoices/${invoice.id}/edit">Editar e Reenviar</a>`);
+    buttons.push('<button class="btn btn-danger" data-action="delete">Excluir</button>');
   }
 
   let dirHtml = '';
