@@ -191,9 +191,9 @@ def _can_view(invoice: Invoice, user: User) -> bool:
             invoice.created_by is not None and invoice.created_by.manager_id == user.id
         )
     if user.role == UserRole.DIRECTOR:
-        # Isolamento por setor: diretor so ve notas atribuidas a ele mesmo
-        # (continua acessivel apos aprovacao pois director_id permanece preenchido)
-        return invoice.director_id == user.id
+        # Diretor ve: notas atribuidas a ele OU notas que ele proprio criou
+        # (caso director-self-submit). Isolamento entre setores mantido.
+        return invoice.director_id == user.id or invoice.created_by_id == user.id
     if user.role == UserRole.FINANCE:
         return invoice.status in {InvoiceStatus.APROVADO, InvoiceStatus.PAGO}
     return False
@@ -208,8 +208,10 @@ def _query_visible_invoices(db: Session, user: User):
     if user.role == UserRole.MANAGER:
         return query.filter(Invoice.manager_id == user.id)
     if user.role == UserRole.DIRECTOR:
-        # Isolamento por setor: lista so o que foi atribuido a ele
-        return query.filter(Invoice.director_id == user.id)
+        # Notas atribuidas a ele OR criadas por ele mesmo (self-submit)
+        return query.filter(
+            (Invoice.director_id == user.id) | (Invoice.created_by_id == user.id)
+        )
     if user.role == UserRole.FINANCE:
         return query.filter(Invoice.status.in_([InvoiceStatus.APROVADO, InvoiceStatus.PAGO]))
     return query.filter(False)
@@ -409,7 +411,21 @@ def _do_submit(
     now = _now()
     invoice.submitted_at = now
 
-    if user.submit_directly_to_director or (user.role == UserRole.MANAGER):
+    if user.role == UserRole.DIRECTOR:
+        # Diretor criando a propria nota — auto-aprovacao, vai direto ao Financeiro.
+        # Pula etapas de gestor/diretor (ele mesmo e o diretor).
+        invoice.status = InvoiceStatus.APROVADO
+        invoice.director_id = user.id
+        invoice.director_reviewed_at = now
+        _add_history(db, invoice.id, user.id, ApprovalAction.SUBMITTED, ip=ip, port=port)
+        _add_history(
+            db, invoice.id, user.id, ApprovalAction.APPROVED_DIRECTOR,
+            comment="Enviada diretamente ao Financeiro pelo proprio diretor",
+            ip=ip, port=port,
+        )
+        _add_audit(db, user.id, "DIRECTOR_SELF_SUBMIT", invoice.id, ip=ip, port=port, http_method="POST")
+        _notify_finance_team(db, invoice)
+    elif user.submit_directly_to_director or (user.role == UserRole.MANAGER):
         # Envia direto ao diretor
         if not director_id:
             raise HTTPException(

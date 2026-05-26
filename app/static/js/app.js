@@ -734,7 +734,12 @@ async function initInvoiceForm(mode) {
   setupInvoiceFileInput();
 
   const user = Auth.getUser();
-  if (user?.submit_directly_to_director) {
+  // Diretor: pula a etapa de escolher diretor (vai direto ao Financeiro).
+  // Funcionario com submit_directly_to_director ou Gestor: mostra picker.
+  if (user?.role === 'DIRECTOR') {
+    const submitBtn = document.getElementById('invoice-submit-btn');
+    if (submitBtn) submitBtn.textContent = 'Criar e Enviar ao Financeiro';
+  } else if (user?.submit_directly_to_director || user?.role === 'MANAGER') {
     const dirGroup = document.getElementById('director-select-group');
     if (dirGroup) dirGroup.style.display = '';
     try {

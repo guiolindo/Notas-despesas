@@ -309,7 +309,7 @@ async def create_invoice(
     director_id: Optional[str] = Form(default=None),
     files: list[UploadFile] = File(default_factory=list),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value)),
+    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value, UserRole.DIRECTOR.value)),
 ):
     parsed_files = await _read_pdf_uploads(files)
     data = InvoiceCreate(
@@ -339,7 +339,7 @@ def submit_invoice(
     request: Request,
     director_id: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value)),
+    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value, UserRole.DIRECTOR.value)),
 ):
     invoice = invoice_service.submit_invoice(
         db, invoice_id, current_user,
@@ -355,7 +355,7 @@ def cancel_invoice(
     invoice_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value)),
+    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value, UserRole.DIRECTOR.value)),
 ):
     invoice = invoice_service.cancel_invoice(db, invoice_id, current_user, ip=_client_ip(request), port=_client_port(request))
     return invoice_response(invoice)
@@ -555,7 +555,7 @@ def delete_attachment(
     attachment_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value)),
+    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value, UserRole.DIRECTOR.value)),
 ):
     """Remove um anexo individual da nota (so criador, status editavel)."""
     invoice_service.delete_attachment(
@@ -570,7 +570,7 @@ def delete_invoice(
     invoice_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value)),
+    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value, UserRole.DIRECTOR.value)),
 ):
     invoice_service.delete_invoice(db, invoice_id, current_user, ip=_client_ip(request), port=_client_port(request))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -588,7 +588,7 @@ async def update_invoice(
     amount: Optional[Decimal] = Form(default=None),
     files: list[UploadFile] = File(default_factory=list),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value)),
+    current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value, UserRole.DIRECTOR.value)),
 ):
     """PATCH adiciona NOVOS anexos (nao substitui). Pra remover use
     DELETE /{invoice_id}/attachments/{attachment_id}."""
