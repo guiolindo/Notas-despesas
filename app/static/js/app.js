@@ -317,6 +317,7 @@ function renderStats(summary) {
   const grid = document.getElementById('stats-grid');
   const cards = [
     { label: 'Pendentes revisao', value: summary.pending_review_count, color: 'blue', icon: '...' },
+    { label: 'Reprovadas (suas)', value: summary.rejected_count || 0, color: 'error', icon: 'x' },
     { label: 'Vencem em 72h', value: summary.due_72h_count, color: 'warning', icon: '!' },
     { label: 'Vencidas', value: summary.overdue_count, color: 'error', icon: 'x' },
     { label: 'Emissao antiga', value: summary.old_emission_count, color: 'muted', icon: '#' }
@@ -333,6 +334,7 @@ function renderStats(summary) {
 function renderAlerts(data) {
   const section = document.getElementById('alerts-section');
   const groups = [
+    { key: 'rejected', label: 'Suas notas reprovadas', type: 'error' },
     { key: 'overdue', label: 'Notas vencidas', type: 'error' },
     { key: 'due_72h', label: 'Vencem em menos de 72 horas', type: 'warning' },
     { key: 'old_emission', label: 'Emissao do mes anterior', type: 'info' },
@@ -1111,7 +1113,13 @@ function pickDirectorModal(directors) {
 
 async function initAlertsPage() {
   const data = await apiFetch('/alerts/');
-  const groups = [['overdue', 'Vencidas', 'error'], ['due_72h', 'Vencem em 72h', 'warning'], ['old_emission', 'Emissao antiga', 'info'], ['pending_review', 'Aguardando revisao', 'info']];
+  const groups = [
+    ['rejected', 'Suas notas reprovadas', 'error'],
+    ['overdue', 'Vencidas', 'error'],
+    ['due_72h', 'Vencem em 72h', 'warning'],
+    ['old_emission', 'Emissao antiga', 'info'],
+    ['pending_review', 'Aguardando revisao', 'info'],
+  ];
   document.getElementById('alerts-page').innerHTML = groups.map(([key, title, type]) => {
     const items = data[key] || [];
     return `<section class="accordion-section"><button class="accordion-header ${type}" data-accordion>${title} (${items.length})</button><div class="accordion-body">${renderAlertTable(items)}</div></section>`;

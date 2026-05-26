@@ -14,12 +14,12 @@ def get_alerts(db: Session, user: User) -> dict:
 
     from app.services.invoice_service import _query_visible_invoices
 
+    # Status que ainda fazem sentido alertar sobre vencimento/emissao.
+    # Reprovadas NAO entram aqui — categoria propria 'rejected' abaixo.
     not_paid = [
         InvoiceStatus.RASCUNHO,
         InvoiceStatus.AGUARDANDO_GESTOR,
         InvoiceStatus.AGUARDANDO_DIRETOR,
-        InvoiceStatus.REPROVADO_GESTOR,
-        InvoiceStatus.REPROVADO_DIRETOR,
         InvoiceStatus.APROVADO,
     ]
 
@@ -49,6 +49,18 @@ def get_alerts(db: Session, user: User) -> dict:
             Invoice.status.in_(not_paid),
         )
         .order_by(Invoice.issue_date.asc())
+        .all()
+    )
+
+    # Notas reprovadas — categoria propria. So mostra para o CRIADOR delas
+    # (aprovadores nao precisam de alerta de nota que ja saiu da fila deles).
+    rejected = (
+        _query_visible_invoices(db, user)
+        .filter(
+            Invoice.status.in_([InvoiceStatus.REPROVADO_GESTOR, InvoiceStatus.REPROVADO_DIRETOR]),
+            Invoice.created_by_id == user.id,
+        )
+        .order_by(Invoice.director_reviewed_at.desc().nullslast(), Invoice.manager_reviewed_at.desc())
         .all()
     )
 
@@ -90,12 +102,14 @@ def get_alerts(db: Session, user: User) -> dict:
         "overdue": [brief(i) for i in overdue],
         "due_72h": [brief(i) for i in due_72h],
         "old_emission": [brief(i) for i in old_emission],
+        "rejected": [brief(i) for i in rejected],
         "pending_review": [brief(i) for i in pending_review],
         "summary": {
             "overdue_count": len(overdue),
             "due_72h_count": len(due_72h),
             "old_emission_count": len(old_emission),
+            "rejected_count": len(rejected),
             "pending_review_count": len(pending_review),
-            "total_alerts": len(overdue) + len(due_72h) + len(old_emission),
+            "total_alerts": len(overdue) + len(due_72h) + len(old_emission) + len(rejected),
         },
     }
