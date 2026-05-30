@@ -240,6 +240,22 @@ function togglePasswordVisibility() {
   if (input) input.type = input.type === 'password' ? 'text' : 'password';
 }
 
+// Pega ?next= da URL e retorna so se for um path interno seguro
+// (mesmo origin, comeca com /, nao e //). Caso contrario, devolve null
+// e o caller usa /dashboard como destino padrao.
+function getSafeNextParam() {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('next');
+    if (!raw) return null;
+    if (!raw.startsWith('/') || raw.startsWith('//')) return null;
+    // Bloqueia loops pra /login e fluxo de troca de senha
+    if (raw.startsWith('/login') || raw.startsWith('/change-password')) return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
 async function handleLogin(event) {
   event.preventDefault();
   const button = document.getElementById('login-btn');
@@ -266,7 +282,14 @@ async function handleLogin(event) {
     }
     Auth.setToken(data.access_token);
     Auth.setUser(data.user);
-    window.location.href = data.user.must_change_password ? '/change-password' : '/dashboard';
+    // Troca de senha sempre vence; senao, respeita ?next=/algum-caminho
+    // (ex: usuario abriu /verify/<id> e clicou em 'Entrar para ver completo')
+    if (data.user.must_change_password) {
+      window.location.href = '/change-password';
+    } else {
+      const next = getSafeNextParam();
+      window.location.href = next || '/dashboard';
+    }
   } catch {
     errorEl.textContent = 'Erro de conexao. Tente novamente.';
     errorEl.classList.remove('hidden');
@@ -2774,7 +2797,11 @@ document.addEventListener('click', (event) => {
 document.addEventListener('DOMContentLoaded', () => {
   const page = document.body.dataset.page;
   if (page === 'login') {
-    if (Auth.getToken()) window.location.href = '/dashboard';
+    if (Auth.getToken()) {
+      // Se chegou aqui com ?next=, manda direto pra la (caso usuario clique
+      // 'Entrar' no /verify mas ja tem sessao ativa em outra aba).
+      window.location.href = getSafeNextParam() || '/dashboard';
+    }
     document.getElementById('login-form')?.addEventListener('submit', handleLogin);
     document.getElementById('toggle-password')?.addEventListener('click', togglePasswordVisibility);
     return;
