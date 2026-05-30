@@ -13,7 +13,7 @@
 </head>
 <body class="login-page">
   <div class="login-container">
-    <div class="login-card" style="max-width:640px">
+    <div class="login-card" style="max-width:640px"{% if invoice %} id="verify-root" data-invoice-id="{{ invoice.id }}"{% endif %}>
       <div class="login-logo">
         <img src="/static/img/logo.png" alt="Economart" class="login-logo-img">
       </div>
@@ -27,24 +27,24 @@
 
         <div id="verify-banner-public" class="verify-banner verify-banner-info" style="display:none">
           <div class="verify-banner-body">
-            <strong>Voce esta vendo um resumo desta nota.</strong>
-            <p>Numero, valor, status e assinatura digital sao publicos para conferencia.
-               Nome do fornecedor, CPF/CNPJ, gestor e diretor aparecem parcialmente ocultos.
-               Faca login com sua conta corporativa para abrir os dados completos.</p>
+            <strong>Esta e a versao publica do comprovante.</strong>
+            <p>Os dados essenciais para conferencia (numero, valor, status e
+               assinatura digital) estao visiveis. Para abrir tambem fornecedor,
+               descricao e responsaveis pelo fluxo, faca login.</p>
           </div>
           <div class="verify-banner-actions">
-            <a href="/login?next=/verify/{{ invoice.id }}" class="btn btn-primary">Entrar com minha conta</a>
+            <a href="/login?next=/verify/{{ invoice.id }}" class="btn btn-primary">Entrar para ver completo</a>
           </div>
         </div>
 
         <div id="verify-banner-loading" class="verify-banner" style="display:none">
-          <span class="verify-banner-body">Verificando sua sessao...</span>
+          <span class="verify-banner-body">Conferindo sua sessao...</span>
         </div>
 
         <div id="verify-banner-full" class="verify-banner verify-banner-success" style="display:none">
           <div class="verify-banner-body">
-            <strong>Acesso completo concedido.</strong>
-            <p>Sua conta tem permissao para ver os dados desta nota.</p>
+            <strong>Voce esta vendo o detalhamento completo.</strong>
+            <p>Sua conta participa do fluxo desta nota.</p>
           </div>
           <div class="verify-banner-actions">
             <a href="/invoices/{{ invoice.id }}" class="btn btn-primary">Abrir nota</a>
@@ -53,13 +53,14 @@
 
         <div id="verify-banner-denied" class="verify-banner verify-banner-warn" style="display:none">
           <div class="verify-banner-body">
-            <strong>Sua conta atual nao tem acesso a esta nota.</strong>
-            <p>O resumo abaixo continua disponivel. Se voce participa do fluxo
-               desta nota (criador, gestor, diretor, financeiro ou contas a pagar),
-               entre com a conta correta.</p>
+            <strong>Voce ja esta logado, mas esta nota e de outro fluxo.</strong>
+            <p>O detalhamento completo so aparece para quem participou diretamente
+               desta nota (criou, aprovou, lancou ou faz parte de contas a pagar).
+               Voce continua vendo a versao publica abaixo — se acha que
+               <em>deveria</em> ter acesso, talvez tenha entrado com a conta errada.</p>
           </div>
           <div class="verify-banner-actions">
-            <button type="button" id="verify-switch-account" class="btn btn-ghost">Trocar de conta</button>
+            <button type="button" id="verify-switch-account" class="btn btn-ghost">Entrar com outra conta</button>
           </div>
         </div>
 
@@ -109,90 +110,6 @@
     </div>
   </div>
 
-  {% if invoice %}
-  <script>
-    (function() {
-      var INVOICE_ID = {{ invoice.id | tojson }};
-      var token = null;
-      try { token = localStorage.getItem('access_token'); } catch (e) {}
-
-      var banner = {
-        pub: document.getElementById('verify-banner-public'),
-        load: document.getElementById('verify-banner-loading'),
-        full: document.getElementById('verify-banner-full'),
-        denied: document.getElementById('verify-banner-denied'),
-      };
-      function show(el) { if (el) el.style.display = 'flex'; }
-      function hide(el) { if (el) el.style.display = 'none'; }
-      function hideAll() { hide(banner.pub); hide(banner.load); hide(banner.full); hide(banner.denied); }
-
-      var switchBtn = document.getElementById('verify-switch-account');
-      if (switchBtn) {
-        switchBtn.addEventListener('click', function(e) {
-          e.preventDefault();
-          try {
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('user');
-          } catch (err) {}
-          window.location.href = '/login?next=/verify/' + encodeURIComponent(INVOICE_ID);
-        });
-      }
-
-      // Sem token = visitante anonimo: mostra banner publico e para por aqui.
-      if (!token) {
-        show(banner.pub);
-        return;
-      }
-      // Com token: revela tudo (sem flash de "Entrar para ver completo").
-      show(banner.load);
-
-      fetch('/api/invoices/' + encodeURIComponent(INVOICE_ID) + '/verify-full', {
-        headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
-      })
-      .then(function(r) {
-        if (r.status === 401) {
-          // Token expirado: trata como anonimo.
-          try { localStorage.removeItem('access_token'); } catch (e) {}
-          hideAll(); show(banner.pub);
-          return null;
-        }
-        if (r.status === 403) {
-          hideAll(); show(banner.denied);
-          return null;
-        }
-        if (!r.ok) {
-          hideAll(); show(banner.pub);
-          return null;
-        }
-        return r.json();
-      })
-      .then(function(data) {
-        if (!data) return;
-        hideAll(); show(banner.full);
-
-        function setText(id, value) {
-          var el = document.getElementById(id);
-          if (el && value != null && value !== '') el.textContent = value;
-        }
-        setText('vf-supplier-name', data.supplier_legal_name || data.supplier_name);
-        setText('vf-supplier-doc', data.supplier_document);
-        setText('vf-manager', data.manager_name + (data.manager_email ? ' · ' + data.manager_email : ''));
-        setText('vf-director', data.director_name + (data.director_email ? ' · ' + data.director_email : ''));
-
-        document.getElementById('vf-extra').style.display = 'block';
-        setText('vf-desc', data.description);
-        var dates = [];
-        if (data.issue_date) dates.push('Emissao: ' + data.issue_date);
-        if (data.due_date) dates.push('Vencimento: ' + data.due_date);
-        setText('vf-dates', dates.join(' · '));
-        setText('vf-creator', data.created_by_name);
-      })
-      .catch(function() {
-        banner.load.style.display = 'none';
-        banner.pub.style.display = 'inline';
-      });
-    })();
-  </script>
-  {% endif %}
+  {% if invoice %}<script src="/static/js/verify.js" defer></script>{% endif %}
 </body>
 </html>
