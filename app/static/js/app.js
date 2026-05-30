@@ -304,17 +304,8 @@ async function initShell() {
     return;
   }
 
-  const layout = document.getElementById('app-layout');
-  layout.style.visibility = 'visible';
-  // Fade-in suave: evita "pop" do conteudo ao revelar o shell
-  if (!layout.dataset.shellRevealed) {
-    layout.dataset.shellRevealed = '1';
-    layout.style.opacity = '0';
-    requestAnimationFrame(() => {
-      layout.style.transition = 'opacity 200ms ease';
-      layout.style.opacity = '1';
-    });
-  }
+  // Shell ja vem visivel do HTML (cores aplicadas inline no <head>).
+  // JS so completa os textos dinamicos do header.
   document.getElementById('header-user-name').textContent = user.name;
   document.getElementById('header-user-role').textContent = ROLE_LABELS[user.role] || user.role;
   addApprovalQueueLink(user.role);

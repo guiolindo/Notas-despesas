@@ -6,13 +6,40 @@
   <title>{% block title %}Economart{% endblock %} - Notas Fiscais</title>
   <link rel="icon" type="image/png" href="/static/img/favicon.png">
   <link rel="apple-touch-icon" href="/static/img/favicon.png">
+  <meta name="theme-color" content="#1B4F8A">
+  <meta name="color-scheme" content="light">
+  <!--
+    Critical CSS inline: define cor de fundo do shell ANTES do main.css
+    chegar. Sem isso o navegador pinta branco entre paginas ate o CSS
+    externo aplicar (varia 30-200ms dependendo de cache/banda). Com isso
+    a "tela branca" entre navegacoes some — a primeira pintura ja sai
+    com o sidebar azul e o conteudo cinza claro.
+  -->
+  <style>
+    html, body { background: #F4F5F7; margin: 0; }
+    body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, sans-serif; color: #1F2937; }
+    /* Shell estavel: cores e layout aplicados antes do CSS externo
+       para evitar reflow visivel quando main.css aplica .layout {display:flex} */
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar {
+      position: fixed; inset: 0 auto 0 0; width: 240px;
+      background: #1B4F8A; color: #fff;
+    }
+    .main-wrapper { width: calc(100% - 240px); margin-left: 240px; min-height: 100vh; }
+    .header { min-height: 64px; background: #fff; border-bottom: 1px solid #E5E7EB; }
+    .content { padding: 28px; }
+    @media (max-width: 768px) {
+      .sidebar { transform: translateX(-100%); }
+      .main-wrapper { width: 100%; margin-left: 0; }
+    }
+  </style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/main.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body data-page="{% block page_id %}{% endblock %}">
-  <div class="layout" id="app-layout" style="visibility:hidden">
+  <div class="layout" id="app-layout">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-logo">
         <img src="/static/img/logo.png" alt="Economart" class="logo">
