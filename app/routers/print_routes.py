@@ -19,6 +19,12 @@ from app.models import (
 )
 from app.security.dependencies import get_current_user, require_role
 from app.security.hashing import pseudonymize_ip
+from app.services.document_service import (
+    format_cnpj,
+    format_cpf,
+    mask_document,
+    mask_name,
+)
 from app.services.pdf_service import generate_print_pdf, invoice_hash
 
 
@@ -157,8 +163,48 @@ def _mask_email(email: str | None) -> str | None:
     return f"{masked_local}@{domain}"
 
 
+def _format_amount_brl(amount) -> str:
+    try:
+        v = float(amount)
+        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except Exception:  # noqa: BLE001
+        return f"R$ {amount}"
+
+
+def _br_datetime(dt) -> str | None:
+    if not dt:
+        return None
+    from datetime import timezone as _tz, timedelta as _td
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_tz.utc)
+    return dt.astimezone(_tz(_td(hours=-3))).strftime("%d/%m/%Y %H:%M")
+
+
+def _user_has_invoice_access(user: User, invoice: Invoice) -> bool:
+    """Quem ve dados completos da nota:
+    - ADMIN e FINANCE sempre
+    - Criador, gestor e diretor desta nota
+    - (CONTAS_A_PAGAR sera incluido na Fase 3)
+    """
+    if not user or not invoice:
+        return False
+    role = user.role.value
+    if role in {"ADMIN", "FINANCE"}:
+        return True
+    # Futuro: CONTAS_A_PAGAR
+    if role == "CONTAS_A_PAGAR":
+        return True
+    uid = user.id
+    return uid in {invoice.created_by_id, invoice.manager_id, invoice.director_id}
+
+
 @router.get("/verify/{invoice_id}", response_class=HTMLResponse)
 def verify_invoice(invoice_id: str, request: Request, db: Session = Depends(get_db)):
+    """Pagina publica de verificacao com mascara LGPD.
+
+    Renderiza SEMPRE com dados mascarados; o JS detecta sessao
+    autenticada (localStorage.access_token) e chama /verify-full pra revelar.
+    """
     invoice = _invoice_with_relations(db, invoice_id)
     context = {
         "request": request,
@@ -166,26 +212,79 @@ def verify_invoice(invoice_id: str, request: Request, db: Session = Depends(get_
         "auth_hash": None,
         "director_reviewed_at_br": None,
         "amount_formatted": "-",
-        "manager_email_masked": None,
-        "director_email_masked": None,
+        # Dados mascarados (LGPD) — visiveis sem login
+        "manager_name_masked": None,
+        "director_name_masked": None,
+        "supplier_name_masked": None,
+        "supplier_doc_masked": None,
+        "supplier_doc_type": None,
+        "status_label": None,
+        "department_name": None,
     }
     if invoice:
         context["auth_hash"] = invoice_hash(invoice)
-        # Converte UTC -> Brasilia para exibicao
-        if invoice.director_reviewed_at:
-            from datetime import timezone as _tz, timedelta as _td
-            dt = invoice.director_reviewed_at
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=_tz.utc)
-            br = dt.astimezone(_tz(_td(hours=-3)))
-            context["director_reviewed_at_br"] = br.strftime("%d/%m/%Y %H:%M")
-        # Formatacao monetaria pt-BR (1.234,56)
-        try:
-            v = float(invoice.amount)
-            context["amount_formatted"] = f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        except Exception:  # noqa: BLE001
-            context["amount_formatted"] = f"R$ {invoice.amount}"
-        # Emails mascarados (publico nao captura o email completo)
-        context["manager_email_masked"] = _mask_email(invoice.manager.email if invoice.manager else None)
-        context["director_email_masked"] = _mask_email(invoice.director.email if invoice.director else None)
+        context["director_reviewed_at_br"] = _br_datetime(invoice.director_reviewed_at)
+        context["amount_formatted"] = _format_amount_brl(invoice.amount)
+        context["status_label"] = "LANCADO" if invoice.status.value == "PAGO" else invoice.status.value
+        _dept = invoice.created_by.department_obj if invoice.created_by else None
+        context["department_name"] = _dept.name if _dept else None
+        context["manager_name_masked"] = mask_name(invoice.manager.name if invoice.manager else None)
+        context["director_name_masked"] = mask_name(invoice.director.name if invoice.director else None)
+        context["supplier_name_masked"] = mask_name(
+            invoice.supplier_legal_name or invoice.supplier_name
+        ) if (invoice.supplier_legal_name or invoice.supplier_name) else None
+        context["supplier_doc_masked"] = mask_document(
+            invoice.supplier_document, invoice.supplier_document_type
+        ) if invoice.supplier_document else None
+        context["supplier_doc_type"] = invoice.supplier_document_type
     return templates.TemplateResponse(request, "verify.html", context)
+
+
+@router.get("/api/invoices/{invoice_id}/verify-full")
+def verify_full(
+    invoice_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Retorna dados completos da nota para usuarios autorizados.
+
+    Acesso: ADMIN, FINANCE, CONTAS_A_PAGAR, ou criador/gestor/diretor da nota.
+    """
+    invoice = _invoice_with_relations(db, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nota nao encontrada")
+    if not _user_has_invoice_access(current_user, invoice):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Voce nao tem permissao para ver os dados completos desta nota.",
+        )
+    # Documento formatado
+    supplier_doc_fmt = None
+    if invoice.supplier_document:
+        if invoice.supplier_document_type == "CPF":
+            supplier_doc_fmt = format_cpf(invoice.supplier_document)
+        elif invoice.supplier_document_type == "CNPJ":
+            supplier_doc_fmt = format_cnpj(invoice.supplier_document)
+        else:
+            supplier_doc_fmt = invoice.supplier_document
+    _dept = invoice.created_by.department_obj if invoice.created_by else None
+    return {
+        "invoice_number": invoice.invoice_number,
+        "status": "LANCADO" if invoice.status.value == "PAGO" else invoice.status.value,
+        "amount_formatted": _format_amount_brl(invoice.amount),
+        "department_name": _dept.name if _dept else None,
+        "issue_date": invoice.issue_date.strftime("%d/%m/%Y") if invoice.issue_date else None,
+        "due_date": invoice.due_date.strftime("%d/%m/%Y") if invoice.due_date else None,
+        "director_reviewed_at_br": _br_datetime(invoice.director_reviewed_at),
+        "manager_name": invoice.manager.name if invoice.manager else None,
+        "manager_email": invoice.manager.email if invoice.manager else None,
+        "director_name": invoice.director.name if invoice.director else None,
+        "director_email": invoice.director.email if invoice.director else None,
+        "created_by_name": invoice.created_by.name if invoice.created_by else None,
+        "supplier_document": supplier_doc_fmt,
+        "supplier_document_type": invoice.supplier_document_type,
+        "supplier_name": invoice.supplier_name,
+        "supplier_legal_name": invoice.supplier_legal_name,
+        "description": invoice.description,
+        "auth_hash": invoice_hash(invoice),
+    }

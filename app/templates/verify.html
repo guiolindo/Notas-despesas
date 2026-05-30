@@ -13,46 +13,148 @@
 </head>
 <body class="login-page">
   <div class="login-container">
-    <div class="login-card">
+    <div class="login-card" style="max-width:640px">
       <div class="login-logo">
         <img src="/static/img/logo.png" alt="Economart" class="login-logo-img">
       </div>
       {% if not invoice %}
         <h1 class="login-title">Nota nao encontrada</h1>
         <p class="login-subtitle">O codigo informado nao corresponde a uma nota fiscal registrada.</p>
+        <p style="text-align:center;margin-top:16px"><a href="/" class="btn btn-ghost">Voltar</a></p>
       {% else %}
         <h1 class="login-title">Verificacao de Nota</h1>
         <p class="login-subtitle">Esta nota e autentica quando o status estiver APROVADO ou LANCADO.</p>
-        {% set status_label = 'LANCADO' if invoice.status.value == 'PAGO' else invoice.status.value %}
-        {% set _dept = invoice.created_by.department_obj if invoice.created_by else None %}
+
+        <p class="field-help" id="verify-mode-banner" style="text-align:center;margin:8px 0 16px">
+          <span id="verify-mode-public">
+            Exibindo dados parcialmente mascarados (LGPD).
+            <a href="/login?next=/verify/{{ invoice.id }}">Entrar para ver completo</a>
+          </span>
+          <span id="verify-mode-loading" style="display:none">Verificando sessao...</span>
+          <span id="verify-mode-full" style="display:none; color:var(--success-color, #16a34a)">
+            <strong>Acesso completo</strong> — voce tem permissao para ver os dados desta nota.
+          </span>
+          <span id="verify-mode-denied" style="display:none">
+            Sua conta nao tem acesso a esta nota. Exibindo dados mascarados.
+          </span>
+        </p>
+
         <div class="detail-grid">
-          <div class="detail-item"><span>Status</span><strong>{{ status_label }}</strong></div>
-          <div class="detail-item"><span>Numero</span><strong>{{ invoice.invoice_number }}</strong></div>
-          <div class="detail-item"><span>Setor</span><strong>{{ _dept.name if _dept else '-' }}</strong></div>
-          <div class="detail-item"><span>Valor</span><strong>{{ amount_formatted }}</strong></div>
-          <div class="detail-item"><span>Aprovacao Diretor</span><strong>{{ director_reviewed_at_br or '-' }}</strong></div>
+          <div class="detail-item"><span>Status</span><strong id="vf-status">{{ status_label }}</strong></div>
+          <div class="detail-item"><span>Numero</span><strong id="vf-number">{{ invoice.invoice_number }}</strong></div>
+          <div class="detail-item"><span>Setor</span><strong id="vf-dept">{{ department_name or '-' }}</strong></div>
+          <div class="detail-item"><span>Valor</span><strong id="vf-amount">{{ amount_formatted }}</strong></div>
+          <div class="detail-item"><span>Aprovacao Diretor</span><strong id="vf-dir-at">{{ director_reviewed_at_br or '-' }}</strong></div>
           <div class="detail-item">
-            <span>Gestor</span>
+            <span>Fornecedor ({{ supplier_doc_type or '-' }})</span>
             <strong>
-              {{ invoice.manager.name if invoice.manager else '-' }}
-              {% if manager_email_masked %}
-                <br><small class="text-muted" style="font-weight:400">{{ manager_email_masked }}</small>
+              <span id="vf-supplier-name">{{ supplier_name_masked or '-' }}</span>
+              {% if supplier_doc_masked %}
+                <br><small class="text-muted" style="font-weight:400" id="vf-supplier-doc">{{ supplier_doc_masked }}</small>
+              {% else %}
+                <br><small class="text-muted" style="font-weight:400" id="vf-supplier-doc">-</small>
               {% endif %}
             </strong>
+          </div>
+          <div class="detail-item">
+            <span>Gestor</span>
+            <strong id="vf-manager">{{ manager_name_masked or '-' }}</strong>
           </div>
           <div class="detail-item">
             <span>Diretor</span>
-            <strong>
-              {{ invoice.director.name if invoice.director else '-' }}
-              {% if director_email_masked %}
-                <br><small class="text-muted" style="font-weight:400">{{ director_email_masked }}</small>
-              {% endif %}
-            </strong>
+            <strong id="vf-director">{{ director_name_masked or '-' }}</strong>
           </div>
-          <div class="detail-item"><span>Assinatura Digital</span><strong>{{ auth_hash }}</strong></div>
+          <div class="detail-item"><span>Assinatura Digital</span><strong style="font-family:monospace;font-size:0.85em">{{ auth_hash }}</strong></div>
+        </div>
+
+        <div id="vf-extra" style="display:none;margin-top:16px">
+          <div class="detail-item">
+            <span>Descricao</span>
+            <strong id="vf-desc" style="font-weight:400; white-space:pre-wrap"></strong>
+          </div>
+          <div class="detail-item">
+            <span>Datas</span>
+            <strong id="vf-dates" style="font-weight:400"></strong>
+          </div>
+          <div class="detail-item">
+            <span>Criado por</span>
+            <strong id="vf-creator" style="font-weight:400"></strong>
+          </div>
+          <p style="text-align:center;margin-top:16px">
+            <a href="/invoices/{{ invoice.id }}" class="btn btn-primary">Abrir nota completa</a>
+          </p>
         </div>
       {% endif %}
     </div>
   </div>
+
+  {% if invoice %}
+  <script>
+    (function() {
+      var INVOICE_ID = {{ invoice.id | tojson }};
+      var token = null;
+      try { token = localStorage.getItem('access_token'); } catch (e) {}
+      if (!token) return;  // permanece publico/mascarado
+
+      var banner = {
+        pub: document.getElementById('verify-mode-public'),
+        load: document.getElementById('verify-mode-loading'),
+        full: document.getElementById('verify-mode-full'),
+        denied: document.getElementById('verify-mode-denied'),
+      };
+      banner.pub.style.display = 'none';
+      banner.load.style.display = 'inline';
+
+      fetch('/api/invoices/' + encodeURIComponent(INVOICE_ID) + '/verify-full', {
+        headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
+      })
+      .then(function(r) {
+        if (r.status === 401) {
+          try { localStorage.removeItem('access_token'); } catch (e) {}
+          banner.load.style.display = 'none';
+          banner.pub.style.display = 'inline';
+          return null;
+        }
+        if (r.status === 403) {
+          banner.load.style.display = 'none';
+          banner.denied.style.display = 'inline';
+          return null;
+        }
+        if (!r.ok) {
+          banner.load.style.display = 'none';
+          banner.pub.style.display = 'inline';
+          return null;
+        }
+        return r.json();
+      })
+      .then(function(data) {
+        if (!data) return;
+        banner.load.style.display = 'none';
+        banner.full.style.display = 'inline';
+
+        function setText(id, value) {
+          var el = document.getElementById(id);
+          if (el && value != null && value !== '') el.textContent = value;
+        }
+        setText('vf-supplier-name', data.supplier_legal_name || data.supplier_name);
+        setText('vf-supplier-doc', data.supplier_document);
+        setText('vf-manager', data.manager_name + (data.manager_email ? ' · ' + data.manager_email : ''));
+        setText('vf-director', data.director_name + (data.director_email ? ' · ' + data.director_email : ''));
+
+        document.getElementById('vf-extra').style.display = 'block';
+        setText('vf-desc', data.description);
+        var dates = [];
+        if (data.issue_date) dates.push('Emissao: ' + data.issue_date);
+        if (data.due_date) dates.push('Vencimento: ' + data.due_date);
+        setText('vf-dates', dates.join(' · '));
+        setText('vf-creator', data.created_by_name);
+      })
+      .catch(function() {
+        banner.load.style.display = 'none';
+        banner.pub.style.display = 'inline';
+      });
+    })();
+  </script>
+  {% endif %}
 </body>
 </html>

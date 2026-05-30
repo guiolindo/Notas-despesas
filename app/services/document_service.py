@@ -105,6 +105,47 @@ def mask_cnpj(cnpj: str | None) -> str:
     return f"{digits[:2]}.***.***/****-{digits[12:]}"
 
 
+# ─── Mascaramento generico (LGPD) ───────────────────────────────────────────
+
+def mask_name(name: str | None) -> str:
+    """Mascara nome de pessoa/empresa para exibicao publica.
+
+    Mantem 3 primeiras letras de cada palavra >= 2 chars; resto vira '***'.
+    Preposicoes curtas (de, da, do, das, dos, e) sao mantidas integralmente.
+    'Maria da Silva' -> 'Mar*** da Sil***'
+    'MULTICOM ATACADO E VAREJO S/A' -> 'MUL*** ATA*** E VAR*** S/A'
+    """
+    if not name:
+        return "-"
+    keep = {"de", "da", "do", "das", "dos", "e", "s/a", "ltda", "me", "epp"}
+    out = []
+    for tok in name.split():
+        low = tok.lower()
+        if low in keep or len(tok) <= 2:
+            out.append(tok)
+        elif len(tok) <= 3:
+            out.append(tok[0] + "***")
+        else:
+            out.append(tok[:3] + "***")
+    return " ".join(out)
+
+
+def mask_document(doc: str | None, doc_type: str | None) -> str:
+    """Roteia para mask_cpf ou mask_cnpj conforme o tipo."""
+    if not doc:
+        return "***"
+    if doc_type == "CPF":
+        return mask_cpf(doc)
+    if doc_type == "CNPJ":
+        return mask_cnpj(doc)
+    digits = strip_non_digits(doc)
+    if len(digits) == 11:
+        return mask_cpf(digits)
+    if len(digits) == 14:
+        return mask_cnpj(digits)
+    return "***"
+
+
 # ─── Detecta tipo ───────────────────────────────────────────────────────────
 
 def detect_document_type(value: str | None) -> str | None:
