@@ -51,7 +51,9 @@ def print_invoice(
     invoice_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.FINANCE.value, UserRole.ADMIN.value)),
+    current_user: User = Depends(require_role(
+        UserRole.FINANCE.value, UserRole.ADMIN.value, UserRole.CONTAS_A_PAGAR.value
+    )),
 ):
     invoice = _invoice_with_relations(db, invoice_id)
     if not invoice:
@@ -60,6 +62,16 @@ def print_invoice(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Apenas notas aprovadas ou pagas podem ser impressas",
+        )
+    # CONTAS_A_PAGAR e read-only: pode REIMPRIMIR (status ja PAGO) mas nao
+    # pode disparar a 1a impressao (que marca como PAGO automaticamente).
+    if (
+        current_user.role.value == "CONTAS_A_PAGAR"
+        and invoice.status != InvoiceStatus.PAGO
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Contas a Pagar so pode reimprimir notas ja lancadas pelo Financeiro.",
         )
 
     pdf_bytes = generate_print_pdf(invoice, str(request.base_url))

@@ -18,6 +18,9 @@ class UserRole(str, enum.Enum):
     MANAGER = "MANAGER"
     DIRECTOR = "DIRECTOR"
     FINANCE = "FINANCE"
+    # Acesso somente leitura a TODAS as notas + scanner QR (impressao do
+    # comprovante permitida). Nao cria, nao aprova, nao edita.
+    CONTAS_A_PAGAR = "CONTAS_A_PAGAR"
 
 
 class User(Base):

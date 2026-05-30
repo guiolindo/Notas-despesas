@@ -198,6 +198,10 @@ def _can_view(invoice: Invoice, user: User) -> bool:
         return invoice.director_id == user.id or invoice.created_by_id == user.id
     if user.role == UserRole.FINANCE:
         return invoice.status in {InvoiceStatus.APROVADO, InvoiceStatus.PAGO}
+    if user.role == UserRole.CONTAS_A_PAGAR:
+        # Contas a Pagar enxerga TODAS as notas — escaneia QR Code e
+        # consulta para pagamento. Acesso read-only enforced nos endpoints.
+        return True
     return False
 
 
@@ -216,6 +220,10 @@ def _query_visible_invoices(db: Session, user: User):
         )
     if user.role == UserRole.FINANCE:
         return query.filter(Invoice.status.in_([InvoiceStatus.APROVADO, InvoiceStatus.PAGO]))
+    if user.role == UserRole.CONTAS_A_PAGAR:
+        # Mesma visao do ADMIN para listagem; mas writes estao bloqueados
+        # por require_role nos endpoints de mutacao.
+        return query
     return query.filter(False)
 
 

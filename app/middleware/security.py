@@ -15,7 +15,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        # Camera liberada para a propria origem (scanner QR em /contas-a-pagar/scanner).
+        # Microfone e geolocalizacao seguem bloqueados.
+        response.headers["Permissions-Policy"] = "camera=(self), microphone=(), geolocation=()"
         # HSTS: força HTTPS por 1 ano (habilite apenas em producao com HTTPS)
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         # CSP — script-src SEM unsafe-inline e a protecao critica contra XSS.
@@ -28,7 +30,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src https://fonts.gstatic.com; "
             "img-src 'self' data:; "
-            "script-src 'self'; "
+            # jsdelivr liberado APENAS para o jsQR usado em /contas-a-pagar/scanner.
+            # Sem unsafe-inline — todo script ainda precisa vir de origem confiavel.
+            "script-src 'self' https://cdn.jsdelivr.net; "
             "frame-src 'self' blob:; "
             "object-src 'none'; "
             "base-uri 'self'"

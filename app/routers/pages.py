@@ -214,6 +214,16 @@ def admin_departments_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "admin/departments.html", {})
 
 
+# ─── Paginas exclusivas para Contas a Pagar ─────────────────────────────────
+
+@router.get("/contas-a-pagar/scanner", response_class=HTMLResponse)
+def contas_a_pagar_scanner(request: Request, db: Session = Depends(get_db)):
+    guard = require_page_role(request, db, "CONTAS_A_PAGAR", "ADMIN", "FINANCE")
+    if not isinstance(guard, User):
+        return guard
+    return templates.TemplateResponse(request, "contas_a_pagar/scanner.html")
+
+
 @router.get("/admin/smtp", response_class=HTMLResponse)
 def admin_smtp_page(request: Request, db: Session = Depends(get_db)):
     guard = require_page_role(request, db, "ADMIN")

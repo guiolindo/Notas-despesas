@@ -124,6 +124,11 @@ def _run_schema_migrations() -> None:
         pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supplier_name VARCHAR(255)"),
         pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supplier_legal_name VARCHAR(255)"),
         pg("CREATE INDEX IF NOT EXISTS idx_invoices_supplier_doc ON invoices(supplier_document)"),
+
+        # Fase 3: novo role CONTAS_A_PAGAR (read-only + scanner QR).
+        # No Postgres role e um TYPE ENUM — precisa ALTER TYPE ADD VALUE.
+        # No SQLite o Enum vira VARCHAR e aceita qualquer string.
+        pg("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'CONTAS_A_PAGAR'"),
     ]
     import logging as _logging
     _log = _logging.getLogger(__name__)

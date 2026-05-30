@@ -202,11 +202,12 @@ async function handleLogin(event) {
 }
 
 const ROLE_LABELS = {
-  ADMIN:     'Administrador',
-  MANAGER:   'Gestor',
-  DIRECTOR:  'Diretor',
-  FINANCE:   'Financeiro',
-  EMPLOYEE:  'Funcionario',
+  ADMIN:           'Administrador',
+  MANAGER:         'Gestor',
+  DIRECTOR:        'Diretor',
+  FINANCE:         'Financeiro',
+  EMPLOYEE:        'Funcionario',
+  CONTAS_A_PAGAR:  'Contas a Pagar',
 };
 
 async function initShell() {
@@ -291,6 +292,17 @@ function addApprovalQueueLink(role) {
     queue.innerHTML = '<span class="nav-icon">&#9724;</span> Lancamentos <span class="badge-count hidden" id="finance-count-nav"></span>';
     nav.insertBefore(queue, document.getElementById('nav-alerts'));
     // Historico foi fundido na pagina /invoices (que ja tem totalizer + filtros completos)
+  }
+  if (role === 'CONTAS_A_PAGAR' && !document.getElementById('nav-scanner')) {
+    // Scanner: bipador / camera (Fase 4)
+    const scan = document.createElement('a');
+    scan.href = '/contas-a-pagar/scanner';
+    scan.id = 'nav-scanner';
+    scan.className = 'nav-item';
+    scan.innerHTML = '<span class="nav-icon">&#9783;</span> Scanner QR';
+    nav.insertBefore(scan, document.getElementById('nav-alerts'));
+    // Esconde acao 'Nova nota' (read-only)
+    document.getElementById('nav-new-invoice')?.remove();
   }
 }
 
@@ -525,6 +537,11 @@ let invoiceListState = {
 let _invoicesSearchDebounce = null;
 
 async function initInvoicesList() {
+  // CONTAS_A_PAGAR e FINANCE nao criam notas — esconde o botao "Nova Nota".
+  const _u = Auth.getUser();
+  if (_u && ['CONTAS_A_PAGAR', 'FINANCE'].includes(_u.role)) {
+    document.getElementById('btn-new-invoice')?.remove();
+  }
   const triggerReload = () => {
     invoiceListState.page = 1;
     loadInvoicesList();
