@@ -125,8 +125,8 @@
       "Protecao contra sequestro de conta. Apenas o proprio admin pode redefinir a propria senha (via 'Esqueci minha senha' ou 'Trocar senha' apos login).") }}
     {{ qa("Como configuro o envio de email automatico?",
       "Va em <strong>Email automatico</strong> no menu. Recomendamos o provedor <em>Resend</em> (HTTP API) — funciona no Railway sem precisar fazer upgrade de plano. SMTP do Gmail e bloqueado pelo Railway nos planos Trial/Hobby.") }}
-    {{ qa("Como anonimizo um colaborador que se desligou?",
-      "Primeiro <em>Desative</em> o usuario. Depois use o botao <em>Anonimizar (LGPD)</em>. Nome e email sao substituidos por placeholders irreversiveis, mas o historico de aprovacoes fiscais e preservado (obrigacao legal — 5 anos CTN).") }}
+    {{ qa("Como encerro o cadastro de um colaborador que se desligou?",
+      "Primeiro <em>Desative</em> o usuario. Depois use o botao <em>Encerrar conta</em>. Nome e email sao substituidos por placeholders e o login fica permanentemente bloqueado; o historico de aprovacoes e preservado por exigencia fiscal (CTN, 5 anos).") }}
     {{ qa("O que sao os 'alertas' que aparecem no topo das notas?",
       "Banners amarelos informativos quando: (1) emissao em mes anterior ao envio, (2) vencimento em menos de 72h. Sao puramente informativos — nao bloqueiam fluxo. Notas com vencimento JA PASSADO sao bloqueadas no envio (nao geram alerta).") }}
     {{ qa("Posso ver tudo no sistema?",
@@ -138,6 +138,6 @@
 {% endif %}
 
 <footer class="faq-footer">
-  Sobre dados pessoais e protecao da informacao: <a href="/privacidade">aviso de privacidade (LGPD)</a>.
+  <a href="/privacidade">Privacidade e Termos de Uso</a>
 </footer>
 {% endblock %}

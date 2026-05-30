@@ -1810,13 +1810,14 @@ function renderAdminUsersTable(users) {
     const unlockBtn = (blocked && !isAdmin && !isAnon)
       ? `<button class="btn btn-ghost btn-sm" data-action="unlock" data-id="${user.id}">Desbloquear</button>`
       : '';
-    // Anonimizar (LGPD): so para usuarios INATIVOS, nao-admin, nao o proprio,
-    // e que ainda nao foram anonimizados.
+    // "Encerrar conta": so para usuarios INATIVOS, nao-admin, nao o proprio,
+    // e que ainda nao foram encerrados. O endpoint backend faz a
+    // pseudonimizacao irreversivel exigida apos desligamento.
     const anonymizeBtn = (!isAdmin && !isSelf && !user.is_active && !isAnon)
-      ? `<button class="btn btn-danger btn-sm" data-action="anonymize" data-id="${user.id}" data-name="${escapeHtml(user.name)}">Anonimizar (LGPD)</button>`
+      ? `<button class="btn btn-danger btn-sm" data-action="anonymize" data-id="${user.id}" data-name="${escapeHtml(user.name)}">Encerrar conta</button>`
       : '';
     const editBtns = isAnon
-      ? '<span class="text-muted" title="Conta anonimizada — registro preservado para auditoria">Conta encerrada (LGPD)</span>'
+      ? '<span class="text-muted" title="Conta encerrada — registro preservado para auditoria fiscal">Conta encerrada</span>'
       : `
         <a class="btn btn-ghost btn-sm" href="/admin/users/${user.id}/edit">Editar</a>
         <button class="btn btn-ghost btn-sm" data-action="quick-edit" data-id="${user.id}">Editar rapido</button>
@@ -1824,7 +1825,7 @@ function renderAdminUsersTable(users) {
       `;
     const rowCls = isAdmin ? ' class="row-admin"' : (isAnon ? ' class="row-anonymized"' : '');
     return `<tr${rowCls}>
-      <td>${escapeHtml(user.name)}${isSelf ? ' <span class="badge-self">voce</span>' : ''}${isAnon ? ' <span class="badge-anon">LGPD</span>' : ''}</td>
+      <td>${escapeHtml(user.name)}${isSelf ? ' <span class="badge-self">voce</span>' : ''}${isAnon ? ' <span class="badge-anon">encerrada</span>' : ''}</td>
       <td>${escapeHtml(user.email)}</td>
       <td>${adminRoleBadge(user.role)}</td>
       <td>${escapeHtml(user.department_name || '-')}</td>
@@ -1851,11 +1852,11 @@ async function handleAdminUserAction(button) {
 
 async function anonymizeAdminUser(userId, userName) {
   const msg =
-    `Anonimizar "${userName}" conforme LGPD?\n\n` +
-    `Nome, email e senha serao substituidos por placeholders irreversiveis. ` +
-    `O usuario NUNCA mais conseguira logar.\n\n` +
-    `Historico de aprovacoes fiscais e PRESERVADO (obrigacao legal 5 anos CTN).\n\n` +
-    `Esta acao NAO pode ser desfeita.`;
+    `Encerrar definitivamente a conta de "${userName}"?\n\n` +
+    `Nome, email e senha serao substituidos por placeholders. ` +
+    `O usuario nao podera mais logar.\n\n` +
+    `O historico de aprovacoes e preservado por exigencia fiscal (5 anos).\n\n` +
+    `Esta acao nao pode ser desfeita.`;
   if (!(await confirmAction(msg))) return;
   try {
     const resp = await apiFetch(`/api/admin/users/${userId}/anonymize`, { method: 'POST' });

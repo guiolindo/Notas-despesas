@@ -1,104 +1,297 @@
 {% extends "base.html" %}
-{% block title %}Privacidade e LGPD{% endblock %}
+{% block title %}Privacidade e Termos de Uso{% endblock %}
 {% block page_id %}privacy{% endblock %}
-{% block nav_dashboard %}{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1 class="page-title">Privacidade e Protecao de Dados</h1>
-  <p class="page-subtitle">Aviso de Privacidade — Sistema de Aprovacao de Notas Fiscais</p>
+  <h1 class="page-title">Privacidade e Termos de Uso</h1>
+  <p class="page-subtitle">Sistema de Aprovacao de Notas Fiscais — Economart</p>
 </div>
 
-<div class="card" style="max-width:860px">
+<div class="card legal-doc" style="max-width:880px">
   <div class="card-body">
 
-    <h2 class="section-title" style="font-size:1.1rem;margin-bottom:0.5rem">1. Quem e o Controlador?</h2>
-    <p class="text-muted" style="margin-bottom:1.5rem">
-      A <strong>Economart Atacadista</strong> e a controladora dos dados pessoais tratados
-      neste sistema, nos termos do Art. 5, VI da Lei 13.709/2018 (LGPD).
-      Para exercer seus direitos ou tirar duvidas, entre em contato pelo canal abaixo.
+    <nav class="legal-toc">
+      <strong>Sumario</strong>
+      <ol>
+        <li><a href="#parte-1">Parte 1 — Aviso de Privacidade</a></li>
+        <li><a href="#parte-2">Parte 2 — Termos de Uso</a></li>
+        <li><a href="#parte-3">Parte 3 — Seguranca da Informacao</a></li>
+        <li><a href="#parte-4">Parte 4 — Contato e Atualizacoes</a></li>
+      </ol>
+    </nav>
+
+    <p class="legal-meta">
+      Documento vigente desde 30/05/2026. Versao 2.0.
+      Aplicavel a todos os usuarios com acesso ao sistema, independentemente do perfil.
     </p>
 
-    <h2 class="section-title" style="font-size:1.1rem;margin-bottom:0.5rem">2. Quais dados coletamos e por que?</h2>
-    <div style="overflow-x:auto;margin-bottom:1.5rem">
-      <table class="data-table" style="font-size:0.85rem">
+    <!-- ─────────────── PARTE 1: PRIVACIDADE ─────────────── -->
+    <h2 id="parte-1" class="legal-h2">Parte 1 — Aviso de Privacidade</h2>
+
+    <h3 class="legal-h3">1.1 Controlador dos dados</h3>
+    <p>
+      A <strong>Economart Atacadista</strong> e a controladora dos dados pessoais tratados
+      neste sistema (Lei 13.709/2018, art. 5, VI). Toda solicitacao relacionada a dados
+      pessoais deve ser direcionada ao administrador interno do sistema.
+    </p>
+
+    <h3 class="legal-h3">1.2 Dados tratados, finalidades e bases legais</h3>
+    <div class="legal-table-wrap">
+      <table class="data-table">
         <thead>
           <tr>
             <th>Dado</th>
             <th>Finalidade</th>
-            <th>Base Legal (LGPD)</th>
+            <th>Base legal</th>
             <th>Retencao</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td>Nome</td>
+            <td>Nome completo</td>
             <td>Identificacao no fluxo de aprovacao</td>
-            <td>Execucao de contrato (Art. 7, V)</td>
+            <td>Execucao de contrato de trabalho (art. 7, V)</td>
             <td>Ate 2 anos apos desligamento</td>
           </tr>
           <tr>
             <td>E-mail corporativo</td>
-            <td>Autenticacao e notificacoes</td>
-            <td>Execucao de contrato (Art. 7, V)</td>
+            <td>Autenticacao e notificacoes operacionais</td>
+            <td>Execucao de contrato de trabalho (art. 7, V)</td>
             <td>Ate 2 anos apos desligamento</td>
           </tr>
           <tr>
             <td>Senha (hash bcrypt)</td>
-            <td>Autenticacao segura</td>
-            <td>Execucao de contrato (Art. 7, V)</td>
-            <td>Ate o desligamento / anonimizacao</td>
+            <td>Autenticacao</td>
+            <td>Execucao de contrato (art. 7, V)</td>
+            <td>Substituida no encerramento da conta</td>
           </tr>
           <tr>
-            <td>Historico de aprovacoes</td>
+            <td>Setor / cargo / hierarquia</td>
+            <td>Roteamento de aprovacoes</td>
+            <td>Execucao de contrato (art. 7, V)</td>
+            <td>Ate 2 anos apos desligamento</td>
+          </tr>
+          <tr>
+            <td>Historico de aprovacoes e rejeicoes</td>
             <td>Rastreabilidade fiscal e trabalhista</td>
-            <td>Obrigacao legal (Art. 7, II) — CTN Art. 173</td>
-            <td>Minimo 5 anos (prazo fiscal)</td>
+            <td>Obrigacao legal (art. 7, II) — CTN art. 173</td>
+            <td>Minimo 5 anos</td>
           </tr>
           <tr>
-            <td>PDFs de notas fiscais</td>
+            <td>Notas fiscais e comprovantes (PDFs)</td>
             <td>Comprovacao de despesas</td>
-            <td>Obrigacao legal (Art. 7, II) — CTN Art. 173</td>
-            <td>Minimo 5 anos (prazo fiscal)</td>
+            <td>Obrigacao legal (art. 7, II) — CTN art. 173</td>
+            <td>Minimo 5 anos</td>
           </tr>
           <tr>
-            <td>IP de acesso (pseudonimizado)</td>
+            <td>CPF / CNPJ do fornecedor</td>
+            <td>Identificacao do beneficiario do pagamento</td>
+            <td>Obrigacao legal fiscal (art. 7, II)</td>
+            <td>Minimo 5 anos</td>
+          </tr>
+          <tr>
+            <td>IP de acesso (pseudonimizado via HMAC)</td>
             <td>Seguranca e rastreabilidade forense</td>
-            <td>Obrigacao legal (Art. 7, II) — Marco Civil Art. 15</td>
+            <td>Obrigacao legal — Marco Civil art. 15</td>
             <td>Minimo 6 meses</td>
           </tr>
           <tr>
-            <td>Timestamps de acesso</td>
-            <td>Log de auditoria</td>
-            <td>Obrigacao legal (Art. 7, II)</td>
+            <td>Logs de auditoria (timestamps, acao, recurso)</td>
+            <td>Detecao de incidentes e investigacao interna</td>
+            <td>Legitimo interesse (art. 7, IX) e obrigacao legal</td>
             <td>Minimo 6 meses</td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <h2 class="section-title" style="font-size:1.1rem;margin-bottom:0.5rem">3. Seus direitos (Art. 18 da LGPD)</h2>
-    <ul style="margin-bottom:1.5rem;padding-left:1.5rem;color:var(--text-secondary);line-height:1.8">
-      <li><strong>Acesso:</strong> solicitar uma copia dos seus dados armazenados.</li>
-      <li><strong>Correcao:</strong> solicitar retificacao de dados incorretos ou desatualizados.</li>
-      <li><strong>Eliminacao:</strong> apos desligamento da empresa, solicitar a pseudonimizacao
-          dos seus dados de identificacao (historico fiscal permanece por obrigacao legal).</li>
-      <li><strong>Portabilidade:</strong> receber seus dados em formato estruturado.</li>
-      <li><strong>Informacao:</strong> saber com quais terceiros seus dados foram compartilhados.</li>
+    <h3 class="legal-h3">1.3 Compartilhamento</h3>
+    <p>
+      Dados pessoais <strong>nao sao vendidos, alugados ou cedidos a terceiros</strong>
+      para fins de marketing. Compartilhamento ocorre exclusivamente com:
+    </p>
+    <ul>
+      <li>Provedores de infraestrutura tecnica (hospedagem, armazenamento criptografado,
+          envio de e-mail transacional), apenas no minimo necessario para o servico.</li>
+      <li>Autoridades publicas, mediante ordem judicial ou requisicao legitima.</li>
+      <li>Auditores internos ou externos, no escopo de auditoria contabil-fiscal.</li>
     </ul>
 
-    <h2 class="section-title" style="font-size:1.1rem;margin-bottom:0.5rem">4. Como protegemos seus dados?</h2>
-    <ul style="margin-bottom:1.5rem;padding-left:1.5rem;color:var(--text-secondary);line-height:1.8">
-      <li>PDFs de notas fiscais armazenados com criptografia (Fernet/AES).</li>
+    <h3 class="legal-h3">1.4 Direitos do titular (LGPD art. 18)</h3>
+    <ul>
+      <li><strong>Confirmacao e acesso</strong> — saber se ha tratamento e obter copia dos seus dados.</li>
+      <li><strong>Correcao</strong> — solicitar atualizacao ou retificacao.</li>
+      <li><strong>Eliminacao / anonimizacao</strong> — apos desligamento, substituicao de dados
+          identificaveis por placeholders. O historico fiscal permanece pelo prazo legal.</li>
+      <li><strong>Portabilidade</strong> — receber seus dados em formato estruturado.</li>
+      <li><strong>Informacao sobre compartilhamento</strong> — saber com quais terceiros os dados foram compartilhados.</li>
+      <li><strong>Revogacao de consentimento</strong> — quando a base legal aplicavel for consentimento.</li>
+    </ul>
+
+    <h3 class="legal-h3">1.5 Cookies e armazenamento local</h3>
+    <p>
+      O sistema usa um cookie HttpOnly chamado <code>refresh_token</code> para manter
+      sua sessao logada (validade de 7 dias) e armazena o token de acesso de curta
+      duracao no <code>localStorage</code> do navegador. Nenhum cookie de publicidade,
+      analytics de terceiros ou rastreamento e utilizado.
+    </p>
+
+    <h3 class="legal-h3">1.6 Encerramento de conta</h3>
+    <p>
+      Apos desligamento, o administrador desativa a conta e, em seguida, executa o
+      encerramento definitivo. A acao substitui nome e e-mail por placeholders e
+      bloqueia permanentemente o login. O historico de aprovacoes e mantido por
+      exigencia fiscal e trabalhista (CTN, art. 173 — minimo 5 anos).
+    </p>
+
+    <!-- ─────────────── PARTE 2: TERMOS DE USO ─────────────── -->
+    <h2 id="parte-2" class="legal-h2">Parte 2 — Termos de Uso</h2>
+
+    <h3 class="legal-h3">2.1 Aceitacao</h3>
+    <p>
+      O acesso e uso do sistema implica aceitacao destes Termos e do Aviso de
+      Privacidade acima. Caso voce nao concorde, nao utilize o sistema e informe
+      o administrador.
+    </p>
+
+    <h3 class="legal-h3">2.2 Conta de acesso</h3>
+    <ul>
+      <li>A conta e <strong>pessoal e intransferivel</strong>. Compartilhar credenciais
+          configura violacao destes termos e pode ser tratada como falta funcional.</li>
+      <li>Cada usuario e responsavel por manter a senha em sigilo. Senhas devem ter
+          no minimo 8 caracteres com letras e numeros.</li>
+      <li>Apos 5 tentativas de login com senha incorreta, a conta e automaticamente
+          bloqueada por 10 minutos como medida de seguranca.</li>
+      <li>Suspeita de comprometimento da conta deve ser imediatamente comunicada
+          ao administrador, que podera forcar troca de senha e expirar sessoes ativas.</li>
+    </ul>
+
+    <h3 class="legal-h3">2.3 Uso permitido</h3>
+    <p>O sistema deve ser utilizado exclusivamente para:</p>
+    <ul>
+      <li>Cadastrar, anexar e submeter notas fiscais legitimas ao fluxo de aprovacao.</li>
+      <li>Aprovar, reprovar ou consultar notas no escopo da sua funcao.</li>
+      <li>Lancar pagamentos e gerar comprovantes (perfis Financeiro / Contas a Pagar).</li>
+      <li>Administrar usuarios, setores e configuracoes (perfil Admin).</li>
+    </ul>
+
+    <h3 class="legal-h3">2.4 Uso proibido</h3>
+    <p>E expressamente vedado:</p>
+    <ul>
+      <li>Submeter notas fraudulentas, duplicadas ou manipuladas.</li>
+      <li>Anexar arquivos contendo codigo executavel, scripts ou conteudo malicioso.
+          PDFs com JavaScript ou OpenAction sao bloqueados automaticamente.</li>
+      <li>Tentar contornar controles de acesso por funcao, ler dados de outros setores
+          ou explorar vulnerabilidades.</li>
+      <li>Realizar engenharia reversa, scraping em massa, ou automacao nao autorizada.</li>
+      <li>Inserir nos campos textuais informacoes de cunho discriminatorio, ofensivo,
+          ilegal ou dados pessoais nao necessarios ao processo.</li>
+      <li>Compartilhar fora da empresa qualquer PDF, comprovante, CPF, CNPJ ou
+          informacao financeira acessada pelo sistema.</li>
+    </ul>
+
+    <h3 class="legal-h3">2.5 Responsabilidades do usuario</h3>
+    <ul>
+      <li>Conferir a veracidade e exatidao dos dados informados em cada nota
+          (numero, valor, datas, fornecedor, anexos).</li>
+      <li>Aprovar apenas o que houver capacidade tecnica e autoridade para
+          aprovar — a aprovacao e auditavel e pessoal.</li>
+      <li>Encaminhar fisicamente o comprovante impresso ao destino correto
+          quando aplicavel.</li>
+    </ul>
+
+    <h3 class="legal-h3">2.6 Propriedade do conteudo</h3>
+    <p>
+      Notas fiscais, anexos, historico de aprovacoes e dados cadastrais sao de
+      titularidade da empresa controladora. O usuario nao adquire qualquer direito
+      sobre eles em razao do uso do sistema.
+    </p>
+
+    <h3 class="legal-h3">2.7 Suspensao e encerramento</h3>
+    <p>
+      O administrador pode suspender, restringir ou encerrar o acesso de qualquer
+      usuario em casos de violacao destes Termos, desligamento da empresa, ou
+      por exigencia legal. O encerramento da conta segue o procedimento descrito
+      em <a href="#parte-1">1.6</a>.
+    </p>
+
+    <h3 class="legal-h3">2.8 Limitacao de responsabilidade</h3>
+    <p>
+      O sistema e fornecido "no estado em que se encontra". A empresa nao se
+      responsabiliza por:
+    </p>
+    <ul>
+      <li>Decisoes financeiras tomadas a partir dos dados exibidos — sao de
+          responsabilidade do usuario que aprovou ou lancou.</li>
+      <li>Interrupcoes pontuais decorrentes de manutencao ou indisponibilidade
+          de provedores externos (hospedagem, e-mail, armazenamento).</li>
+      <li>Perda ou alteracao de dados causada por uso indevido por parte do
+          proprio usuario.</li>
+    </ul>
+    <p>
+      Em qualquer hipotese, a responsabilidade da empresa controladora se limita
+      ao escopo do uso interno corporativo do sistema.
+    </p>
+
+    <!-- ─────────────── PARTE 3: SEGURANCA ─────────────── -->
+    <h2 id="parte-3" class="legal-h2">Parte 3 — Seguranca da Informacao</h2>
+
+    <h3 class="legal-h3">3.1 Medidas tecnicas adotadas</h3>
+    <ul>
       <li>Senhas armazenadas exclusivamente como hash bcrypt (irreversivel).</li>
-      <li>Enderecos IP pseudonimizados via HMAC antes de qualquer armazenamento.</li>
-      <li>Tokens de autenticacao expiram em 60 minutos; sessao longa em cookie HttpOnly.</li>
-      <li>Controle de acesso por funcao (RBAC) — cada perfil acessa apenas o necessario.</li>
+      <li>PDFs criptografados em repouso (Fernet/AES) com chave individual por arquivo.</li>
+      <li>Tokens de acesso JWT expiram em 60 minutos; sessao longa via cookie HttpOnly
+          de 7 dias, com invalidacao apos troca de senha.</li>
+      <li>Trafego servido sobre HTTPS com HSTS habilitado.</li>
+      <li>Headers de seguranca aplicados: CSP restritiva, X-Frame-Options,
+          Referrer-Policy, Permissions-Policy.</li>
+      <li>Pseudonimizacao de IPs via HMAC antes do armazenamento.</li>
+      <li>Controle de acesso por funcao (RBAC): cada perfil enxerga apenas o
+          que e necessario para a sua atividade.</li>
+      <li>Bloqueio temporario apos 5 tentativas de login falhas e rate limit no
+          endpoint de autenticacao.</li>
+      <li>Validacao de PDFs anexados: bloqueio de scripts embutidos e
+          execucao automatica (/JavaScript, /OpenAction).</li>
     </ul>
 
-    <h2 class="section-title" style="font-size:1.1rem;margin-bottom:0.5rem">5. Canal de contato — Privacidade</h2>
-    <p class="text-muted">
-      Para exercer seus direitos ou reportar incidentes, fale com o administrador do sistema.
+    <h3 class="legal-h3">3.2 Auditoria</h3>
+    <p>
+      Todas as acoes relevantes (login, criacao, edicao, aprovacao, reprovacao,
+      lancamento, impressao, encerramento de conta) sao registradas em log com
+      timestamp, usuario, IP pseudonimizado, metodo HTTP e user-agent. Os logs
+      sao acessiveis ao perfil Admin para investigacao.
+    </p>
+
+    <h3 class="legal-h3">3.3 Incidentes de seguranca</h3>
+    <p>
+      Em caso de incidente envolvendo dados pessoais, a empresa adotara as
+      providencias previstas no art. 48 da LGPD, incluindo, se aplicavel,
+      comunicacao a ANPD e aos titulares afetados em prazo razoavel.
+    </p>
+
+    <!-- ─────────────── PARTE 4: CONTATO / ATUALIZACOES ─────────────── -->
+    <h2 id="parte-4" class="legal-h2">Parte 4 — Contato e Atualizacoes</h2>
+
+    <h3 class="legal-h3">4.1 Canal de contato</h3>
+    <p>
+      Solicitacoes de exercicio de direitos, duvidas sobre privacidade ou
+      reportes de incidentes devem ser dirigidos ao administrador interno do
+      sistema, que e o ponto focal para todas as questoes relacionadas a este
+      documento.
+    </p>
+
+    <h3 class="legal-h3">4.2 Atualizacoes deste documento</h3>
+    <p>
+      Este documento pode ser atualizado para refletir mudancas no sistema,
+      na legislacao aplicavel ou em praticas de seguranca. A versao em vigor
+      e sempre a publicada nesta pagina. Mudancas substanciais serao
+      comunicadas aos usuarios pelos canais internos.
+    </p>
+
+    <p class="legal-footer-note">
+      Ao continuar usando o sistema, voce confirma estar ciente e de acordo
+      com estes Termos e com o Aviso de Privacidade.
     </p>
 
   </div>
