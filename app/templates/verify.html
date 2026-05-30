@@ -25,20 +25,43 @@
         <h1 class="login-title">Verificacao de Nota</h1>
         <p class="login-subtitle">Esta nota e autentica quando o status estiver APROVADO ou LANCADO.</p>
 
-        <p class="field-help" id="verify-mode-banner" style="text-align:center;margin:8px 0 16px;min-height:1.5em">
-          <span id="verify-mode-public" style="display:none">
-            Exibindo dados parciais.
-            <a href="/login?next=/verify/{{ invoice.id }}">Entrar para ver completo</a>
-          </span>
-          <span id="verify-mode-loading" style="display:none">Verificando sessao...</span>
-          <span id="verify-mode-full" style="display:none; color:var(--success-color, #16a34a)">
-            <strong>Acesso completo</strong> — voce tem permissao para ver os dados desta nota.
-          </span>
-          <span id="verify-mode-denied" style="display:none">
-            Sua conta nao tem acesso a esta nota. Exibindo dados mascarados.
-            <a href="#" id="verify-switch-account">Trocar de conta</a>
-          </span>
-        </p>
+        <div id="verify-banner-public" class="verify-banner verify-banner-info" style="display:none">
+          <div class="verify-banner-body">
+            <strong>Voce esta vendo um resumo desta nota.</strong>
+            <p>Numero, valor, status e assinatura digital sao publicos para conferencia.
+               Nome do fornecedor, CPF/CNPJ, gestor e diretor aparecem parcialmente ocultos.
+               Faca login com sua conta corporativa para abrir os dados completos.</p>
+          </div>
+          <div class="verify-banner-actions">
+            <a href="/login?next=/verify/{{ invoice.id }}" class="btn btn-primary">Entrar com minha conta</a>
+          </div>
+        </div>
+
+        <div id="verify-banner-loading" class="verify-banner" style="display:none">
+          <span class="verify-banner-body">Verificando sua sessao...</span>
+        </div>
+
+        <div id="verify-banner-full" class="verify-banner verify-banner-success" style="display:none">
+          <div class="verify-banner-body">
+            <strong>Acesso completo concedido.</strong>
+            <p>Sua conta tem permissao para ver os dados desta nota.</p>
+          </div>
+          <div class="verify-banner-actions">
+            <a href="/invoices/{{ invoice.id }}" class="btn btn-primary">Abrir nota</a>
+          </div>
+        </div>
+
+        <div id="verify-banner-denied" class="verify-banner verify-banner-warn" style="display:none">
+          <div class="verify-banner-body">
+            <strong>Sua conta atual nao tem acesso a esta nota.</strong>
+            <p>O resumo abaixo continua disponivel. Se voce participa do fluxo
+               desta nota (criador, gestor, diretor, financeiro ou contas a pagar),
+               entre com a conta correta.</p>
+          </div>
+          <div class="verify-banner-actions">
+            <button type="button" id="verify-switch-account" class="btn btn-ghost">Trocar de conta</button>
+          </div>
+        </div>
 
         <div class="detail-grid">
           <div class="detail-item"><span>Status</span><strong id="vf-status">{{ status_label }}</strong></div>
@@ -81,9 +104,6 @@
             <span>Criado por</span>
             <strong id="vf-creator" style="font-weight:400"></strong>
           </div>
-          <p style="text-align:center;margin-top:16px">
-            <a href="/invoices/{{ invoice.id }}" class="btn btn-primary">Abrir nota completa</a>
-          </p>
         </div>
       {% endif %}
     </div>
@@ -97,14 +117,18 @@
       try { token = localStorage.getItem('access_token'); } catch (e) {}
 
       var banner = {
-        pub: document.getElementById('verify-mode-public'),
-        load: document.getElementById('verify-mode-loading'),
-        full: document.getElementById('verify-mode-full'),
-        denied: document.getElementById('verify-mode-denied'),
+        pub: document.getElementById('verify-banner-public'),
+        load: document.getElementById('verify-banner-loading'),
+        full: document.getElementById('verify-banner-full'),
+        denied: document.getElementById('verify-banner-denied'),
       };
-      var switchLink = document.getElementById('verify-switch-account');
-      if (switchLink) {
-        switchLink.addEventListener('click', function(e) {
+      function show(el) { if (el) el.style.display = 'flex'; }
+      function hide(el) { if (el) el.style.display = 'none'; }
+      function hideAll() { hide(banner.pub); hide(banner.load); hide(banner.full); hide(banner.denied); }
+
+      var switchBtn = document.getElementById('verify-switch-account');
+      if (switchBtn) {
+        switchBtn.addEventListener('click', function(e) {
           e.preventDefault();
           try {
             localStorage.removeItem('access_token');
@@ -116,11 +140,11 @@
 
       // Sem token = visitante anonimo: mostra banner publico e para por aqui.
       if (!token) {
-        banner.pub.style.display = 'inline';
+        show(banner.pub);
         return;
       }
       // Com token: revela tudo (sem flash de "Entrar para ver completo").
-      banner.load.style.display = 'inline';
+      show(banner.load);
 
       fetch('/api/invoices/' + encodeURIComponent(INVOICE_ID) + '/verify-full', {
         headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
@@ -129,26 +153,22 @@
         if (r.status === 401) {
           // Token expirado: trata como anonimo.
           try { localStorage.removeItem('access_token'); } catch (e) {}
-          banner.load.style.display = 'none';
-          banner.pub.style.display = 'inline';
+          hideAll(); show(banner.pub);
           return null;
         }
         if (r.status === 403) {
-          banner.load.style.display = 'none';
-          banner.denied.style.display = 'inline';
+          hideAll(); show(banner.denied);
           return null;
         }
         if (!r.ok) {
-          banner.load.style.display = 'none';
-          banner.pub.style.display = 'inline';
+          hideAll(); show(banner.pub);
           return null;
         }
         return r.json();
       })
       .then(function(data) {
         if (!data) return;
-        banner.load.style.display = 'none';
-        banner.full.style.display = 'inline';
+        hideAll(); show(banner.full);
 
         function setText(id, value) {
           var el = document.getElementById(id);

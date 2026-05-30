@@ -997,6 +997,30 @@ a:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-
 }
 .legal-table-wrap { overflow-x: auto; margin-bottom: 1.25rem; }
 .legal-doc .data-table { font-size: 0.82rem; width: 100%; }
+/* ─── Verify (banner publico/permissao) ─────────────────────── */
+.verify-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--blue);
+  background: #f8fafc;
+  border-radius: var(--radius);
+  padding: 0.9rem 1.1rem;
+  margin: 0.75rem 0 1.25rem;
+  text-align: left;
+}
+.verify-banner-info    { border-left-color: var(--blue); background: #eff4fb; }
+.verify-banner-success { border-left-color: #16a34a;    background: #ecfdf5; }
+.verify-banner-warn    { border-left-color: #d97706;    background: #fef9c3; }
+.verify-banner-body { flex: 1 1 320px; min-width: 0; font-size: 0.9rem; line-height: 1.5; }
+.verify-banner-body strong { display: block; margin-bottom: 0.2rem; color: var(--text); }
+.verify-banner-body p { margin: 0; color: var(--text-secondary); font-size: 0.85rem; }
+.verify-banner-actions { flex: 0 0 auto; }
+.verify-banner-actions .btn { white-space: nowrap; }
+
 .legal-footer-note {
   margin-top: 2rem; padding-top: 1rem;
   border-top: 1px solid var(--border);
