@@ -671,6 +671,118 @@ async function handleInvoiceAction(action, invoiceId) {
   }
 }
 
+// ─── CPF/CNPJ helpers (espelho dos do backend) ──────────────────────────────
+
+function stripDocDigits(value) {
+  return (value || '').replace(/\D/g, '');
+}
+
+function validateCPF(cpf) {
+  cpf = stripDocDigits(cpf);
+  if (cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false;
+  let s = 0;
+  for (let i = 0; i < 9; i++) s += parseInt(cpf[i]) * (10 - i);
+  let r = s % 11;
+  const dv1 = r < 2 ? 0 : 11 - r;
+  if (dv1 !== parseInt(cpf[9])) return false;
+  s = 0;
+  for (let i = 0; i < 10; i++) s += parseInt(cpf[i]) * (11 - i);
+  r = s % 11;
+  const dv2 = r < 2 ? 0 : 11 - r;
+  return dv2 === parseInt(cpf[10]);
+}
+
+function validateCNPJ(cnpj) {
+  cnpj = stripDocDigits(cnpj);
+  if (cnpj.length !== 14 || /^(\d)\1+$/.test(cnpj)) return false;
+  const w1 = [5,4,3,2,9,8,7,6,5,4,3,2];
+  const w2 = [6, ...w1];
+  let s = 0;
+  for (let i = 0; i < 12; i++) s += parseInt(cnpj[i]) * w1[i];
+  let r = s % 11;
+  const dv1 = r < 2 ? 0 : 11 - r;
+  if (dv1 !== parseInt(cnpj[12])) return false;
+  s = 0;
+  for (let i = 0; i < 13; i++) s += parseInt(cnpj[i]) * w2[i];
+  r = s % 11;
+  const dv2 = r < 2 ? 0 : 11 - r;
+  return dv2 === parseInt(cnpj[13]);
+}
+
+function formatDocument(digits) {
+  digits = stripDocDigits(digits);
+  if (digits.length === 11) {
+    return `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6,9)}-${digits.slice(9)}`;
+  }
+  if (digits.length === 14) {
+    return `${digits.slice(0,2)}.${digits.slice(2,5)}.${digits.slice(5,8)}/${digits.slice(8,12)}-${digits.slice(12)}`;
+  }
+  return digits;
+}
+
+function setupSupplierDocField() {
+  const input = document.getElementById('supplier-document');
+  const status = document.getElementById('supplier-doc-status');
+  const nameInput = document.getElementById('supplier-name');
+  const legalNameInput = document.getElementById('supplier-legal-name');
+  if (!input) return;
+
+  let debounce = null;
+
+  const update = async () => {
+    const raw = input.value;
+    const digits = stripDocDigits(raw);
+    // Aplica mascara visual conforme digita
+    if (digits.length <= 14) {
+      input.value = formatDocument(digits);
+    }
+    if (digits.length === 11) {
+      if (validateCPF(digits)) {
+        status.textContent = 'CPF valido.';
+        status.style.color = 'var(--success)';
+      } else {
+        status.textContent = 'CPF invalido. Verifique os digitos.';
+        status.style.color = 'var(--error)';
+      }
+    } else if (digits.length === 14) {
+      if (validateCNPJ(digits)) {
+        status.textContent = 'CNPJ valido. Buscando nome...';
+        status.style.color = 'var(--success)';
+        // Consulta API de CNPJ
+        clearTimeout(debounce);
+        debounce = setTimeout(async () => {
+          try {
+            const data = await apiFetch(`/api/invoices/lookup-cnpj/${digits}`);
+            if (data?.razao_social || data?.nome_fantasia) {
+              nameInput.value = data.nome_fantasia || data.razao_social || '';
+              legalNameInput.value = data.razao_social || '';
+              const cached = data.cached ? ' (cache)' : '';
+              status.textContent = `CNPJ valido. Dados preenchidos${cached}.`;
+            } else {
+              status.textContent = 'CNPJ valido (sem dados encontrados na consulta).';
+            }
+          } catch (e) {
+            status.textContent = 'CNPJ valido. Consulta de dados falhou — preencha manualmente.';
+            status.style.color = 'var(--warning)';
+          }
+        }, 400);
+      } else {
+        status.textContent = 'CNPJ invalido. Verifique os digitos.';
+        status.style.color = 'var(--error)';
+      }
+    } else if (digits.length === 0) {
+      status.textContent = 'Digite o CPF (11) ou CNPJ (14).';
+      status.style.color = 'var(--text-muted)';
+    } else {
+      status.textContent = `Faltam ${digits.length < 11 ? 11 - digits.length : 14 - digits.length} digitos.`;
+      status.style.color = 'var(--text-muted)';
+    }
+  };
+
+  input.addEventListener('input', update);
+}
+
+
 function setupInvoiceFileInput() {
   const dropZone = document.getElementById('drop-zone');
   const input = document.getElementById('invoice-file');
@@ -735,6 +847,7 @@ async function initInvoiceForm(mode) {
     document.getElementById('description-count').textContent = description.value.length;
   });
   setupInvoiceFileInput();
+  setupSupplierDocField();
 
   const user = Auth.getUser();
   // Diretor: pula a etapa de escolher diretor (vai direto ao Financeiro).
@@ -779,6 +892,16 @@ function fillInvoiceForm(invoice) {
   document.getElementById('description').value = invoice.description;
   document.getElementById('description-count').textContent = invoice.description.length;
   document.getElementById('bank-details').value = invoice.bank_details || '';
+  // Fornecedor
+  const docInput = document.getElementById('supplier-document');
+  if (docInput && invoice.supplier_document) {
+    docInput.value = formatDocument(invoice.supplier_document);
+    docInput.dispatchEvent(new Event('input'));  // dispara validacao + status
+  }
+  const nameInput = document.getElementById('supplier-name');
+  const legalInput = document.getElementById('supplier-legal-name');
+  if (nameInput) nameInput.value = invoice.supplier_name || '';
+  if (legalInput) legalInput.value = invoice.supplier_legal_name || '';
   renderExistingAttachmentsList(invoice);
 }
 
@@ -824,10 +947,17 @@ async function saveInvoice(event, mode, submitNow = true) {
   const issueDate = document.getElementById('issue-date').value;
   const dueDate = document.getElementById('due-date').value;
   const description = document.getElementById('description').value.trim();
+  const supplierDocRaw = document.getElementById('supplier-document')?.value || '';
+  const supplierDoc = stripDocDigits(supplierDocRaw);
   const filesInput = document.getElementById('invoice-file');
   const files = Array.from(filesInput?.files || []);
   if (dueDate < issueDate) return showToast('Vencimento nao pode ser anterior a emissao.', 'error');
   if (description.length < 10) return showToast('Descricao deve ter ao menos 10 caracteres.', 'error');
+  // Validacao CPF/CNPJ
+  if (!supplierDoc) return showToast('Informe o CPF ou CNPJ do fornecedor.', 'error');
+  const isValidDoc = supplierDoc.length === 11 ? validateCPF(supplierDoc) :
+                     supplierDoc.length === 14 ? validateCNPJ(supplierDoc) : false;
+  if (!isValidDoc) return showToast('CPF/CNPJ invalido. Verifique os digitos.', 'error');
   const invalidFile = files.find((f) => !f.name.toLowerCase().endsWith('.pdf'));
   if (invalidFile) return showToast(`'${invalidFile.name}' nao e um PDF.`, 'error');
   // Pelo menos 1 PDF obrigatorio para novas notas
@@ -842,6 +972,9 @@ async function saveInvoice(event, mode, submitNow = true) {
   form.append('due_date', dueDate);
   form.append('description', description);
   form.append('bank_details', document.getElementById('bank-details').value.trim());
+  form.append('supplier_document', supplierDoc);
+  form.append('supplier_name', document.getElementById('supplier-name')?.value?.trim() || '');
+  form.append('supplier_legal_name', document.getElementById('supplier-legal-name')?.value?.trim() || '');
   // FastAPI le 'files' (plural) como list[UploadFile]
   files.forEach((f) => form.append('files', f));
   if (mode !== 'edit') {
@@ -907,10 +1040,17 @@ function renderInvoiceDetail(invoice) {
   document.getElementById('detail-status').innerHTML = statusBadge(invoice.status);
   renderInvoiceAlerts(invoice, 'detail-grid');
   renderAttachmentsBlock(invoice, '#pdf-panel');
+  const docLabel = invoice.supplier_document_type || 'CPF/CNPJ';
+  const docFormatted = invoice.supplier_document ? formatDocument(invoice.supplier_document) : '-';
+  const supplierLine = invoice.supplier_name
+    ? `${invoice.supplier_name}${invoice.supplier_legal_name && invoice.supplier_legal_name !== invoice.supplier_name ? ` (${invoice.supplier_legal_name})` : ''}`
+    : '-';
   document.getElementById('detail-grid').innerHTML = [
     ['Valor', formatCurrency(invoice.amount)], ['Emissao', formatDate(invoice.issue_date)],
     ['Vencimento', formatDate(invoice.due_date)], ['Criador', invoice.created_by.name],
-    ['Setor', invoice.department_name || '-'], ['Descricao', invoice.description],
+    ['Setor', invoice.department_name || '-'],
+    [docLabel, docFormatted], ['Fornecedor', supplierLine],
+    ['Descricao', invoice.description],
     ['Dados bancarios', invoice.bank_details || '-']
   ].map(([label, value]) => `<div class="detail-item"><span>${label}</span><strong>${escapeHtml(String(value))}</strong></div>`).join('');
   // Reprovacao MAIS RECENTE — se a nota foi reprovada, editada e reprovada de
@@ -2095,11 +2235,15 @@ function _renderDrawerContent(invoice) {
   pageLink.href = `/invoices/${invoice.id}`;
   pageLink.style.display = '';
 
+  const docLabel = invoice.supplier_document_type || 'CPF/CNPJ';
+  const docFmt = invoice.supplier_document ? formatDocument(invoice.supplier_document) : '-';
   document.getElementById('drawer-grid').innerHTML = [
     ['Valor',          formatCurrency(invoice.amount)],
     ['Emissao',        formatDate(invoice.issue_date)],
     ['Vencimento',     formatDate(invoice.due_date)],
     ['Setor',          invoice.department_name || '-'],
+    [docLabel,         docFmt],
+    ['Fornecedor',     invoice.supplier_name || '-'],
     ['Descricao',      invoice.description],
     ['Dados bancarios', invoice.bank_details || '-'],
   ].map(([l, v]) => `<div class="detail-item"><span>${l}</span><strong>${escapeHtml(String(v))}</strong></div>`).join('');

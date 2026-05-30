@@ -117,6 +117,13 @@ def _run_schema_migrations() -> None:
 
         # Auto-pausa de recebimento de notas (ferias do diretor)
         pg("ALTER TABLE users ADD COLUMN IF NOT EXISTS unavailable_for_notes BOOLEAN DEFAULT FALSE"),
+
+        # CPF/CNPJ do fornecedor da nota + dados autopreenchidos pela API
+        pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supplier_document VARCHAR(14)"),
+        pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supplier_document_type VARCHAR(4)"),
+        pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supplier_name VARCHAR(255)"),
+        pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supplier_legal_name VARCHAR(255)"),
+        pg("CREATE INDEX IF NOT EXISTS idx_invoices_supplier_doc ON invoices(supplier_document)"),
     ]
     import logging as _logging
     _log = _logging.getLogger(__name__)

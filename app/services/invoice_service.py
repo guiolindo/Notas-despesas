@@ -367,6 +367,8 @@ def create_invoice(
     director_id: str | None = None,
 ) -> Invoice:
     """Cria nota com lista de arquivos (1-5 anexos PDF)."""
+    from app.services.document_service import detect_document_type, strip_non_digits
+    supplier_doc = strip_non_digits(data.supplier_document)
     invoice = Invoice(
         id=str(uuid.uuid4()),
         invoice_number=_sanitize_text(data.invoice_number),
@@ -378,6 +380,10 @@ def create_invoice(
         status=InvoiceStatus.RASCUNHO,
         created_by_id=user.id,
         created_at=_now(),
+        supplier_document=supplier_doc,
+        supplier_document_type=detect_document_type(supplier_doc),
+        supplier_name=_sanitize_text(data.supplier_name),
+        supplier_legal_name=_sanitize_text(data.supplier_legal_name),
     )
     db.add(invoice)
     db.flush()  # garante invoice.id antes de criar attachments

@@ -171,6 +171,10 @@ def invoice_response(invoice: Invoice) -> InvoiceResponse:
         status=invoice.status.value,
         has_attachment=bool(invoice.attachments),
         attachments=attachments,
+        supplier_document=invoice.supplier_document,
+        supplier_document_type=invoice.supplier_document_type,
+        supplier_name=invoice.supplier_name,
+        supplier_legal_name=invoice.supplier_legal_name,
         created_by=UserBrief.model_validate(invoice.created_by),
         manager=UserBrief.model_validate(invoice.manager) if invoice.manager else None,
         director=UserBrief.model_validate(invoice.director) if invoice.director else None,
@@ -331,6 +335,9 @@ async def create_invoice(
     description: str = Form(...),
     bank_details: Optional[str] = Form(default=None),
     amount: Decimal = Form(...),
+    supplier_document: str = Form(...),
+    supplier_name: Optional[str] = Form(default=None),
+    supplier_legal_name: Optional[str] = Form(default=None),
     submit_now: bool = Form(default=True),
     director_id: Optional[str] = Form(default=None),
     files: list[UploadFile] = File(default_factory=list),
@@ -345,6 +352,9 @@ async def create_invoice(
         description=description,
         bank_details=bank_details,
         amount=amount,
+        supplier_document=supplier_document,
+        supplier_name=supplier_name,
+        supplier_legal_name=supplier_legal_name,
     )
     invoice = invoice_service.create_invoice(
         db,
@@ -394,6 +404,21 @@ def get_directors(
 ):
     """Lista diretores disponíveis com indicação de compatibilidade com o setor do usuário."""
     return invoice_service.get_available_directors(db, current_user)
+
+
+@router.get("/lookup-cnpj/{cnpj}")
+def lookup_cnpj_endpoint(
+    cnpj: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Consulta dados do CNPJ via opencnpj.org (cache 6 meses).
+    Retorna razao_social + nome_fantasia ou 404 se nao encontrado/invalido."""
+    from app.services import document_service
+    data = document_service.lookup_cnpj(db, cnpj)
+    if not data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="CNPJ nao encontrado ou invalido.")
+    return data
 
 
 @router.get("/", response_model=PaginatedInvoices)
@@ -612,6 +637,9 @@ async def update_invoice(
     description: Optional[str] = Form(default=None),
     bank_details: Optional[str] = Form(default=None),
     amount: Optional[Decimal] = Form(default=None),
+    supplier_document: Optional[str] = Form(default=None),
+    supplier_name: Optional[str] = Form(default=None),
+    supplier_legal_name: Optional[str] = Form(default=None),
     files: list[UploadFile] = File(default_factory=list),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value, UserRole.DIRECTOR.value)),
@@ -629,6 +657,9 @@ async def update_invoice(
                 "description": description,
                 "bank_details": bank_details,
                 "amount": amount,
+                "supplier_document": supplier_document,
+                "supplier_name": supplier_name,
+                "supplier_legal_name": supplier_legal_name,
             }.items()
             if value is not None
         }

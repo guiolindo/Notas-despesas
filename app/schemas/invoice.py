@@ -19,6 +19,9 @@ class InvoiceCreate(BaseModel):
     description: str = Field(min_length=10, max_length=2000)
     bank_details: Optional[str] = Field(default=None, max_length=500)
     amount: Decimal = Field(gt=0, decimal_places=2)
+    supplier_document: str = Field(min_length=11, max_length=18)  # com ou sem mascara
+    supplier_name: Optional[str] = Field(default=None, max_length=255)
+    supplier_legal_name: Optional[str] = Field(default=None, max_length=255)
 
     @field_validator("due_date")
     @classmethod
@@ -26,6 +29,15 @@ class InvoiceCreate(BaseModel):
         if "issue_date" in info.data and v < info.data["issue_date"]:
             raise ValueError("due_date deve ser >= issue_date")
         return v
+
+    @field_validator("supplier_document")
+    @classmethod
+    def validate_supplier_document(cls, v):
+        from app.services.document_service import detect_document_type, strip_non_digits
+        doc_type = detect_document_type(v)
+        if not doc_type:
+            raise ValueError("CPF/CNPJ invalido. Verifique os digitos.")
+        return strip_non_digits(v)
 
 
 class InvoiceUpdate(BaseModel):
@@ -35,12 +47,26 @@ class InvoiceUpdate(BaseModel):
     description: Optional[str] = Field(default=None, min_length=10, max_length=2000)
     bank_details: Optional[str] = Field(default=None, max_length=500)
     amount: Optional[Decimal] = Field(default=None, gt=0)
+    supplier_document: Optional[str] = Field(default=None, min_length=11, max_length=18)
+    supplier_name: Optional[str] = Field(default=None, max_length=255)
+    supplier_legal_name: Optional[str] = Field(default=None, max_length=255)
 
     @model_validator(mode="after")
     def validate_dates(self):
         if self.issue_date and self.due_date and self.due_date < self.issue_date:
             raise ValueError("due_date deve ser >= issue_date")
         return self
+
+    @field_validator("supplier_document")
+    @classmethod
+    def validate_supplier_document(cls, v):
+        if v is None:
+            return None
+        from app.services.document_service import detect_document_type, strip_non_digits
+        doc_type = detect_document_type(v)
+        if not doc_type:
+            raise ValueError("CPF/CNPJ invalido.")
+        return strip_non_digits(v)
 
 
 class ReviewAction(BaseModel):
@@ -90,6 +116,11 @@ class InvoiceResponse(BaseModel):
     status: str
     has_attachment: bool  # legado — True se tem qualquer anexo
     attachments: list[AttachmentBrief] = []
+    # Fornecedor
+    supplier_document: Optional[str] = None  # so digitos
+    supplier_document_type: Optional[str] = None  # CPF | CNPJ
+    supplier_name: Optional[str] = None
+    supplier_legal_name: Optional[str] = None
     created_by: UserBrief
     manager: Optional[UserBrief]
     director: Optional[UserBrief]

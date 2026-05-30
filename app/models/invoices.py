@@ -58,6 +58,16 @@ class Invoice(Base):
     # se a descricao atual diferir desta — evita reenvio sem alteracao real.
     description_at_rejection = Column(Text, nullable=True)
 
+    # ─── Fornecedor / titular (CPF ou CNPJ) ──────────────────────────────
+    # supplier_document armazena apenas digitos (11 = CPF, 14 = CNPJ)
+    supplier_document = Column(String(14), nullable=True, index=True)
+    # CPF | CNPJ — tipo do documento (derivavel mas economiza queries)
+    supplier_document_type = Column(String(4), nullable=True)
+    # Nome fantasia (CNPJ) ou nome completo (CPF) — autopreenchido pela API
+    supplier_name = Column(String(255), nullable=True)
+    # Razao social (so para CNPJ)
+    supplier_legal_name = Column(String(255), nullable=True)
+
     created_by = relationship(
         "User",
         foreign_keys=[created_by_id],
