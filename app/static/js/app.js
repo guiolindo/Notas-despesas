@@ -1108,6 +1108,12 @@ async function renderDetailActions(invoice) {
     buttons.push(`<a class="btn btn-primary" href="/invoices/${invoice.id}/edit">Editar e Reenviar</a>`);
     buttons.push('<button class="btn btn-danger" data-action="delete">Excluir</button>');
   }
+  // Reimpressao do comprovante para notas LANCADAS — disponivel para
+  // Contas a Pagar, Financeiro e Admin (ja autenticados). A 1a impressao
+  // (status APROVADO) continua exclusiva do Financeiro pela pagina dele.
+  if (invoice.status === 'PAGO' && ['CONTAS_A_PAGAR', 'FINANCE', 'ADMIN'].includes(user?.role)) {
+    buttons.push('<button class="btn btn-primary" data-action="reprint">Reimprimir comprovante</button>');
+  }
   let directorHtml = '';
   if (invoice.status === 'RASCUNHO' && isDirect) {
     directorHtml = '<div class="form-group" id="detail-director-wrap"><label class="form-label">Enviar para o diretor:</label><div id="detail-director-list" class="director-list"><p class="text-muted">Carregando...</p></div><input type="hidden" id="detail-chosen-director"></div>';
@@ -1146,6 +1152,9 @@ async function renderDetailActions(invoice) {
           if (!(await confirmAction('Excluir esta nota?'))) return;
           await apiFetch(`/api/invoices/${invoice.id}`, { method: 'DELETE' });
           window.location.href = '/invoices';
+        } else if (button.dataset.action === 'reprint') {
+          const ok = await fetchAndOpenPdf(`/api/invoices/${invoice.id}/print`);
+          if (ok) showToast('Comprovante gerado.', 'success');
         }
       } catch (e) { showToast(e.message, 'error'); }
     });

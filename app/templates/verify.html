@@ -25,8 +25,8 @@
         <h1 class="login-title">Verificacao de Nota</h1>
         <p class="login-subtitle">Esta nota e autentica quando o status estiver APROVADO ou LANCADO.</p>
 
-        <p class="field-help" id="verify-mode-banner" style="text-align:center;margin:8px 0 16px">
-          <span id="verify-mode-public">
+        <p class="field-help" id="verify-mode-banner" style="text-align:center;margin:8px 0 16px;min-height:1.5em">
+          <span id="verify-mode-public" style="display:none">
             Exibindo dados parcialmente mascarados (LGPD).
             <a href="/login?next=/verify/{{ invoice.id }}">Entrar para ver completo</a>
           </span>
@@ -36,6 +36,7 @@
           </span>
           <span id="verify-mode-denied" style="display:none">
             Sua conta nao tem acesso a esta nota. Exibindo dados mascarados.
+            <a href="#" id="verify-switch-account">Trocar de conta</a>
           </span>
         </p>
 
@@ -94,7 +95,6 @@
       var INVOICE_ID = {{ invoice.id | tojson }};
       var token = null;
       try { token = localStorage.getItem('access_token'); } catch (e) {}
-      if (!token) return;  // permanece publico/mascarado
 
       var banner = {
         pub: document.getElementById('verify-mode-public'),
@@ -102,7 +102,24 @@
         full: document.getElementById('verify-mode-full'),
         denied: document.getElementById('verify-mode-denied'),
       };
-      banner.pub.style.display = 'none';
+      var switchLink = document.getElementById('verify-switch-account');
+      if (switchLink) {
+        switchLink.addEventListener('click', function(e) {
+          e.preventDefault();
+          try {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('user');
+          } catch (err) {}
+          window.location.href = '/login?next=/verify/' + encodeURIComponent(INVOICE_ID);
+        });
+      }
+
+      // Sem token = visitante anonimo: mostra banner publico e para por aqui.
+      if (!token) {
+        banner.pub.style.display = 'inline';
+        return;
+      }
+      // Com token: revela tudo (sem flash de "Entrar para ver completo").
       banner.load.style.display = 'inline';
 
       fetch('/api/invoices/' + encodeURIComponent(INVOICE_ID) + '/verify-full', {
@@ -110,6 +127,7 @@
       })
       .then(function(r) {
         if (r.status === 401) {
+          // Token expirado: trata como anonimo.
           try { localStorage.removeItem('access_token'); } catch (e) {}
           banner.load.style.display = 'none';
           banner.pub.style.display = 'inline';
