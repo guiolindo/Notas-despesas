@@ -1792,30 +1792,37 @@ function renderAdminUsersTable(users) {
     const blocked = user.blocked_until && new Date(user.blocked_until) > new Date();
     const isAdmin = user.role === 'ADMIN';
     const isSelf = user.id === me?.id;
-    // ADMINs: só redefinir senha e editar completo (sem toggle ativo/inativo, sem remover)
-    const toggleBtn = (!isAdmin && !isSelf)
+    const isAnon = Boolean(user.is_anonymized);
+    // Usuario anonimizado e estado final: nenhuma acao de identidade
+    // permitida. So sobra abrir o registro pra historico.
+    const toggleBtn = (!isAdmin && !isSelf && !isAnon)
       ? `<button class="btn ${user.is_active ? 'btn-ghost' : 'btn-secondary'} btn-sm" data-action="toggle" data-id="${user.id}" data-active="${user.is_active}">${user.is_active ? 'Desativar' : 'Ativar'}</button>`
       : '';
-    const unlockBtn = (blocked && !isAdmin)
+    const unlockBtn = (blocked && !isAdmin && !isAnon)
       ? `<button class="btn btn-ghost btn-sm" data-action="unlock" data-id="${user.id}">Desbloquear</button>`
       : '';
-    // Anonimizar (LGPD): so para usuarios INATIVOS, nao-admin, nao o proprio.
-    // O endpoint backend exige is_active=False antes (desativar primeiro).
-    const anonymizeBtn = (!isAdmin && !isSelf && !user.is_active)
+    // Anonimizar (LGPD): so para usuarios INATIVOS, nao-admin, nao o proprio,
+    // e que ainda nao foram anonimizados.
+    const anonymizeBtn = (!isAdmin && !isSelf && !user.is_active && !isAnon)
       ? `<button class="btn btn-danger btn-sm" data-action="anonymize" data-id="${user.id}" data-name="${escapeHtml(user.name)}">Anonimizar (LGPD)</button>`
       : '';
-    return `<tr${isAdmin ? ' class="row-admin"' : ''}>
-      <td>${escapeHtml(user.name)}${isSelf ? ' <span class="badge-self">voce</span>' : ''}</td>
+    const editBtns = isAnon
+      ? '<span class="text-muted" title="Conta anonimizada — registro preservado para auditoria">Conta encerrada (LGPD)</span>'
+      : `
+        <a class="btn btn-ghost btn-sm" href="/admin/users/${user.id}/edit">Editar</a>
+        <button class="btn btn-ghost btn-sm" data-action="quick-edit" data-id="${user.id}">Editar rapido</button>
+        <button class="btn btn-ghost btn-sm" data-action="reset" data-id="${user.id}">Redefinir senha</button>
+      `;
+    const rowCls = isAdmin ? ' class="row-admin"' : (isAnon ? ' class="row-anonymized"' : '');
+    return `<tr${rowCls}>
+      <td>${escapeHtml(user.name)}${isSelf ? ' <span class="badge-self">voce</span>' : ''}${isAnon ? ' <span class="badge-anon">LGPD</span>' : ''}</td>
       <td>${escapeHtml(user.email)}</td>
       <td>${adminRoleBadge(user.role)}</td>
       <td>${escapeHtml(user.department_name || '-')}</td>
       <td>${adminUserStatus(user)}</td>
       <td>${formatDateTime(user.last_login)}</td>
       <td class="table-actions">
-        <a class="btn btn-ghost btn-sm" href="/admin/users/${user.id}/edit">Editar</a>
-        <button class="btn btn-ghost btn-sm" data-action="quick-edit" data-id="${user.id}">Editar rapido</button>
-        <button class="btn btn-ghost btn-sm" data-action="reset" data-id="${user.id}">Redefinir senha</button>
-        ${unlockBtn}${toggleBtn}${anonymizeBtn}
+        ${editBtns}${unlockBtn}${toggleBtn}${anonymizeBtn}
       </td>
     </tr>`;
   }).join('');

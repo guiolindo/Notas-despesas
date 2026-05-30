@@ -115,6 +115,14 @@ def _utc_iso(dt) -> str | None:
     return dt.isoformat()
 
 
+ANONYMIZED_EMAIL_DOMAIN = "@desligado.local"
+
+
+def _is_anonymized(user: User) -> bool:
+    """Usuario foi pseudonimizado via LGPD (email purged-* @desligado.local)."""
+    return bool(user.email and user.email.lower().endswith(ANONYMIZED_EMAIL_DOMAIN))
+
+
 def _user_payload(user: User) -> dict:
     return {
         "id": user.id,
@@ -125,6 +133,7 @@ def _user_payload(user: User) -> dict:
         "department_name": user.department_obj.name if user.department_obj else None,
         "submit_directly_to_director": getattr(user, "submit_directly_to_director", False),
         "is_active": user.is_active,
+        "is_anonymized": _is_anonymized(user),
         "created_at": _utc_iso(user.created_at),
         "last_login": _utc_iso(user.last_login),
         "login_attempts": user.login_attempts,
@@ -295,6 +304,15 @@ def update_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario nao encontrado")
 
+    # Usuario anonimizado (LGPD) e final — nao reativa, nao re-edita identidade.
+    # Bloqueia reativacao + qualquer mudanca de role/dept/senha por aqui.
+    if _is_anonymized(user):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Usuario anonimizado (LGPD) — nao pode ser reativado nem reeditado. "
+                   "Cadastre um novo usuario se a pessoa retornar.",
+        )
+
     # Nunca desativar ou trocar role de um ADMIN por outro ADMIN (proteção estrutural)
     if user.role == UserRole.ADMIN and user.id != current_user.id:
         if body.is_active is False:
@@ -397,6 +415,12 @@ def reset_password(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario nao encontrado")
+
+    if _is_anonymized(user):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Usuario anonimizado (LGPD) — login esta permanentemente bloqueado.",
+        )
 
     # PROTECAO: nenhum admin pode resetar senha de outro admin (evita sequestro de conta).
     # Cada admin so pode redefinir a propria senha por aqui ou pelo /auth/change-password.
@@ -687,6 +711,12 @@ def anonymize_terminated_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Colaborador nao encontrado")
+
+    if _is_anonymized(user):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Usuario ja foi anonimizado anteriormente.",
+        )
 
     if user.is_active:
         raise HTTPException(
