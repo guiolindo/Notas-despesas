@@ -1,3 +1,78 @@
+// ─── Barra de progresso global ─────────────────────────────────────
+// Feedback imediato em qualquer navegacao interna: a barra cresce
+// rapidamente ate ~70% e completa quando o pageshow dispara na proxima
+// pagina. Combina bem com a View Transitions API no Chrome/Edge.
+(function setupNavProgress() {
+  if (typeof document === 'undefined') return;
+  let bar;
+  let timer;
+
+  function ensureBar() {
+    if (bar) return bar;
+    bar = document.getElementById('nav-progress');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'nav-progress';
+      document.body.appendChild(bar);
+    }
+    return bar;
+  }
+
+  function start() {
+    const b = ensureBar();
+    clearTimeout(timer);
+    b.classList.add('active');
+    b.style.width = '8%';
+    requestAnimationFrame(() => { b.style.width = '70%'; });
+  }
+
+  function finish() {
+    const b = ensureBar();
+    b.style.width = '100%';
+    timer = setTimeout(() => {
+      b.classList.remove('active');
+      setTimeout(() => { b.style.width = '0'; }, 220);
+    }, 180);
+  }
+
+  function isInternalLink(a, ev) {
+    if (!a) return false;
+    if (a.target && a.target !== '_self') return false;
+    if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button !== 0) return false;
+    if (a.hasAttribute('download')) return false;
+    const href = a.getAttribute('href');
+    if (!href || href.startsWith('#') || href.startsWith('javascript:') ||
+        href.startsWith('mailto:') || href.startsWith('tel:')) return false;
+    try {
+      const url = new URL(href, location.href);
+      if (url.origin !== location.origin) return false;
+      // Mesma URL completa: nao e navegacao real
+      if (url.href === location.href) return false;
+    } catch (e) { return false; }
+    return true;
+  }
+
+  document.addEventListener('click', function(ev) {
+    const a = ev.target.closest('a[href]');
+    if (isInternalLink(a, ev)) start();
+  });
+
+  // Submit de formularios que navegam (sem fetch ajax) — show progress
+  document.addEventListener('submit', function(ev) {
+    const f = ev.target;
+    if (!f || f.tagName !== 'FORM') return;
+    if (f.dataset.noProgress === '1') return;
+    if (f.target && f.target !== '_self') return;
+    // Skip se o handler ja chamou preventDefault
+    setTimeout(() => { if (!ev.defaultPrevented) start(); }, 0);
+  }, true);
+
+  window.addEventListener('pageshow', finish);
+  // Fallback: o browser disparou o load
+  if (document.readyState === 'complete') finish();
+  else window.addEventListener('load', finish);
+})();
+
 const Auth = {
   getToken: () => localStorage.getItem('access_token'),
   setToken: (token) => localStorage.setItem('access_token', token),
@@ -229,7 +304,17 @@ async function initShell() {
     return;
   }
 
-  document.getElementById('app-layout').style.visibility = 'visible';
+  const layout = document.getElementById('app-layout');
+  layout.style.visibility = 'visible';
+  // Fade-in suave: evita "pop" do conteudo ao revelar o shell
+  if (!layout.dataset.shellRevealed) {
+    layout.dataset.shellRevealed = '1';
+    layout.style.opacity = '0';
+    requestAnimationFrame(() => {
+      layout.style.transition = 'opacity 200ms ease';
+      layout.style.opacity = '1';
+    });
+  }
   document.getElementById('header-user-name').textContent = user.name;
   document.getElementById('header-user-role').textContent = ROLE_LABELS[user.role] || user.role;
   addApprovalQueueLink(user.role);
