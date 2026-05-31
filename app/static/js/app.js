@@ -405,86 +405,10 @@ function addApprovalQueueLink(role) {
   }
 }
 
-async function initDashboard() {
-  const user = Auth.getUser();
-  const hour = hourInBR();
-  const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
-  document.getElementById('dashboard-greeting').textContent = `${greeting}, ${user.name}`;
-
-  try {
-    const [invoicesData, alertsData] = await Promise.all([
-      apiFetch('/api/invoices/?per_page=5'),
-      apiFetch('/alerts/')
-    ]);
-    renderStats(alertsData.summary);
-    renderAlerts(alertsData);
-    renderRecentInvoices(invoicesData.items);
-  } catch (error) {
-    showToast(error.message, 'error');
-  }
-}
-
-function renderStats(summary) {
-  const grid = document.getElementById('stats-grid');
-  const cards = [
-    { label: 'Pendentes revisao', value: summary.pending_review_count, color: 'blue', icon: '...' },
-    { label: 'Reprovadas (suas)', value: summary.rejected_count || 0, color: 'error', icon: 'x' },
-    { label: 'Vencem em 72h', value: summary.due_72h_count, color: 'warning', icon: '!' },
-    { label: 'Vencidas', value: summary.overdue_count, color: 'error', icon: 'x' },
-    { label: 'Emissao antiga', value: summary.old_emission_count, color: 'muted', icon: '#' }
-  ];
-  grid.innerHTML = cards.map((card) => `
-    <div class="stat-card stat-${card.color}">
-      <div class="stat-icon">${card.icon}</div>
-      <div class="stat-value">${card.value}</div>
-      <div class="stat-label">${card.label}</div>
-    </div>
-  `).join('');
-}
-
-function renderAlerts(data) {
-  const section = document.getElementById('alerts-section');
-  const groups = [
-    { key: 'rejected', label: 'Suas notas reprovadas', type: 'error' },
-    { key: 'overdue', label: 'Notas vencidas', type: 'error' },
-    { key: 'due_72h', label: 'Vencem em menos de 72 horas', type: 'warning' },
-    { key: 'old_emission', label: 'Emissao do mes anterior', type: 'info' },
-    { key: 'pending_review', label: 'Aguardando sua revisao', type: 'info' }
-  ];
-  let html = '';
-  for (const group of groups) {
-    if (!data[group.key]?.length) continue;
-    html += `<div class="alert-banner alert-${group.type}">
-      <strong>${group.label} (${data[group.key].length})</strong>
-      <ul>${data[group.key].slice(0, 3).map((item) =>
-        `<li><a href="/invoices/${escapeHtml(item.id)}">${escapeHtml(item.invoice_number)}</a> - ${formatCurrency(item.amount)} - vence ${formatDate(item.due_date)}</li>`
-      ).join('')}
-      ${data[group.key].length > 3 ? '<li><a href="/alerts">Ver todos...</a></li>' : ''}
-      </ul>
-    </div>`;
-  }
-  section.innerHTML = html || '<p class="text-muted">Nenhum alerta no momento.</p>';
-}
-
-function renderRecentInvoices(items) {
-  const el = document.getElementById('recent-invoices');
-  if (!items.length) {
-    el.innerHTML = '<p class="text-muted">Nenhuma nota encontrada.</p>';
-    return;
-  }
-  el.innerHTML = `<table class="table">
-    <thead><tr>
-      <th>Numero</th><th>Valor</th><th>Vencimento</th><th>Status</th><th></th>
-    </tr></thead>
-    <tbody>${items.map((item) => `<tr>
-      <td>${escapeHtml(item.invoice_number)}</td>
-      <td>${formatCurrency(item.amount)}</td>
-      <td>${formatDate(item.due_date)}</td>
-      <td>${statusBadge(item.status)}</td>
-      <td><button class="btn btn-ghost btn-sm" data-drawer="${escapeHtml(item.id)}">Ver</button></td>
-    </tr>`).join('')}</tbody>
-  </table>`;
-}
+// Dashboard agora e renderizado por dashboard.html + dashboard-v2.js.
+// initDashboard/renderStats/renderAlerts/renderRecentInvoices antigos
+// foram removidos — apontavam pra elementos (#stats-grid, #alerts-section,
+// #recent-invoices) que nao existem mais no template novo.
 
 function getInvoiceIdFromPath() {
   const match = window.location.pathname.match(/\/invoices\/([^/]+)/);
@@ -1920,17 +1844,17 @@ function renderAdminUsersTable(users) {
       ? `<button class="btn btn-ghost btn-sm" data-action="unlock" data-id="${user.id}" title="Desbloquear" aria-label="Desbloquear"><span class="icon icon-circle-check ic-16"></span></button>`
       : '';
     const anonymizeBtn = (!isAdmin && !isSelf && !user.is_active && !isAnon)
-      ? `<button class="btn btn-ghost btn-sm" data-action="anonymize" data-id="${user.id}" data-name="${escapeHtml(user.name)}" title="Encerrar conta" aria-label="Encerrar conta" style="color:var(--error)"><span class="icon icon-archive ic-16"></span></button>`
+      ? `<button class="btn btn-ghost btn-sm btn-danger-text" data-action="anonymize" data-id="${user.id}" data-name="${escapeHtml(user.name)}" title="Encerrar conta" aria-label="Encerrar conta"><span class="icon icon-archive ic-16"></span></button>`
       : '';
     const editBtns = isAnon
-      ? '<span class="text-muted" title="Conta encerrada — registro preservado para auditoria fiscal" style="font-size:12px">Conta encerrada</span>'
+      ? '<span class="text-muted text-xs" title="Conta encerrada — registro preservado para auditoria fiscal">Conta encerrada</span>'
       : `
         <a class="btn btn-ghost btn-sm" href="/admin/users/${user.id}/edit" title="Editar completo" aria-label="Editar completo"><span class="icon icon-external-link ic-16"></span></a>
         <button class="btn btn-ghost btn-sm" data-action="quick-edit" data-id="${user.id}" title="Editar rapido" aria-label="Editar rapido"><span class="icon icon-pencil ic-16"></span></button>
         <button class="btn btn-ghost btn-sm" data-action="reset" data-id="${user.id}" title="Redefinir senha" aria-label="Redefinir senha"><span class="icon icon-lock ic-16"></span></button>
       `;
     const rowCls = isAdmin ? ' class="row-admin"' : (isAnon ? ' class="row-anonymized"' : '');
-    const nameCell = `<div style="display:flex;gap:10px;align-items:center">${adminAvatar(user.name)}<div><strong style="font-weight:600">${escapeHtml(user.name)}</strong>${isSelf ? ' <span class="badge-self">voce</span>' : ''}${isAnon ? ' <span class="badge-anon">encerrada</span>' : ''}</div></div>`;
+    const nameCell = `<div class="user-name-cell">${adminAvatar(user.name)}<div><strong>${escapeHtml(user.name)}</strong>${isSelf ? ' <span class="badge-self">voce</span>' : ''}${isAnon ? ' <span class="badge-anon">encerrada</span>' : ''}</div></div>`;
     return `<tr${rowCls} data-user-id="${user.id}" data-anonymized="${isAnon}">
       <td>${nameCell}</td>
       <td>${escapeHtml(user.email)}</td>
@@ -2831,10 +2755,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   if (page === 'dashboard') {
-    // Dashboard agora e renderizado via dashboard.html novo + dashboard-v2.js.
-    // initDashboard() antigo procurava elementos (#stats-grid etc.) que nao
-    // existem mais — manter chamada aqui daria erro silencioso e poluiria a
-    // greeting que o dashboard-v2 ja gerencia. So o shell e necessario.
+    // dashboard-v2.js cuida do dashboard novo; aqui so o shell.
     initShell();
   } else if (page === 'invoices-list') {
     initShell().then(() => initInvoicesList());

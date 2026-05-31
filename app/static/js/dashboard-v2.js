@@ -1,75 +1,40 @@
 /* ============================================================================
-   dashboard-v2.js — lógica do dashboard refeito (refresh visual).
-   Isolado de app.js. Carregado APENAS em /dashboard.
+   dashboard-v2.js — logica do dashboard refeito.
+   Carregado APENAS em /dashboard, DEPOIS de app.js (que expoe helpers globais).
 
    Responsabilidades:
      1. Hidratar contadores (review queue, minhas notas, conferidas hoje)
-     2. Renderizar lista de alertas por perfil (consumindo /api/alerts)
-     3. Popular a tabela de notas recentes (/api/invoices?limit=5)
-     4. Atalho de teclado F2 → abrir scanner (perfil CONTAS_A_PAGAR)
-     5. Saudação contextual por horário de Brasília
+     2. Renderizar lista de alertas (consumindo /alerts/)
+     3. Popular a tabela de notas recentes (/api/invoices/?per_page=5)
+     4. Atalho de teclado F2 -> abrir scanner (perfil CONTAS_A_PAGAR)
+     5. Saudacao contextual por horario de Brasilia
 
-   NÃO mexe em nada que app.js já gerencia.
+   Reusa de app.js: apiFetch, escapeHtml, formatCurrency, formatDate,
+   statusBadge, hourInBR. NAO redefine essas funcoes localmente.
    ============================================================================ */
 (function () {
   'use strict';
 
-  // ─── Helpers ────────────────────────────────────────────────────────
   const $ = (sel, root) => (root || document).querySelector(sel);
-  const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
-  const fmtBRL = (v) => new Intl.NumberFormat('pt-BR', {
-    style: 'currency', currency: 'BRL',
-  }).format(Number(v || 0));
-
-  const fmtDate = (iso) => {
-    if (!iso) return '—';
-    const [y, m, d] = iso.slice(0, 10).split('-');
-    return `${d}/${m}/${y}`;
-  };
-
-  const STATUS_LABELS = {
-    RASCUNHO: 'Rascunho',
-    AGUARDANDO_GESTOR: 'Aguardando gestor',
-    REPROVADO_GESTOR: 'Reprovado gestor',
-    AGUARDANDO_DIRETOR: 'Aguardando diretor',
-    REPROVADO_DIRETOR: 'Reprovado diretor',
-    APROVADO: 'Aprovado',
-    PAGO: 'Lançada',
-  };
-
-  function escapeHtml(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
-  function statusBadgeHtml(status) {
-    const label = STATUS_LABELS[status] || status || '—';
-    const cls = 'status-' + String(status || '').toLowerCase();
-    return `<span class="status-badge ${cls}">${escapeHtml(label)}</span>`;
-  }
-
-  // ─── Saudação por horário de Brasília ────────────────────────────────
+  // ─── Saudacao por horario de Brasilia ────────────────────────────────
   function setGreeting() {
     const greetEl = $('#dashboard-greeting');
     if (!greetEl) return;
     const txt = greetEl.textContent.trim();
-    const first = txt.replace(/^(Olá|Bom dia|Boa tarde|Boa noite),?\s*/i, '');
-    const brt = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-    const h = brt.getHours();
-    const prefix = h < 12 ? 'Bom dia' : (h < 18 ? 'Boa tarde' : 'Boa noite');
+    const first = txt.replace(/^(Ola|Bom dia|Boa tarde|Boa noite),?\s*/i, '');
+    const h = hourInBR();
+    const prefix = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
     greetEl.textContent = `${prefix}, ${first}`;
   }
 
   // ─── Atalho F2 (CONTAS_A_PAGAR) ─────────────────────────────────────
   function bindScannerShortcut() {
     const link = $('#qa-open-scanner');
-    if (!link) return; // só registra se o hero do scanner existe
+    if (!link) return;
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'F2') return;
       const tag = (e.target && e.target.tagName) || '';
-      // Não roube o atalho de inputs/textareas/contenteditables
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.target && e.target.isContentEditable) return;
       e.preventDefault();
@@ -77,78 +42,64 @@
     });
   }
 
-  // ─── Render: alertas (CONTAS_A_PAGAR) ───────────────────────────────
-  function renderAlertsCap(alerts) {
-    const root = $('#dashboard-alerts-cap');
-    if (!root) return;
-    const out = [];
-
-    const overdue = (alerts.overdue || []).length;
-    const due72 = (alerts.due_72h || []).length;
-    const oldEm = (alerts.old_emission || []).length;
-
-    if (overdue > 0) out.push(rowHtml('ar-err', 'icon-circle-alert',
-      `${overdue} notas vencidas a conferir`,
-      'Bucket overdue', '/alerts?bucket=overdue'));
-    if (due72 > 0) out.push(rowHtml('ar-warn', 'icon-clock',
-      `${due72} notas vencem em até 72 h`,
-      'Bucket due_72h', '/alerts?bucket=due_72h'));
-    if (oldEm > 0) out.push(rowHtml('ar-info', 'icon-calendar',
-      `${oldEm} notas com emissão do mês anterior`,
-      'Bucket old_emission · confirme prazo de lançamento',
-      '/alerts?bucket=old_emission'));
-
-    if (!out.length) out.push(emptyHtml());
-    root.innerHTML = out.join('');
-  }
-
-  // ─── Render: alertas (aprovadores) ───────────────────────────────────
-  function renderAlertsApprover(alerts) {
-    const root = $('#dashboard-alerts-approver');
-    if (!root) return;
-    const out = [];
-
-    const pending = (alerts.pending_review || []).length;
-    const overdue = (alerts.overdue || []).length;
-    const due72 = (alerts.due_72h || []).length;
-    const rejected = (alerts.rejected || []).length;
-
-    if (pending > 0) out.push(rowHtml('ar-blue', 'icon-activity',
-      `${pending} notas aguardando sua aprovação`,
-      'Bucket pending_review · ordenadas por submitted_at',
-      '/manager/queue'));
-    if (overdue > 0) out.push(rowHtml('ar-err', 'icon-circle-alert',
-      `${overdue} notas vencidas`,
-      'Bucket overdue', '/alerts?bucket=overdue'));
-    if (due72 > 0) out.push(rowHtml('ar-warn', 'icon-clock',
-      `${due72} notas vencem em até 72 h`,
-      'Bucket due_72h', '/alerts?bucket=due_72h'));
-    if (rejected > 0) out.push(rowHtml('ar-err', 'icon-x',
-      `${rejected} das suas notas foram reprovadas`,
-      'Bucket rejected (só para o criador) · corrija e reenvie',
-      '/invoices?status=REPROVADO_GESTOR'));
-
-    if (!out.length) out.push(emptyHtml());
-    root.innerHTML = out.join('');
-  }
-
+  // ─── Render de alertas — generico ───────────────────────────────────
+  // Cada spec descreve UMA linha do dashboard. O renderer abaixo pega o
+  // bucket no payload e gera o HTML so se tiver itens.
   function rowHtml(cls, iconCls, title, meta, href) {
     return `<a class="alert-row ${cls}" href="${href}">
       <span class="ar-ic ic-16"><span class="icon ${iconCls}"></span></span>
       <div><strong>${escapeHtml(title)}</strong><div class="ar-meta">${escapeHtml(meta)}</div></div>
-      <span class="ar-cta">Ver →</span>
+      <span class="ar-cta">Ver &rarr;</span>
     </a>`;
   }
 
-  function emptyHtml() {
-    return `<div class="alert-row ar-info" style="cursor: default">
-      <span class="ar-ic ic-16"><span class="icon icon-check"></span></span>
-      <div><strong>Nenhum alerta no momento.</strong><div class="ar-meta">Tudo certo por aqui.</div></div>
-      <span></span>
-    </div>`;
+  const EMPTY_HTML = `<div class="alert-row ar-info dashboard-alert-empty">
+    <span class="ar-ic ic-16"><span class="icon icon-check"></span></span>
+    <div><strong>Nenhum alerta no momento.</strong><div class="ar-meta">Tudo certo por aqui.</div></div>
+    <span></span>
+  </div>`;
+
+  const CAP_SPECS = [
+    { bucket: 'overdue',      cls: 'ar-err',  icon: 'icon-circle-alert',
+      title: n => `${n} notas vencidas a conferir`,
+      meta: 'Bucket overdue', href: '/alerts?bucket=overdue' },
+    { bucket: 'due_72h',      cls: 'ar-warn', icon: 'icon-clock',
+      title: n => `${n} notas vencem em ate 72 h`,
+      meta: 'Bucket due_72h', href: '/alerts?bucket=due_72h' },
+    { bucket: 'old_emission', cls: 'ar-info', icon: 'icon-calendar',
+      title: n => `${n} notas com emissao do mes anterior`,
+      meta: 'Bucket old_emission · confirme prazo de lancamento',
+      href: '/alerts?bucket=old_emission' },
+  ];
+
+  const APPROVER_SPECS = [
+    { bucket: 'pending_review', cls: 'ar-blue', icon: 'icon-activity',
+      title: n => `${n} notas aguardando sua aprovacao`,
+      meta: 'Bucket pending_review · ordenadas por submitted_at',
+      href: '/manager/queue' },
+    { bucket: 'overdue',        cls: 'ar-err',  icon: 'icon-circle-alert',
+      title: n => `${n} notas vencidas`,
+      meta: 'Bucket overdue', href: '/alerts?bucket=overdue' },
+    { bucket: 'due_72h',        cls: 'ar-warn', icon: 'icon-clock',
+      title: n => `${n} notas vencem em ate 72 h`,
+      meta: 'Bucket due_72h', href: '/alerts?bucket=due_72h' },
+    { bucket: 'rejected',       cls: 'ar-err',  icon: 'icon-x',
+      title: n => `${n} das suas notas foram reprovadas`,
+      meta: 'Bucket rejected (so para o criador) · corrija e reenvie',
+      href: '/invoices?status=REPROVADO_GESTOR' },
+  ];
+
+  function renderAlerts(rootSel, alerts, specs) {
+    const root = $(rootSel);
+    if (!root) return;
+    const out = specs
+      .map((s) => ({ n: (alerts[s.bucket] || []).length, s }))
+      .filter(({ n }) => n > 0)
+      .map(({ n, s }) => rowHtml(s.cls, s.icon, s.title(n), s.meta, s.href));
+    root.innerHTML = out.length ? out.join('') : EMPTY_HTML;
   }
 
-  // ─── Render: contadores de quick actions ────────────────────────────
+  // ─── Contadores dos quick actions ───────────────────────────────────
   function updateQuickActionCounts(alerts) {
     const review = $('#qa-review-count');
     if (review) {
@@ -158,89 +109,101 @@
     }
     const mineCount = $('#qa-mine-count');
     const mineMeta = $('#qa-mine-meta');
-    if (mineCount && alerts.rejected) {
-      const n = alerts.rejected.length;
-      if (n > 0) {
-        mineCount.textContent = n;
-        mineCount.classList.remove('hidden');
-        if (mineMeta) mineMeta.textContent = `${n} reprovadas precisam de correção`;
-      }
+    const rejN = (alerts.rejected || []).length;
+    if (mineCount && rejN > 0) {
+      mineCount.textContent = rejN;
+      mineCount.classList.remove('hidden');
+      if (mineMeta) mineMeta.textContent = `${rejN} reprovadas precisam de correcao`;
     }
   }
 
-  // ─── Render: tabela de notas recentes ───────────────────────────────
+  // ─── Tabela de notas recentes ───────────────────────────────────────
   function renderRecent(invoices) {
     const tbody = $('#dashboard-recent tbody');
     if (!tbody) return;
     if (!invoices.length) {
-      tbody.innerHTML = `<tr><td colspan="5" class="text-muted" style="text-align:center; padding: 22px">Nenhuma nota recente.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="dashboard-recent-empty text-muted">Nenhuma nota recente.</td></tr>`;
       return;
     }
     tbody.innerHTML = invoices.map((inv) => `
-      <tr data-href="/invoices/${inv.id}">
-        <td style="font-weight: 600">${escapeHtml(inv.invoice_number || '—')}</td>
-        <td>${escapeHtml(inv.supplier_name || inv.supplier || '—')}</td>
-        <td>${fmtBRL(inv.amount)}</td>
-        <td>${fmtDate(inv.due_date)}</td>
-        <td>${statusBadgeHtml(inv.status)}</td>
+      <tr data-href="/invoices/${escapeHtml(inv.id)}" class="dashboard-recent-row">
+        <td class="cell-strong">${escapeHtml(inv.invoice_number || '—')}</td>
+        <td>${escapeHtml(inv.supplier_name || inv.supplier_legal_name || '—')}</td>
+        <td>${formatCurrency(inv.amount)}</td>
+        <td>${formatDate(inv.due_date)}</td>
+        <td>${statusBadge(inv.status)}</td>
       </tr>
     `).join('');
-    // Navegação por linha (mantém padrão das outras tabelas do produto)
-    $$('#dashboard-recent tbody tr[data-href]').forEach((tr) => {
-      tr.style.cursor = 'pointer';
-      tr.addEventListener('click', () => { window.location.href = tr.dataset.href; });
+    // Delegacao no tbody (um listener, em vez de um por linha)
+  }
+
+  // Delegacao registrada uma unica vez ao iniciar
+  function bindRecentTableClicks() {
+    const tbody = $('#dashboard-recent tbody');
+    if (!tbody || tbody.dataset.boundClicks) return;
+    tbody.dataset.boundClicks = '1';
+    tbody.addEventListener('click', (ev) => {
+      const tr = ev.target.closest('tr[data-href]');
+      if (!tr) return;
+      window.location.href = tr.dataset.href;
     });
   }
 
-  // ─── Contador "Conferidas hoje" (CONTAS_A_PAGAR) ────────────────────
+  // ─── Conferidas hoje (CONTAS_A_PAGAR) ───────────────────────────────
   async function loadConferredToday() {
     const target = $('#conferidas-hoje-count');
     if (!target) return;
     try {
-      const r = await fetch('/api/contas-a-pagar/stats', { credentials: 'same-origin' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const data = await r.json();
+      const data = await apiFetch('/api/contas-a-pagar/stats');
       target.textContent = data.conferred_today != null ? data.conferred_today : '0';
-    } catch (err) {
-      // Fallback silencioso — se o endpoint ainda não existir, deixa "—"
-      // e não polui o console em produção.
-      target.textContent = '—';
+    } catch (_err) {
+      target.textContent = '—';  // fallback silencioso
     }
   }
 
-  // ─── Fetch helpers ──────────────────────────────────────────────────
-  async function fetchJson(url) {
-    const r = await fetch(url, { credentials: 'same-origin' });
-    if (!r.ok) throw new Error('HTTP ' + r.status + ' em ' + url);
-    return r.json();
+  // ─── Hidratacao dos paineis principais ──────────────────────────────
+  function hydrateAlerts(alerts) {
+    renderAlerts('#dashboard-alerts-cap',      alerts, CAP_SPECS);
+    renderAlerts('#dashboard-alerts-approver', alerts, APPROVER_SPECS);
+    updateQuickActionCounts(alerts);
+  }
+
+  function showRecentLoadError() {
+    const tbody = $('#dashboard-recent tbody');
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="5" class="dashboard-recent-empty text-muted">Nao foi possivel carregar as notas recentes.</td></tr>`;
+    }
   }
 
   // ─── Init ───────────────────────────────────────────────────────────
   async function init() {
     setGreeting();
     bindScannerShortcut();
+    bindRecentTableClicks();
 
-    // Alertas — uma chamada cobre todos os perfis
-    try {
-      const alerts = await fetchJson('/api/alerts');
-      renderAlertsCap(alerts);
-      renderAlertsApprover(alerts);
-      updateQuickActionCounts(alerts);
-    } catch (err) {
-      console.warn('Falha ao carregar /api/alerts:', err);
+    // Paineis principais: dispara em paralelo, trata individualmente.
+    // /api/contas-a-pagar/stats so faz sentido pra CONTAS_A_PAGAR — a
+    // funcao ja faz no-op se o badge nao existir.
+    const [alertsR, invoicesR] = await Promise.allSettled([
+      apiFetch('/alerts/'),
+      apiFetch('/api/invoices/?per_page=5'),
+    ]);
+
+    if (alertsR.status === 'fulfilled') {
+      hydrateAlerts(alertsR.value || {});
+    } else {
+      console.warn('Falha ao carregar /alerts/:', alertsR.reason);
     }
 
-    // Notas recentes
-    try {
-      const invoices = await fetchJson('/api/invoices?limit=5&order=created_desc');
-      renderRecent(Array.isArray(invoices) ? invoices : (invoices.items || []));
-    } catch (err) {
-      console.warn('Falha ao carregar /api/invoices:', err);
-      const tbody = $('#dashboard-recent tbody');
-      if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-muted" style="text-align:center; padding: 22px">Não foi possível carregar as notas recentes.</td></tr>`;
+    if (invoicesR.status === 'fulfilled') {
+      const payload = invoicesR.value;
+      const items = Array.isArray(payload) ? payload : (payload?.items || []);
+      renderRecent(items);
+    } else {
+      console.warn('Falha ao carregar /api/invoices/:', invoicesR.reason);
+      showRecentLoadError();
     }
 
-    // Contador de conferências (só renderiza se o elemento existir)
     loadConferredToday();
   }
 

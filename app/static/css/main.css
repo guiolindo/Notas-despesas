@@ -87,6 +87,14 @@
 
   --transition: 0.15s ease;
   --focus-ring: 0 0 0 3px rgba(244, 121, 32, 0.16);
+
+  /* Perfis de usuario — cores institucionais usadas pelos role chips */
+  --role-admin:          #153F6E;
+  --role-manager:        #1B4F8A;
+  --role-director:       #0E7490;
+  --role-finance:        #D86112;
+  --role-contas-a-pagar: #F47920;
+  --role-employee:       #6B7280;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -549,6 +557,7 @@ a:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-
 .table-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .table-responsive { width: 100%; overflow-x: auto; }
 .table-subtext { margin-top: 3px; color: var(--text-muted); font-size: 12px; }
+/* Role chips — tipografia base; cores ficam abaixo via tokens --role-* */
 .role-chip {
   display: inline-flex;
   align-items: center;
@@ -558,12 +567,15 @@ a:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-
   color: var(--white);
   font-size: 12px;
   font-weight: 800;
+  letter-spacing: .01em;
+  line-height: 1.2;
 }
-.role-admin { background: #DC2626; }
-.role-manager { background: #1B4F8A; }
-.role-director { background: #7C3AED; }
-.role-finance { background: #059669; }
-.role-employee { background: #6B7280; }
+.role-admin          { background: var(--role-admin); }
+.role-manager        { background: var(--role-manager); }
+.role-director       { background: var(--role-director); }
+.role-finance        { background: var(--role-finance); }
+.role-contas-a-pagar { background: var(--role-contas-a-pagar); }
+.role-employee       { background: var(--role-employee); }
 .user-status-active { background: #DCFCE7; color: var(--success-dark); }
 .user-status-blocked { background: #FEF3C7; color: var(--warning); }
 .user-status-inactive { background: #FEE2E2; color: var(--error); }
@@ -1245,25 +1257,10 @@ tr.row-anonymized td { background: #f5f5f5; color: #6b7280; font-style: italic; 
 /* ============================================================================
    PATCH para app/static/css/main.css
    ----------------------------------------------------------------------------
-   Aplique este arquivo APENDANDO ao final de main.css.
-   Onde houver "ATUALIZA:" são valores já existentes que devem ser substituídos
-   na seção :root atual (procurar a variável por nome).
+   Tokens (--role-*, --focus-ring) e regras .role-chip / .role-* foram
+   mescladas nas secoes originais lá em cima. Aqui ficam só as classes
+   novas que o design-system trouxe (sem duplicacao).
    ============================================================================ */
-
-/* ─── :root — tokens novos / atualizados ─────────────────────────────── */
-
-/* ATUALIZA — substituir o bloco "Perfis de usuário (role chips)" inteiro */
-:root {
-  --role-admin:          #153F6E;
-  --role-manager:        #1B4F8A;
-  --role-director:       #0E7490;
-  --role-finance:        #D86112;
-  --role-contas-a-pagar: #F47920;
-  --role-employee:       #6B7280;
-
-  /* novo — ring de foco padronizado (laranja translucido) */
-  --focus-ring: 0 0 0 3px rgba(244, 121, 32, 0.16);
-}
 
 /* ─── Sistema de ícones vendorizados ─────────────────────────────────── */
 /* SVGs em /static/img/icons/*.svg. Renderiza via CSS mask para herdar
@@ -1321,19 +1318,6 @@ tr.row-anonymized td { background: #f5f5f5; color: #6b7280; font-style: italic; 
 .icon-user-plus        { --mask: url('/static/img/icons/user-plus.svg'); }
 .icon-user             { --mask: url('/static/img/icons/user.svg'); }
 .icon-x                { --mask: url('/static/img/icons/x.svg'); }
-
-/* ─── Role chips ─────────────────────────────────────────────────────── */
-.role-chip {
-  display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px;
-  border-radius: 999px; color: #fff; font-size: 12px; font-weight: 800;
-  letter-spacing: .01em; line-height: 1.2;
-}
-.role-admin          { background: var(--role-admin); }
-.role-manager        { background: var(--role-manager); }
-.role-director       { background: var(--role-director); }
-.role-finance        { background: var(--role-finance); }
-.role-contas-a-pagar { background: var(--role-contas-a-pagar); }
-.role-employee       { background: var(--role-employee); }
 
 /* ─── Quick actions (dashboard) ──────────────────────────────────────── */
 .qa-stack { display: grid; gap: 12px; }
@@ -1487,14 +1471,6 @@ tr.row-anonymized td { background: #f5f5f5; color: #6b7280; font-style: italic; 
 .check-list li.ok { color: var(--success-dark); }
 .check-list li.pending { color: var(--warning); }
 
-/* ─── Segmented control — fix do gap entre ícone e label ────────────── */
-/* ATUALIZA — substituir a regra .segmented button existente */
-.segmented button {
-  display: inline-flex; align-items: center; gap: 6px;
-  min-height: 34px; padding: 0 14px; border: 0;
-  border-radius: var(--radius-sm); background: transparent;
-  color: var(--text-muted); font: inherit; font-weight: 800; cursor: pointer;
-}
 
 /* ─── Responsivo ─────────────────────────────────────────────────────── */
 @media (max-width: 940px) {
@@ -1502,3 +1478,19 @@ tr.row-anonymized td { background: #f5f5f5; color: #6b7280; font-style: italic; 
   .qa-grid-3 { grid-template-columns: 1fr; }
   .qa-grid-2 { grid-template-columns: 1fr; }
 }
+
+/* ─── Utilitarios dos templates novos ────────────────────────────────── */
+/* Substituem inline style="" repetidos no JS/template (limpeza pos-design). */
+
+/* Dashboard — tabela de notas recentes */
+.dashboard-recent-row { cursor: pointer; }
+.dashboard-recent-empty,
+.dashboard-alert-empty { text-align: center; padding: 22px; }
+.dashboard-alert-empty { cursor: default; }
+.cell-strong { font-weight: 600; }
+
+/* Admin users — celula com avatar + nome + badges */
+.user-name-cell { display: flex; gap: 10px; align-items: center; }
+.user-name-cell strong { font-weight: 600; }
+.btn-danger-text { color: var(--error); }
+.text-xs { font-size: 12px; }
