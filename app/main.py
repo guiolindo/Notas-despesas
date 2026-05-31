@@ -132,6 +132,9 @@ def _run_schema_migrations() -> None:
         # Pending actions: quem executou via confirmacao antecipada
         pg("ALTER TABLE pending_admin_actions ADD COLUMN IF NOT EXISTS executed_by_id VARCHAR(36)"),
 
+        # Repasse de nota entre diretores: novo valor no enum approvalaction
+        pg("ALTER TYPE approvalaction ADD VALUE IF NOT EXISTS 'TRANSFERRED_DIRECTOR'"),
+
         # Fase 3: novo role CONTAS_A_PAGAR (read-only + scanner QR).
         # No Postgres role e um TYPE ENUM — precisa ALTER TYPE ADD VALUE.
         # No SQLite o Enum vira VARCHAR e aceita qualquer string.

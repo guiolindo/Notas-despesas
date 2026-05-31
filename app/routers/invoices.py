@@ -528,6 +528,36 @@ def director_review(
     return invoice_response(invoice)
 
 
+class TransferDirectorRequest(BaseModel):
+    new_director_id: str
+    comment: str
+
+
+@router.post("/{invoice_id}/transfer-director", response_model=InvoiceResponse)
+def transfer_director(
+    invoice_id: str,
+    body: TransferDirectorRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.DIRECTOR.value)),
+):
+    """Diretor atual repassa a nota pra outro diretor.
+
+    Caso de uso: nota foi mal-encaminhada, conflito de interesse, ou o
+    diretor reconhece que a aprovacao deveria ser de outra pessoa.
+    """
+    invoice = invoice_service.transfer_to_director(
+        db,
+        invoice_id,
+        body.new_director_id,
+        body.comment,
+        current_user,
+        ip=_client_ip(request),
+        port=_client_port(request),
+    )
+    return invoice_response(invoice)
+
+
 @router.get("/{invoice_id}/attachment")
 def get_attachment_merged(
     invoice_id: str,

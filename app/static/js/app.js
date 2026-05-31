@@ -1181,7 +1181,7 @@ async function renderDetailActions(invoice) {
 
 function renderTimeline(history) {
   const icons = { CREATED: '+', SUBMITTED: '>', APPROVED_MANAGER: '✓', REJECTED_MANAGER: 'x', APPROVED_DIRECTOR: '✓', REJECTED_DIRECTOR: 'x', MARKED_PAID: '$' };
-  const labels = { CREATED: 'Criada', SUBMITTED: 'Enviada', CANCELLED: 'Envio cancelado', APPROVED_MANAGER: 'Aprovada pelo gestor', REJECTED_MANAGER: 'Reprovada pelo gestor', APPROVED_DIRECTOR: 'Aprovada pelo diretor', REJECTED_DIRECTOR: 'Reprovada pelo diretor', MARKED_PAID: 'Marcada como lancada', PRINTED: 'Impressa' };
+  const labels = { CREATED: 'Criada', SUBMITTED: 'Enviada', CANCELLED: 'Envio cancelado', APPROVED_MANAGER: 'Aprovada pelo gestor', REJECTED_MANAGER: 'Reprovada pelo gestor', APPROVED_DIRECTOR: 'Aprovada pelo diretor', REJECTED_DIRECTOR: 'Reprovada pelo diretor', MARKED_PAID: 'Marcada como lancada', PRINTED: 'Impressa', TRANSFERRED_DIRECTOR: 'Repassada a outro diretor' };
   const el = document.getElementById('invoice-timeline');
   if (!el) return;
   el.innerHTML = history.map((item) => `
@@ -2316,7 +2316,7 @@ function _renderDrawerContent(invoice) {
   }
 
   const icons  = { CREATED: '+', SUBMITTED: '>', APPROVED_MANAGER: '✓', REJECTED_MANAGER: '✗', APPROVED_DIRECTOR: '✓', REJECTED_DIRECTOR: '✗', MARKED_PAID: '$', PRINTED: '🖨' };
-  const labels = { CREATED: 'Criada', SUBMITTED: 'Enviada', CANCELLED: 'Cancelada', APPROVED_MANAGER: 'Aprovada gestor', REJECTED_MANAGER: 'Reprovada gestor', APPROVED_DIRECTOR: 'Aprovada diretor', REJECTED_DIRECTOR: 'Reprovada diretor', MARKED_PAID: 'Lancada', PRINTED: 'Comprovante impresso' };
+  const labels = { CREATED: 'Criada', SUBMITTED: 'Enviada', CANCELLED: 'Cancelada', APPROVED_MANAGER: 'Aprovada gestor', REJECTED_MANAGER: 'Reprovada gestor', APPROVED_DIRECTOR: 'Aprovada diretor', REJECTED_DIRECTOR: 'Reprovada diretor', MARKED_PAID: 'Lancada', PRINTED: 'Comprovante impresso', TRANSFERRED_DIRECTOR: 'Repasse de diretor' };
   document.getElementById('drawer-timeline').innerHTML = invoice.history.map((h) => `
     <div class="timeline-item">
       <div class="timeline-icon">${icons[h.action] || '·'}</div>
@@ -2473,6 +2473,7 @@ function _renderDrawerDirectorReview(invoice) {
     <div class="review-actions">
       <button class="btn btn-primary" id="drawer-dir-approve">Aprovar nota</button>
       <button class="btn btn-ghost" id="drawer-dir-show-reject">Reprovar</button>
+      <button class="btn btn-ghost" id="drawer-dir-show-transfer">Repassar a outro diretor</button>
     </div>
     <div id="drawer-dir-reject-sec" class="hidden" style="margin-top:1rem">
       <label class="form-label">Motivo da reprovacao (obrigatorio)</label>
@@ -2480,6 +2481,18 @@ function _renderDrawerDirectorReview(invoice) {
       <div class="review-actions" style="margin-top:.5rem">
         <button class="btn btn-danger" id="drawer-dir-confirm-reject" disabled>Confirmar reprovacao</button>
         <button class="btn btn-ghost" id="drawer-dir-cancel-reject">Cancelar</button>
+      </div>
+    </div>
+    <div id="drawer-dir-transfer-sec" class="hidden" style="margin-top:1rem">
+      <label class="form-label">Repassar para outro diretor</label>
+      <p class="text-muted text-xs">A nota muda de mao mantendo o status aguardando diretor.</p>
+      <div id="drawer-dir-transfer-list" class="director-list"><p class="text-muted">Carregando diretores...</p></div>
+      <input type="hidden" id="drawer-dir-transfer-target">
+      <label class="form-label" style="margin-top:.75rem">Motivo do repasse (minimo 10 caracteres)</label>
+      <textarea id="drawer-dir-transfer-txt" class="form-input" rows="3" maxlength="500" placeholder="Ex: nota e de outro setor / conflito de interesse..."></textarea>
+      <div class="review-actions" style="margin-top:.5rem">
+        <button class="btn btn-primary" id="drawer-dir-confirm-transfer" disabled>Confirmar repasse</button>
+        <button class="btn btn-ghost" id="drawer-dir-cancel-transfer">Cancelar</button>
       </div>
     </div>`;
 
@@ -2499,6 +2512,46 @@ function _renderDrawerDirectorReview(invoice) {
         method: 'POST', body: JSON.stringify({ action: 'REJECT', comment })
       });
     });
+
+  // Repasse — carrega lista de outros diretores e habilita botao quando
+  // motivo for valido e um diretor for selecionado
+  document.getElementById('drawer-dir-show-transfer').addEventListener('click', async () => {
+    document.getElementById('drawer-dir-transfer-sec').classList.remove('hidden');
+    try {
+      const directors = await apiFetch('/api/invoices/directors');
+      const me = Auth.getUser();
+      const others = directors.filter((d) => d.id !== me?.id && d.is_active && !d.unavailable_for_notes);
+      renderDirectorList(others, 'drawer-dir-transfer-list', 'drawer-dir-transfer-target');
+    } catch (e) {
+      document.getElementById('drawer-dir-transfer-list').innerHTML =
+        '<p class="text-muted">Nao foi possivel carregar a lista. Tente novamente.</p>';
+    }
+    const txt = document.getElementById('drawer-dir-transfer-txt');
+    const btn = document.getElementById('drawer-dir-confirm-transfer');
+    const targetField = document.getElementById('drawer-dir-transfer-target');
+    function updateBtn() {
+      btn.disabled = !(txt.value.trim().length >= 10 && targetField.value);
+    }
+    txt.addEventListener('input', updateBtn);
+    targetField.addEventListener('change', updateBtn);
+    // renderDirectorList nao dispara change em hidden — observa cliques no list
+    document.getElementById('drawer-dir-transfer-list').addEventListener('click', () => setTimeout(updateBtn, 0));
+  });
+  document.getElementById('drawer-dir-cancel-transfer').addEventListener('click', () => {
+    document.getElementById('drawer-dir-transfer-sec').classList.add('hidden');
+  });
+  document.getElementById('drawer-dir-confirm-transfer').addEventListener('click', async () => {
+    const newId = document.getElementById('drawer-dir-transfer-target').value;
+    const comment = document.getElementById('drawer-dir-transfer-txt').value.trim();
+    try {
+      await apiFetch(`/api/invoices/${invoice.id}/transfer-director`, {
+        method: 'POST',
+        body: JSON.stringify({ new_director_id: newId, comment }),
+      });
+      showToast('Nota repassada com sucesso.', 'success');
+      _refreshAfterAction();
+    } catch (e) { showToast(e.message, 'error'); }
+  });
 }
 
 function _renderDrawerFinance(invoice) {

@@ -22,6 +22,7 @@ class ApprovalAction(str, enum.Enum):
     REJECTED_DIRECTOR = "REJECTED_DIRECTOR"
     MARKED_PAID = "MARKED_PAID"
     PRINTED = "PRINTED"
+    TRANSFERRED_DIRECTOR = "TRANSFERRED_DIRECTOR"
 
 
 class ApprovalHistory(Base):

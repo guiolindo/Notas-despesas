@@ -636,6 +636,108 @@ def director_review(
     return _get_invoice(db, invoice.id)
 
 
+def transfer_to_director(
+    db: Session,
+    invoice_id: str,
+    new_director_id: str,
+    comment: str | None,
+    current_director: User,
+    ip: str | None = None,
+    port: int | None = None,
+) -> Invoice:
+    """Diretor atual repassa a nota pra outro diretor.
+
+    Regras:
+      - so o diretor atual da nota pode repassar
+      - status precisa ser AGUARDANDO_DIRETOR (ja passou pelo gestor)
+      - novo diretor deve ser ativo, com role DIRECTOR e nao indisponivel
+      - comentario obrigatorio (minimo 10 chars) — fica no historico
+      - novo diretor recebe email; ex-diretor recebe confirmacao
+    """
+    invoice = _get_invoice(db, invoice_id)
+    if invoice.director_id != current_director.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas o diretor atualmente responsavel pode repassar esta nota.",
+        )
+    if invoice.status != InvoiceStatus.AGUARDANDO_DIRETOR:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="So e possivel repassar enquanto a nota aguarda sua aprovacao.",
+        )
+    if not comment or len(comment.strip()) < 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Informe o motivo do repasse (minimo 10 caracteres).",
+        )
+    if new_director_id == current_director.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Voce nao pode repassar a nota para voce mesmo.",
+        )
+
+    new_director = db.query(User).filter(User.id == new_director_id).first()
+    if not new_director or new_director.role != UserRole.DIRECTOR or not new_director.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Diretor de destino invalido ou inativo.",
+        )
+    if getattr(new_director, "unavailable_for_notes", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Diretor de destino esta temporariamente indisponivel. Escolha outro.",
+        )
+
+    previous_director = current_director
+    invoice.director_id = new_director.id
+    # Mantem status; reseta director_reviewed_at (ainda nao foi revisado pelo novo)
+    invoice.director_reviewed_at = None
+
+    full_comment = (
+        f"Repassada de {previous_director.name} para {new_director.name}. "
+        f"Motivo: {comment.strip()}"
+    )
+    _add_history(
+        db, invoice.id, previous_director.id,
+        ApprovalAction.TRANSFERRED_DIRECTOR, full_comment, ip, port,
+    )
+    _add_audit(
+        db, previous_director.id, "TRANSFER_DIRECTOR", invoice.id,
+        ip=ip, port=port, http_method="POST",
+    )
+
+    # Notifica o novo diretor (mesmo template de submissao)
+    try:
+        public_url = f"/director/invoices/{invoice.id}"
+        subject, html, text = email_service.template_new_invoice_for_approver(
+            approver_name=new_director.name,
+            creator_name=invoice.created_by.name if invoice.created_by else "?",
+            invoice_number=invoice.invoice_number,
+            amount=f"R$ {invoice.amount:.2f}".replace(".", ","),
+            public_url=public_url,
+        )
+        if new_director.email:
+            email_service.send_email_async(new_director.email, subject, html, text)
+        # Confirmacao pro diretor que repassou
+        if previous_director.email:
+            email_service.send_email_async(
+                previous_director.email,
+                subject=f"Repasse confirmado — nota {invoice.invoice_number}",
+                html=(
+                    f"<p>Ola {previous_director.name},</p>"
+                    f"<p>A nota <strong>{invoice.invoice_number}</strong> foi "
+                    f"repassada para <strong>{new_director.name}</strong> "
+                    f"conforme sua solicitacao.</p>"
+                    f"<p>Motivo registrado: {comment.strip()}</p>"
+                ),
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+    db.commit()
+    return _get_invoice(db, invoice.id)
+
+
 def get_invoices_for_user(
     db: Session,
     user: User,
