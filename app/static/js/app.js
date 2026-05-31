@@ -796,13 +796,12 @@ function setupSupplierDocField() {
             if (data?.razao_social || data?.nome_fantasia) {
               nameInput.value = data.nome_fantasia || data.razao_social || '';
               legalNameInput.value = data.razao_social || '';
-              const cached = data.cached ? ' (cache)' : '';
-              status.textContent = `CNPJ valido. Dados preenchidos${cached}.`;
+              status.textContent = 'CNPJ valido. Dados do fornecedor preenchidos.';
             } else {
-              status.textContent = 'CNPJ valido (sem dados encontrados na consulta).';
+              status.textContent = 'CNPJ valido. Nao localizamos a razao social — preencha manualmente.';
             }
           } catch (e) {
-            status.textContent = 'CNPJ valido. Consulta de dados falhou — preencha manualmente.';
+            status.textContent = 'CNPJ valido. Nao foi possivel buscar a razao social agora — preencha manualmente.';
             status.style.color = 'var(--warning)';
           }
         }, 400);
