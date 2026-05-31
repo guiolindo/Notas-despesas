@@ -31,6 +31,8 @@
       "Recarregue a pagina (Ctrl+F5). Se persistir, faca logout e login novamente. Se ainda assim nao funcionar, contate o administrador.") }}
     {{ qa("Para que serve a pagina /verify do QR code?",
       "Permite a qualquer pessoa conferir a autenticidade de um comprovante impresso. Sem login, aparece a versao publica (numero, valor, status, assinatura digital — dados sensiveis como CPF/CNPJ e nomes ficam parcialmente ocultos). Quem participa do fluxo (criador, gestor, diretor, financeiro, contas a pagar) pode fazer login para ver o detalhamento completo.") }}
+    {{ qa("Como pesquisar notas com volume grande?",
+      "Em <strong>Notas Fiscais</strong>, a busca cobre numero, descricao, fornecedor e CPF/CNPJ (mascara opcional). Em filtros avancados (clique em 'Mais filtros'), use intervalos de data/valor, fornecedor especifico e setor. A lista pagina automaticamente — use os controles no rodape para ir de pagina ou trocar a quantidade por pagina (20, 50, 100). Acentos sao ignorados em PostgreSQL: 'escritorio' acha 'escritorio' e 'escritorio'.") }}
   </div>
 </section>
 

@@ -135,6 +135,15 @@ def _run_schema_migrations() -> None:
         # Repasse de nota entre diretores: novo valor no enum approvalaction
         pg("ALTER TYPE approvalaction ADD VALUE IF NOT EXISTS 'TRANSFERRED_DIRECTOR'"),
 
+        # Extensao unaccent: busca acento-insensivel em descricao/fornecedor.
+        # Sem isso 'escritorio' nao acha 'escritório'. SQLite ignora (cai
+        # em lower() simples no fallback do servico).
+        pg("CREATE EXTENSION IF NOT EXISTS unaccent"),
+
+        # Indices funcionais para acelerar a busca textual em PG
+        pg("CREATE INDEX IF NOT EXISTS idx_invoices_supplier_name_un ON invoices (LOWER(supplier_name))"),
+        pg("CREATE INDEX IF NOT EXISTS idx_invoices_description_un ON invoices (LOWER(description))"),
+
         # Fase 3: novo role CONTAS_A_PAGAR (read-only + scanner QR).
         # No Postgres role e um TYPE ENUM — precisa ALTER TYPE ADD VALUE.
         # No SQLite o Enum vira VARCHAR e aceita qualquer string.

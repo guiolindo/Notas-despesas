@@ -738,6 +738,17 @@ def transfer_to_director(
     return _get_invoice(db, invoice.id)
 
 
+def _unaccent_or_lower(col):
+    """Em Postgres usa unaccent() pra busca acento-insensivel; em SQLite
+    cai em lower() simples. unaccent precisa da extension instalada
+    (rodada em migration na primeira inicializacao)."""
+    from app.database import engine
+    from sqlalchemy import func as _func
+    if engine.dialect.name == "postgresql":
+        return _func.unaccent(_func.lower(col))
+    return _func.lower(col)
+
+
 def get_invoices_for_user(
     db: Session,
     user: User,
@@ -752,24 +763,63 @@ def get_invoices_for_user(
     min_amount: float | None = None,
     max_amount: float | None = None,
     created_by: str | None = None,
+    supplier: str | None = None,
+    department_id: str | None = None,
 ) -> tuple[list[Invoice], int, float]:
     """Retorna (items_paginados, total_geral, soma_valor_total).
 
     A soma considera TODOS os itens que batem nos filtros, nao so da pagina
     atual — usada para exibir o totalizer no frontend.
+
+    Parametros novos
+    ----------------
+    supplier: busca em supplier_name, supplier_legal_name e supplier_document
+              (ja normaliza CPF/CNPJ se vier mascarado)
+    department_id: filtra pelo setor do criador
+    search: agora cobre tambem fornecedor; em Postgres usa unaccent
+            pra busca acento-insensivel
     """
-    from sqlalchemy import func
+    from sqlalchemy import func, or_
 
     query = _query_visible_invoices(db, user)
     invoice_status = _status_from_filter(status_filter)
     if invoice_status:
         query = query.filter(Invoice.status == invoice_status)
 
-    # Busca livre em numero e descricao
+    # Busca livre — agora cobre numero, descricao e fornecedor (acento-insensivel em PG)
     if search:
-        term = f"%{search.strip()}%"
-        query = query.filter(
-            (Invoice.invoice_number.ilike(term)) | (Invoice.description.ilike(term))
+        term_raw = search.strip()
+        like = f"%{term_raw.lower()}%"
+        like_unaccent = f"%{term_raw.lower()}%"
+        digits = "".join(c for c in term_raw if c.isdigit())
+        clauses = [
+            _unaccent_or_lower(Invoice.invoice_number).like(like_unaccent),
+            _unaccent_or_lower(Invoice.description).like(like_unaccent),
+            _unaccent_or_lower(Invoice.supplier_name).like(like_unaccent),
+            _unaccent_or_lower(Invoice.supplier_legal_name).like(like_unaccent),
+        ]
+        if digits and len(digits) >= 3:
+            # busca por CPF/CNPJ mesmo se usuario digitou com mascara
+            clauses.append(Invoice.supplier_document.ilike(f"%{digits}%"))
+        query = query.filter(or_(*clauses))
+
+    # Filtro dedicado de fornecedor (campo separado nos avancados)
+    if supplier:
+        sup_raw = supplier.strip()
+        sup_like = f"%{sup_raw.lower()}%"
+        digits = "".join(c for c in sup_raw if c.isdigit())
+        sup_clauses = [
+            _unaccent_or_lower(Invoice.supplier_name).like(sup_like),
+            _unaccent_or_lower(Invoice.supplier_legal_name).like(sup_like),
+        ]
+        if digits and len(digits) >= 3:
+            sup_clauses.append(Invoice.supplier_document.ilike(f"%{digits}%"))
+        query = query.filter(or_(*sup_clauses))
+
+    # Filtro por setor (do criador da nota)
+    if department_id:
+        query = query.join(User, Invoice.created_by_id == User.id).filter(
+            User.department_id == department_id
         )
 
     # Faixa de datas — emissao

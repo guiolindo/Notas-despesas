@@ -552,6 +552,8 @@ let invoiceListState = {
   minAmount: '',
   maxAmount: '',
   createdBy: '',
+  supplier: '',
+  departmentId: '',
 };
 let _invoicesSearchDebounce = null;
 
@@ -561,6 +563,14 @@ async function initInvoicesList() {
   if (_u && ['CONTAS_A_PAGAR', 'FINANCE'].includes(_u.role)) {
     document.getElementById('btn-new-invoice')?.remove();
   }
+  // Preferencia de per_page salva localmente
+  try {
+    const saved = parseInt(localStorage.getItem('invoices_per_page') || '0', 10);
+    if ([20, 50, 100].includes(saved)) invoiceListState.perPage = saved;
+  } catch {}
+  const perpageEl = document.getElementById('pagination-perpage');
+  if (perpageEl) perpageEl.value = String(invoiceListState.perPage);
+
   const triggerReload = () => {
     invoiceListState.page = 1;
     loadInvoicesList();
@@ -576,7 +586,7 @@ async function initInvoicesList() {
     clearTimeout(_invoicesSearchDebounce);
     _invoicesSearchDebounce = setTimeout(triggerReload, 300);
   });
-  // Filtros avancados (datas, valores, responsavel)
+  // Filtros avancados
   document.getElementById('invoices-from-date')?.addEventListener('change', (e) => {
     invoiceListState.fromDate = e.target.value; triggerReload();
   });
@@ -600,14 +610,22 @@ async function initInvoicesList() {
     clearTimeout(_invoicesSearchDebounce);
     _invoicesSearchDebounce = setTimeout(triggerReload, 300);
   });
+  document.getElementById('invoices-supplier')?.addEventListener('input', (e) => {
+    invoiceListState.supplier = e.target.value;
+    clearTimeout(_invoicesSearchDebounce);
+    _invoicesSearchDebounce = setTimeout(triggerReload, 300);
+  });
+  document.getElementById('invoices-department')?.addEventListener('change', (e) => {
+    invoiceListState.departmentId = e.target.value; triggerReload();
+  });
   // Mostrar/esconder filtros avancados
   document.getElementById('invoices-toggle-advanced')?.addEventListener('click', () => {
     document.getElementById('invoices-advanced')?.classList.toggle('hidden');
   });
   // Limpar todos os filtros
   document.getElementById('invoices-clear-filters')?.addEventListener('click', () => {
-    invoiceListState = { ...invoiceListState, search: '', fromDate: '', toDate: '', dueFrom: '', dueTo: '', minAmount: '', maxAmount: '', createdBy: '', status: '' };
-    ['invoices-search', 'invoices-from-date', 'invoices-to-date', 'invoices-due-from', 'invoices-due-to', 'invoices-min-amount', 'invoices-max-amount', 'invoices-created-by'].forEach((id) => {
+    invoiceListState = { ...invoiceListState, search: '', fromDate: '', toDate: '', dueFrom: '', dueTo: '', minAmount: '', maxAmount: '', createdBy: '', supplier: '', departmentId: '', status: '' };
+    ['invoices-search', 'invoices-from-date', 'invoices-to-date', 'invoices-due-from', 'invoices-due-to', 'invoices-min-amount', 'invoices-max-amount', 'invoices-created-by', 'invoices-supplier', 'invoices-department'].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -616,6 +634,7 @@ async function initInvoicesList() {
     triggerReload();
   });
 
+  // Paginacao
   document.getElementById('prev-page')?.addEventListener('click', () => {
     if (invoiceListState.page > 1) {
       invoiceListState.page -= 1;
@@ -628,10 +647,90 @@ async function initInvoicesList() {
       loadInvoicesList();
     }
   });
+  const jumpEl = document.getElementById('pagination-jump');
+  if (jumpEl) {
+    jumpEl.addEventListener('change', () => {
+      const n = parseInt(jumpEl.value, 10);
+      if (!n || n < 1) return;
+      const target = Math.min(n, invoiceListState.pages);
+      invoiceListState.page = target;
+      jumpEl.value = '';
+      loadInvoicesList();
+    });
+  }
+  if (perpageEl) {
+    perpageEl.addEventListener('change', () => {
+      invoiceListState.perPage = parseInt(perpageEl.value, 10) || 20;
+      try { localStorage.setItem('invoices_per_page', String(invoiceListState.perPage)); } catch {}
+      invoiceListState.page = 1;
+      loadInvoicesList();
+    });
+  }
+
+  // Carrega setores pro select (so admins enxergam, mas o endpoint /api/admin/departments
+  // exige role admin — pra outros perfis, usa um fallback derivado das proprias notas).
+  await populateDepartmentFilter();
+
   await loadInvoicesList();
 }
 
+async function populateDepartmentFilter() {
+  const sel = document.getElementById('invoices-department');
+  if (!sel) return;
+  try {
+    const me = Auth.getUser();
+    let depts = [];
+    if (me?.role === 'ADMIN') {
+      depts = await apiFetch('/api/admin/departments');
+    } else {
+      // Outros perfis: deriva da lista atual de notas (uma amostra pequena
+      // ja cobre os setores acessiveis). Evita expor /api/admin/departments.
+      const sample = await apiFetch('/api/invoices/?per_page=100');
+      const seen = new Map();
+      (sample.items || []).forEach((it) => {
+        if (it.department_name) seen.set(it.department_name, { id: it.department_name, name: it.department_name });
+      });
+      depts = Array.from(seen.values());
+    }
+    depts.forEach((d) => {
+      const opt = document.createElement('option');
+      // Admin: usa id real; outros perfis nao tem o id, entao filtro
+      // permanece desabilitado pra eles
+      opt.value = me?.role === 'ADMIN' ? d.id : '';
+      opt.textContent = d.name;
+      if (me?.role !== 'ADMIN') opt.disabled = true;
+      sel.appendChild(opt);
+    });
+    if (me?.role !== 'ADMIN' && depts.length === 0) {
+      sel.disabled = true;
+    }
+  } catch {
+    sel.disabled = true;
+  }
+}
+
+function renderInvoicesSkeleton(rows = 8) {
+  const el = document.getElementById('invoices-table');
+  if (!el) return;
+  const rowHtml = `
+    <tr>
+      <td><span class="skeleton-line w-60"></span></td>
+      <td><span class="skeleton-line w-80"></span></td>
+      <td><span class="skeleton-line w-40"></span></td>
+      <td><span class="skeleton-line w-40"></span></td>
+      <td><span class="skeleton-line w-40"></span></td>
+      <td><span class="skeleton-line w-60"></span></td>
+      <td><span class="skeleton-line w-40"></span></td>
+    </tr>`;
+  el.innerHTML = `<table class="skeleton-table" aria-busy="true">
+    <tbody>${rowHtml.repeat(rows)}</tbody>
+  </table>`;
+}
+
 async function loadInvoicesList() {
+  // Skeleton enquanto o request voa — feedback imediato
+  renderInvoicesSkeleton(Math.min(invoiceListState.perPage, 12));
+
   const params = new URLSearchParams({
     page: invoiceListState.page,
     per_page: invoiceListState.perPage,
@@ -645,23 +744,45 @@ async function loadInvoicesList() {
   if (invoiceListState.minAmount) params.set('min_amount', invoiceListState.minAmount);
   if (invoiceListState.maxAmount) params.set('max_amount', invoiceListState.maxAmount);
   if (invoiceListState.createdBy) params.set('created_by', invoiceListState.createdBy);
+  if (invoiceListState.supplier) params.set('supplier', invoiceListState.supplier);
+  if (invoiceListState.departmentId) params.set('department_id', invoiceListState.departmentId);
 
-  const data = await apiFetch(`/api/invoices/?${params.toString()}`);
+  let data;
+  try {
+    data = await apiFetch(`/api/invoices/?${params.toString()}`);
+  } catch (e) {
+    const el = document.getElementById('invoices-table');
+    if (el) el.innerHTML = `<p class="text-muted">Erro ao carregar: ${escapeHtml(e.message || 'tente novamente')}</p>`;
+    return;
+  }
   invoiceListState.pages = data.pages || 1;
   document.getElementById('page-indicator').textContent = `Pagina ${data.page} de ${invoiceListState.pages}`;
   document.getElementById('prev-page').disabled = data.page <= 1;
   document.getElementById('next-page').disabled = data.page >= invoiceListState.pages;
+  const jumpEl = document.getElementById('pagination-jump');
+  if (jumpEl) jumpEl.max = String(Math.max(invoiceListState.pages, 1));
+
+  // Faixa exibida (ex: "Mostrando 21–40 de 1.234")
+  const pageStart = data.total === 0 ? 0 : (data.page - 1) * invoiceListState.perPage + 1;
+  const pageEnd = Math.min(data.page * invoiceListState.perPage, data.total);
+  const infoEl = document.getElementById('pagination-info');
+  if (infoEl) {
+    infoEl.textContent = data.total
+      ? `Mostrando ${pageStart}–${pageEnd} de ${data.total.toLocaleString('pt-BR')}`
+      : 'Nenhuma nota encontrada com os filtros atuais.';
+  }
+
   const countEl = document.getElementById('invoices-count');
   if (countEl) {
     countEl.textContent = data.total != null
-      ? `${data.total} nota${data.total === 1 ? '' : 's'} encontrada${data.total === 1 ? '' : 's'}`
+      ? `${data.total.toLocaleString('pt-BR')} nota${data.total === 1 ? '' : 's'}`
       : '';
   }
   const totalizerEl = document.getElementById('invoices-totalizer');
   if (totalizerEl) {
     const count = data.total || 0;
     const sum = data.total_amount || 0;
-    totalizerEl.textContent = `${count} nota${count === 1 ? '' : 's'} | Valor total: ${formatCurrency(sum)}`;
+    totalizerEl.textContent = `${count.toLocaleString('pt-BR')} nota${count === 1 ? '' : 's'} | Valor total: ${formatCurrency(sum)}`;
   }
   renderInvoicesTable(data.items);
 }

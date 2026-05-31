@@ -434,6 +434,8 @@ def list_invoices(
     min_amount: float | None = None,
     max_amount: float | None = None,
     created_by: str | None = None,
+    supplier: str | None = None,
+    department_id: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -465,6 +467,8 @@ def list_invoices(
         min_amount=min_amount,
         max_amount=max_amount,
         created_by=created_by,
+        supplier=supplier,
+        department_id=department_id,
     )
     return PaginatedInvoices(
         items=[invoice_response(invoice) for invoice in items],

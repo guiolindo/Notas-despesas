@@ -17,7 +17,7 @@
       class="form-input"
       id="invoices-search"
       type="search"
-      placeholder="Buscar por numero ou descricao (fornecedor/CNPJ se constarem na descricao)..."
+      placeholder="Buscar por numero, descricao, fornecedor ou CPF/CNPJ..."
       autocomplete="off"
     >
     <span class="filter-count text-muted" id="invoices-count"></span>
@@ -64,6 +64,16 @@
     <label for="invoices-created-by">Responsavel (criador)</label>
     <input class="form-input" id="invoices-created-by" type="text" placeholder="Nome do colaborador">
   </div>
+  <div class="form-group">
+    <label for="invoices-supplier">Fornecedor (nome ou CPF/CNPJ)</label>
+    <input class="form-input" id="invoices-supplier" type="text" placeholder="Ex: Acme ou 12.345.678/0001-90">
+  </div>
+  <div class="form-group">
+    <label for="invoices-department">Setor do criador</label>
+    <select class="form-input" id="invoices-department">
+      <option value="">Todos os setores</option>
+    </select>
+  </div>
   <div class="form-group filter-actions">
     <label>&nbsp;</label>
     <button class="btn btn-ghost btn-sm" type="button" id="invoices-clear-filters">Limpar filtros</button>
@@ -73,9 +83,19 @@
 <div class="totalizer" id="invoices-totalizer">0 notas | Valor total: R$ 0,00</div>
 
 <div id="invoices-table"></div>
+
 <div class="pagination">
-  <button class="btn btn-ghost btn-sm" id="prev-page">Anterior</button>
-  <span id="page-indicator">Pagina 1 de 1</span>
-  <button class="btn btn-ghost btn-sm" id="next-page">Proximo</button>
+  <div class="pagination-info" id="pagination-info">—</div>
+  <div class="pagination-controls">
+    <button class="btn btn-ghost btn-sm" id="prev-page" title="Pagina anterior">&laquo;</button>
+    <span id="page-indicator">Pagina 1 de 1</span>
+    <button class="btn btn-ghost btn-sm" id="next-page" title="Proxima pagina">&raquo;</button>
+    <input class="form-input pagination-jump" id="pagination-jump" type="number" min="1" placeholder="Ir...">
+    <select class="form-input pagination-perpage" id="pagination-perpage" title="Itens por pagina">
+      <option value="20">20 / pagina</option>
+      <option value="50">50 / pagina</option>
+      <option value="100">100 / pagina</option>
+    </select>
+  </div>
 </div>
 {% endblock %}
