@@ -52,8 +52,25 @@ class User(Base):
     # aparece na lista de selecao de diretor para novas notas. Notas ja
     # atribuidas continuam visiveis e aprovaveis por ele.
     unavailable_for_notes = Column(Boolean, default=False, nullable=False)
+    # Diretor substituto durante o periodo de indisponibilidade. Quando
+    # configurado e o titular esta indisponivel:
+    #  - novas submissoes que tentem rotear pra ele caem automaticamente
+    #    no substituto
+    #  - notas ja na fila ganham um banner sugerindo repasse
+    substitute_director_id = Column(String(36), ForeignKey("users.id"), nullable=True)
 
-    manager = relationship("User", remote_side=[id], backref="team_members")
+    manager = relationship(
+        "User",
+        remote_side=[id],
+        foreign_keys=[manager_id],
+        backref="team_members",
+    )
+    # Substituto durante ferias — usado por _resolve_effective_director
+    substitute_director = relationship(
+        "User",
+        remote_side=[id],
+        foreign_keys=[substitute_director_id],
+    )
     created_invoices = relationship(
         "Invoice",
         foreign_keys="Invoice.created_by_id",

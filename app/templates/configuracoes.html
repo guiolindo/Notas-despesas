@@ -22,6 +22,21 @@
       Voce esta marcado como <strong>indisponivel</strong>. Outros usuarios nao
       poderao escolher voce ao enviar novas notas.
     </div>
+
+    <!-- Diretor: substituto durante a ausencia -->
+    <div id="config-substitute-section" class="hidden" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)">
+      <label for="config-substitute-select" style="font-weight:600;display:block;margin-bottom:.25rem">
+        Substituto durante a ausencia (opcional)
+      </label>
+      <p class="text-muted text-xs" style="margin-bottom:.5rem">
+        Se voce estiver indisponivel, novas notas que iam pra voce serao
+        encaminhadas automaticamente ao substituto escolhido. Notas ja na
+        sua fila continuam com voce.
+      </p>
+      <select id="config-substitute-select" class="form-input">
+        <option value="">Sem substituto (notas ficam na minha fila)</option>
+      </select>
+    </div>
   </div>
 </div>
 

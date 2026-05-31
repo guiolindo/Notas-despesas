@@ -449,6 +449,9 @@ def _do_submit(
                 detail="Informe o diretor para envio direto",
             )
         director = _get_director(db, director_id)
+        # Delegacao automatica: se diretor estiver indisponivel e tiver
+        # substituto designado, rota direto pra ele.
+        director = _resolve_effective_director(db, director)
         invoice.status = InvoiceStatus.AGUARDANDO_DIRETOR
         invoice.director_id = director.id
         # Se MANAGER cria e envia direto, ele mesmo é o gestor
@@ -584,6 +587,8 @@ def manager_review(
                 detail="Selecione o diretor para encaminhar a nota",
             )
         director = _get_director(db, director_id)
+        # Delegacao automatica em ferias
+        director = _resolve_effective_director(db, director)
         invoice.director_id = director.id
         invoice.status = InvoiceStatus.AGUARDANDO_DIRETOR
         _add_history(db, invoice.id, manager.id, ApprovalAction.APPROVED_MANAGER, comment, ip, port)
@@ -736,6 +741,21 @@ def transfer_to_director(
 
     db.commit()
     return _get_invoice(db, invoice.id)
+
+
+def _resolve_effective_director(db: Session, requested_director: User) -> User:
+    """Se o diretor solicitado esta indisponivel e tem substituto ativo,
+    retorna o substituto. Senao retorna o proprio. Usado em todos os
+    pontos onde uma nota e roteada a um diretor."""
+    if not getattr(requested_director, "unavailable_for_notes", False):
+        return requested_director
+    sub_id = getattr(requested_director, "substitute_director_id", None)
+    if not sub_id:
+        return requested_director  # sem substituto -> deixa cair na fila dele mesmo
+    sub = db.query(User).filter(User.id == sub_id).first()
+    if sub and sub.role == UserRole.DIRECTOR and sub.is_active and not getattr(sub, "unavailable_for_notes", False):
+        return sub
+    return requested_director
 
 
 def _unaccent_or_lower(col):

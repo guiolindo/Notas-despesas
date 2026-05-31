@@ -425,34 +425,64 @@ async function initConfiguracoes() {
   const card = document.getElementById('config-availability-card');
   // So MANAGER e DIRECTOR podem pausar recebimento
   if (!['MANAGER', 'DIRECTOR'].includes(user.role)) {
-    return;  // card fica oculto pra outros perfis
+    return;
   }
   card.classList.remove('hidden');
 
-  // Le estado atual via /auth/me (mais fresh que cache)
   const me = await apiFetch('/auth/me');
   const toggle = document.getElementById('config-unavailable-toggle');
   toggle.checked = Boolean(me.unavailable_for_notes);
   document.getElementById('config-availability-status')
     .classList.toggle('hidden', !me.unavailable_for_notes);
 
-  toggle.addEventListener('change', async () => {
+  // Substituto — so pra DIRECTOR
+  const subSection = document.getElementById('config-substitute-section');
+  const subSel = document.getElementById('config-substitute-select');
+  if (user.role === 'DIRECTOR' && subSection && subSel) {
+    subSection.classList.remove('hidden');
+    try {
+      const allDirectors = await apiFetch('/api/invoices/directors');
+      allDirectors
+        .filter((d) => d.id !== user.id && d.is_active && !d.unavailable_for_notes)
+        .forEach((d) => {
+          const opt = document.createElement('option');
+          opt.value = d.id;
+          opt.textContent = d.name + (d.department_name ? ` · ${d.department_name}` : '');
+          if (d.id === me.substitute_director_id) opt.selected = true;
+          subSel.appendChild(opt);
+        });
+    } catch {
+      subSection.classList.add('hidden');
+    }
+  }
+
+  async function applyChange() {
+    const payload = {
+      unavailable: toggle.checked,
+      substitute_director_id: subSel ? (subSel.value || null) : null,
+    };
     try {
       const resp = await apiFetch('/auth/me/availability', {
         method: 'PUT',
-        body: JSON.stringify({ unavailable: toggle.checked }),
+        body: JSON.stringify(payload),
       });
       showToast(resp.message, 'success');
       document.getElementById('config-availability-status')
         .classList.toggle('hidden', !toggle.checked);
-      // Atualiza cache local para banner global aparecer/sumir
-      Auth.setUser({ ...user, unavailable_for_notes: toggle.checked });
+      Auth.setUser({
+        ...user,
+        unavailable_for_notes: toggle.checked,
+        substitute_director_id: payload.substitute_director_id,
+      });
       renderGlobalAvailabilityBanner();
     } catch (e) {
-      toggle.checked = !toggle.checked;  // reverte UI
+      toggle.checked = !toggle.checked;
       showToast(e.message, 'error');
     }
-  });
+  }
+
+  toggle.addEventListener('change', applyChange);
+  if (subSel) subSel.addEventListener('change', applyChange);
 }
 
 function renderGlobalAvailabilityBanner() {

@@ -183,6 +183,7 @@ def logout(response: Response):
 
 class AvailabilityRequest(BaseModel):
     unavailable: bool
+    substitute_director_id: str | None = None  # so faz sentido se quem chama for DIRECTOR
 
 
 @router.put("/me/availability")
@@ -193,6 +194,10 @@ def update_availability(
 ):
     """Diretor (ou gestor) marca a si proprio como temporariamente
     indisponivel — nao recebe novas notas durante ferias / ausencia.
+
+    Diretor pode opcionalmente designar um substituto: quando indisponivel
+    e com substituto configurado, novas submissoes que tentem rotear pra
+    ele caem direto no substituto.
     """
     if current_user.role.value not in {"DIRECTOR", "MANAGER"}:
         raise HTTPException(
@@ -200,9 +205,30 @@ def update_availability(
             detail="Apenas gestores e diretores podem pausar recebimento.",
         )
     current_user.unavailable_for_notes = body.unavailable
+
+    # Substituto: so diretor configura; tem que ser outro diretor ativo
+    if current_user.role.value == "DIRECTOR":
+        if body.substitute_director_id:
+            sub = db.query(User).filter(User.id == body.substitute_director_id).first()
+            if not sub or sub.role.value != "DIRECTOR" or not sub.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Substituto invalido. Deve ser outro diretor ativo.",
+                )
+            if sub.id == current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Voce nao pode designar a si mesmo como substituto.",
+                )
+            current_user.substitute_director_id = sub.id
+        else:
+            # body explicitamente sem substitute -> limpa designacao anterior
+            current_user.substitute_director_id = None
+
     db.commit()
     return {
         "unavailable_for_notes": current_user.unavailable_for_notes,
+        "substitute_director_id": current_user.substitute_director_id,
         "message": (
             "Voce esta marcado como INDISPONIVEL — nao recebera novas notas."
             if body.unavailable else
@@ -395,6 +421,7 @@ def me(current_user: User = Depends(get_current_user)):
         "must_change_password": current_user.must_change_password,
         "submit_directly_to_director": getattr(current_user, "submit_directly_to_director", False),
         "unavailable_for_notes": getattr(current_user, "unavailable_for_notes", False),
+        "substitute_director_id": getattr(current_user, "substitute_director_id", None),
         "last_login": _as_utc(current_user.last_login).isoformat() if current_user.last_login else None,
     }
     if current_user.must_change_password:

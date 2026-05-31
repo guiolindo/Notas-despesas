@@ -135,6 +135,9 @@ def _run_schema_migrations() -> None:
         # Repasse de nota entre diretores: novo valor no enum approvalaction
         pg("ALTER TYPE approvalaction ADD VALUE IF NOT EXISTS 'TRANSFERRED_DIRECTOR'"),
 
+        # Substituto durante ferias (delegacao automatica de notas)
+        pg("ALTER TABLE users ADD COLUMN IF NOT EXISTS substitute_director_id VARCHAR(36)"),
+
         # Extensao unaccent: busca acento-insensivel em descricao/fornecedor.
         # Sem isso 'escritorio' nao acha 'escritório'. SQLite ignora (cai
         # em lower() simples no fallback do servico).
