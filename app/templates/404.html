@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pagina nao encontrada - Economart</title>
+  <link rel="icon" type="image/png" href="/static/img/favicon.png">
+  <link rel="apple-touch-icon" href="/static/img/favicon.png">
+  <meta name="theme-color" content="#1B4F8A">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body class="login-page">
+  <div class="login-container">
+    <div class="login-card" style="max-width:520px;text-align:center">
+      <div class="login-logo">
+        <img src="/static/img/logo.png" alt="Economart" class="login-logo-img">
+      </div>
+
+      <div class="not-found-icon">
+        <span class="icon icon-file-search ic-32"></span>
+      </div>
+
+      <h1 class="login-title" style="margin-top:8px">Pagina nao encontrada</h1>
+      <p class="login-subtitle">
+        O endereco que voce tentou abrir nao existe ou foi movido.
+      </p>
+
+      <p class="not-found-countdown" id="nf-countdown-text">
+        Levando voce de volta em <strong id="nf-seconds">3</strong> segundos...
+      </p>
+
+      <p style="margin-top:18px">
+        <a href="/dashboard" class="btn btn-primary" id="nf-go-now">Ir agora</a>
+      </p>
+    </div>
+  </div>
+  <script src="/static/js/not-found.js" defer></script>
+</body>
+</html>

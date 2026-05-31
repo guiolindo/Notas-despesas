@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -211,3 +211,50 @@ app.include_router(contas_a_pagar.router, tags=["Contas a Pagar"])
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ─── 404 amigavel pra URLs digitadas erradas ─────────────────────────────
+# Rotas de API (/api/, /auth/, /alerts/, /admin/, /health) continuam
+# retornando JSON — frontend e curl precisam do contrato JSON. So URLs
+# de navegacao (HTML) recebem o template com contagem regressiva +
+# redirect pra /login ou /dashboard.
+from starlette.exceptions import HTTPException as _StarletteHTTPException
+from starlette.responses import JSONResponse as _JSONResponse
+
+
+_API_PREFIXES = ("/api/", "/auth/", "/alerts/", "/admin/", "/health")
+
+
+def _is_api_path(path: str) -> bool:
+    return any(path.startswith(p) for p in _API_PREFIXES)
+
+
+@app.exception_handler(404)
+async def _not_found_handler(request: Request, exc):
+    path = request.url.path
+    if _is_api_path(path):
+        # Mantem contrato JSON pras rotas de API
+        return _JSONResponse(
+            status_code=404,
+            content={"detail": getattr(exc, "detail", "Recurso nao encontrado")},
+        )
+    # Navegacao web: template amigavel
+    return templates.TemplateResponse(
+        request, "404.html", status_code=404
+    )
+
+
+# Reaproveita o handler de 404 para HTTPException(status_code=404) lancada
+# manualmente em rotas HTML (raro, mas evita regressao se acontecer).
+@app.exception_handler(_StarletteHTTPException)
+async def _http_exception_handler(request: Request, exc: _StarletteHTTPException):
+    if exc.status_code == 404 and not _is_api_path(request.url.path):
+        return templates.TemplateResponse(
+            request, "404.html", status_code=404
+        )
+    # Para qualquer outra HTTPException, mantem comportamento padrao do FastAPI
+    return _JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=getattr(exc, "headers", None),
+    )
