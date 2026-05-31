@@ -253,17 +253,51 @@
           endpoint de autenticacao.</li>
       <li>Validacao de PDFs anexados: bloqueio de scripts embutidos e
           execucao automatica (/JavaScript, /OpenAction).</li>
+      <li>Validacao de CPF/CNPJ do fornecedor via algoritmo Mod 11 oficial
+          da Receita; razao social preenchida automaticamente via API publica
+          (cache local de 6 meses).</li>
+      <li>Pagina publica de verificacao (/verify/&lt;id&gt;) acessivel via QR Code
+          impresso no comprovante. Sem login: dados pessoais (nomes, CPF,
+          CNPJ) aparecem parcialmente mascarados. Com login de quem participa
+          do fluxo: detalhamento completo.</li>
+      <li>Configuracao de envio de email (SMTP/Resend) fica em variaveis de
+          ambiente da infraestrutura — administradores do app nao conseguem
+          alterar provedor de email pela interface (defesa contra
+          interceptacao de codigos de recuperacao de senha).</li>
     </ul>
 
     <h3 class="legal-h3">3.2 Auditoria</h3>
     <p>
       Todas as acoes relevantes (login, criacao, edicao, aprovacao, reprovacao,
-      lancamento, impressao, encerramento de conta) sao registradas em log com
-      timestamp, usuario, IP pseudonimizado, metodo HTTP e user-agent. Os logs
-      sao acessiveis ao perfil Admin para investigacao.
+      lancamento, impressao, encerramento de conta, acoes administrativas
+      pendentes) sao registradas em log com timestamp, usuario, IP
+      pseudonimizado, metodo HTTP e user-agent. Os logs sao acessiveis ao
+      perfil Administrador para investigacao.
+    </p>
+    <p>
+      Cada linha do registro de auditoria carrega o hash da linha anterior
+      formando uma cadeia (SHA-256). Edicao retroativa direta no banco quebra
+      a cadeia e e detectavel pelo endpoint de verificacao de integridade,
+      reduzindo o risco de adulteracao de trilha.
     </p>
 
-    <h3 class="legal-h3">3.3 Incidentes de seguranca</h3>
+    <h3 class="legal-h3">3.3 Defesa contra acoes administrativas indevidas</h3>
+    <p>
+      Acoes sensiveis em contas de diretor (desativacao, encerramento e
+      redefinicao de senha) passam por uma <strong>janela de 24 horas</strong>
+      durante a qual o proprio diretor afetado, outros diretores ativos ou um
+      administrador neutro podem cancelar a operacao. Em casos legitimos de
+      desligamento, outro diretor ou administrador pode confirmar a acao
+      imediatamente, dispensando a espera.
+    </p>
+    <p>
+      A criacao de novos diretores e qualquer mudanca sensivel em contas de
+      diretor disparam <strong>notificacao automatica</strong> por email aos
+      demais diretores ativos, permitindo deteccao rapida de acoes nao
+      autorizadas.
+    </p>
+
+    <h3 class="legal-h3">3.4 Incidentes de seguranca</h3>
     <p>
       Em caso de incidente envolvendo dados pessoais, a empresa adotara as
       providencias previstas no art. 48 da LGPD, incluindo, se aplicavel,

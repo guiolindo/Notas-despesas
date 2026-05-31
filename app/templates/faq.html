@@ -29,6 +29,10 @@
       "Sao alertas informativos: se a nota foi enviada com data de emissao do mes anterior, ou se o vencimento esta proximo (menos de 72h). Sao apenas avisos — nao bloqueiam o fluxo.") }}
     {{ qa("O sistema esta lento ou da erro. O que faco?",
       "Recarregue a pagina (Ctrl+F5). Se persistir, faca logout e login novamente. Se ainda assim nao funcionar, contate o administrador.") }}
+    {{ qa("Por que tenho que digitar CPF ou CNPJ do fornecedor?",
+      "Identifica univocamente quem recebera o pagamento e da rastreabilidade fiscal. O sistema valida o dgito (Mod 11) — se voce digitar errado, ele avisa. Para CNPJ, a razao social e preenchida automaticamente pelo sistema apos a validacao.") }}
+    {{ qa("Para que serve a pagina /verify do QR code?",
+      "Permite a qualquer pessoa conferir a autenticidade de um comprovante impresso. Sem login, aparece a versao publica (numero, valor, status, assinatura digital — dados sensiveis como CPF/CNPJ e nomes ficam parcialmente ocultos). Quem participa do fluxo (criador, gestor, diretor, financeiro, contas a pagar) pode fazer login para ver o detalhamento completo.") }}
   </div>
 </section>
 
@@ -91,6 +95,29 @@
       "Va em <strong>Configuracoes</strong> e ative <em>Estou indisponivel</em>. Gestores nao poderao mais te encaminhar notas novas. As notas pendentes na sua fila continuam — voce precisa aprovar antes de sair ou alguem precisa cobrir.") }}
     {{ qa("Posso ver notas que ja aprovei e foram lancadas?",
       "Sim. As notas que voce aprovou ficam visiveis na sua lista mesmo apos o lancamento.") }}
+    {{ qa("Recebi um email avisando que outro diretor foi criado / desativado / teve a senha redefinida. O que faco?",
+      "E uma notificacao automatica de seguranca. Sempre que um admin executa acao sensivel em conta de diretor, voce e os outros diretores ativos sao avisados em segundos. Se voce <strong>autorizou</strong> ou ja sabia, ignore. Se <strong>nao</strong> autorizou e parece estranho, conteste imediatamente com a diretoria.") }}
+    {{ qa("Recebi um banner vermelho dizendo que minha conta sera desativada em 24h. E real?",
+      "Foi um admin que solicitou. Se nao foi autorizado por voce, clique em <em>Nao foi autorizada</em> no proprio banner do dashboard. Voce tem 24h para cancelar antes que a acao seja aplicada. Se for legitimo (demissao real combinada com RH), nao precisa fazer nada — a acao executa sozinha apos 24h.") }}
+    {{ qa("Vejo no meu dashboard uma acao pendente contra outro diretor. O que faco?",
+      "Voce e peer e pode atuar. Se sabe que a acao e legitima, clique em <em>Confirmar e aplicar agora</em> — o efeito vai imediato, sem esperar as 24h (util em demissao real). Se acha que e indevida, clique em <em>Cancelar</em>.") }}
+  </div>
+</section>
+{% endif %}
+
+{# ─── Contas a Pagar ───────────────────────────────────────────────────── #}
+{% if user_role in ["CONTAS_A_PAGAR", "ADMIN"] %}
+<section class="card" style="max-width:860px;margin-bottom:1rem">
+  <div class="card-body">
+    <h2 class="section-title">Para Contas a Pagar</h2>
+    {{ qa("Como uso o scanner?",
+      "Acesse <strong>Scanner QR</strong> no menu lateral (ou aperte <kbd>F2</kbd> no dashboard). Duas formas: (1) bipador — clique no campo de texto e bipe o QR code, abrira automaticamente; (2) camera — clique em <em>Iniciar camera</em> (ideal no celular), aponte pro QR.") }}
+    {{ qa("Posso aprovar ou editar nota?",
+      "Nao. Seu perfil e de conferencia (read-only). Voce ve todas as notas e pode reimprimir o comprovante de notas ja <em>Lancadas</em> pelo Financeiro. Para qualquer outra acao, contate o responsavel pelo fluxo.") }}
+    {{ qa("Posso reimprimir comprovante de qualquer nota?",
+      "Apenas de notas com status <em>Lancada</em> (PAGO). A primeira impressao — que efetiva o lancamento — continua exclusiva do Financeiro.") }}
+    {{ qa("O contador 'Conferidas hoje' conta o que?",
+      "Quantas vezes voce reimprimiu comprovantes nas ultimas 24 horas. Util pra acompanhar o ritmo do turno.") }}
   </div>
 </section>
 {% endif %}
@@ -133,6 +160,12 @@
       "Sim. Admin tem acesso total a todas as notas, todos os usuarios, todos os setores e todos os logs de auditoria. Use isso com responsabilidade.") }}
     {{ qa("Como funciona o bloqueio de 5 tentativas?",
       "Apos 5 tentativas de login com senha errada, a conta e bloqueada por 10 minutos. O usuario recebe email. Voce pode <em>Desbloquear</em> manualmente em <strong>Usuarios</strong> sem esperar.") }}
+    {{ qa("Tentei desativar um diretor mas o sistema agendou pra 24h. Por que?",
+      "E uma trava de seguranca: desativacao, encerramento e redefinicao de senha de diretor entram numa janela de tolerancia de 24h. Durante esse periodo o proprio diretor afetado, outro diretor ou outro admin podem cancelar a acao se ela for indevida. Apos 24h sem cancelamento, o efeito e aplicado automaticamente. Se for uma demissao real e voce precisa aplicar AGORA, peca a outro diretor (ou admin diferente do solicitante) pra abrir o dashboard e clicar em <em>Confirmar e aplicar agora</em>.") }}
+    {{ qa("Quando um novo diretor e criado, quem fica sabendo?",
+      "Todos os outros diretores ativos recebem email automaticamente, com o nome do solicitante e do novo diretor. Isso impede que um admin crie um diretor fictnicio sem que os reais percebam. O mesmo vale para desativacao, encerramento e redefinicao de senha de diretor.") }}
+    {{ qa("Como sei se o log de auditoria foi adulterado?",
+      "Cada linha do audit_logs contem um hash da linha anterior (cadeia). Edicao retroativa direta no banco quebra a cadeia. Para verificar, chame <code>GET /api/admin/audit-logs/verify-chain</code> — retorna <em>ok</em> e a primeira linha quebrada (se houver).") }}
   </div>
 </section>
 {% endif %}

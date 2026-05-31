@@ -58,6 +58,9 @@ class PendingAdminAction(Base):
     cancelled_at = Column(DateTime, nullable=True)
     cancel_reason = Column(Text, nullable=True)
     executed_at = Column(DateTime, nullable=True)
+    # Em demissao real, outro diretor / admin neutro pode CONFIRMAR a
+    # pending antes das 24h pra executa-la imediatamente.
+    executed_by_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     # Payload extra (ex: nova senha em RESET_PASSWORD_DIRECTOR — guardada
     # hasheada no campo password_hash). Mantemos opcional pra futuras acoes.
     extra = Column(Text, nullable=True)  # JSON serializado se precisar
@@ -65,3 +68,4 @@ class PendingAdminAction(Base):
     target = relationship("User", foreign_keys=[target_user_id])
     requested_by = relationship("User", foreign_keys=[requested_by_id])
     cancelled_by = relationship("User", foreign_keys=[cancelled_by_id])
+    executed_by = relationship("User", foreign_keys=[executed_by_id])

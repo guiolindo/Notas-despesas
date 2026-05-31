@@ -129,6 +129,9 @@ def _run_schema_migrations() -> None:
         pg("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS prev_hash VARCHAR(64)"),
         pg("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS row_hash VARCHAR(64)"),
 
+        # Pending actions: quem executou via confirmacao antecipada
+        pg("ALTER TABLE pending_admin_actions ADD COLUMN IF NOT EXISTS executed_by_id VARCHAR(36)"),
+
         # Fase 3: novo role CONTAS_A_PAGAR (read-only + scanner QR).
         # No Postgres role e um TYPE ENUM — precisa ALTER TYPE ADD VALUE.
         # No SQLite o Enum vira VARCHAR e aceita qualquer string.

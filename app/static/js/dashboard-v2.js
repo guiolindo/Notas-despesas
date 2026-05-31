@@ -213,12 +213,22 @@
     }
   }
 
-  // ─── Banner de acoes pendentes contra o usuario logado ──────────────
+  // ─── Banner de acoes administrativas pendentes ──────────────────────
+  // Mostra acoes que afetam o usuario (target) E acoes que ele pode revisar
+  // como peer (diretor / admin). Cada item ganha botoes 'Cancelar' e/ou
+  // 'Confirmar' conforme a permissao.
   async function loadPendingActions() {
     const banner = $('#pending-actions-banner');
     if (!banner) return;
     try {
-      const items = await apiFetch('/api/pending-actions/me');
+      // /visible inclui acoes contra mim E acoes que posso revisar (peer)
+      let items = [];
+      try {
+        items = await apiFetch('/api/pending-actions/visible');
+      } catch {
+        // perfis fora de DIRECTOR/ADMIN -> usa /me como fallback
+        items = await apiFetch('/api/pending-actions/me');
+      }
       if (!items || !items.length) {
         banner.classList.add('hidden');
         return;
@@ -229,17 +239,24 @@
         const left = pa.seconds_remaining > 0
           ? `Tempo restante: <strong>${hours}h ${mins}min</strong>`
           : '<strong>Janela expirada</strong> (sera aplicada na proxima atualizacao).';
+        const targetTxt = pa.is_target
+          ? 'contra <strong>voce</strong>'
+          : `contra <strong>${escapeHtml(pa.target_name || '?')}</strong>`;
+        const buttons = [];
+        if (pa.can_cancel !== false) {
+          const label = pa.is_target ? 'Nao foi autorizada' : 'Cancelar';
+          buttons.push(`<button class="btn btn-ghost btn-sm" data-pending-cancel="${escapeHtml(pa.id)}">${label}</button>`);
+        }
+        if (pa.can_confirm) {
+          buttons.push(`<button class="btn btn-primary btn-sm" data-pending-confirm="${escapeHtml(pa.id)}">Confirmar e aplicar agora</button>`);
+        }
         return `<div class="pending-banner-item">
           <div>
-            <strong>${escapeHtml(pa.action_label)}</strong> solicitada por
-            <strong>${escapeHtml(pa.requested_by_name || '?')}</strong>.
+            <strong>${escapeHtml(pa.action_label)}</strong> ${targetTxt},
+            solicitada por <strong>${escapeHtml(pa.requested_by_name || '?')}</strong>.
             <div class="pending-banner-sub">${left}</div>
           </div>
-          <div>
-            <button class="btn btn-primary btn-sm" data-pending-cancel="${escapeHtml(pa.id)}">
-              Nao foi autorizada
-            </button>
-          </div>
+          <div class="pending-banner-actions">${buttons.join('')}</div>
         </div>`;
       }).join('');
       banner.classList.remove('hidden');
@@ -247,7 +264,7 @@
         btn.addEventListener('click', async () => {
           const id = btn.dataset.pendingCancel;
           const reason = window.prompt(
-            'Descreva brevemente porque esta acao nao foi autorizada (opcional):'
+            'Descreva brevemente o motivo do cancelamento (opcional):'
           );
           if (reason === null) return;
           try {
@@ -261,8 +278,19 @@
           }
         });
       });
+      banner.querySelectorAll('[data-pending-confirm]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.pendingConfirm;
+          if (!window.confirm('Confirmar esta acao agora? O efeito sera aplicado imediatamente, sem esperar as 24h.')) return;
+          try {
+            await apiFetch(`/api/pending-actions/${id}/confirm`, { method: 'POST' });
+            await loadPendingActions();
+          } catch (e) {
+            alert(e.message || 'Erro ao confirmar.');
+          }
+        });
+      });
     } catch (err) {
-      // Endpoint indisponivel: nao incomoda o usuario
       banner.classList.add('hidden');
     }
   }

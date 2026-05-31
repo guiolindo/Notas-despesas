@@ -1521,6 +1521,7 @@ tr.row-anonymized td { background: #f5f5f5; color: #6b7280; font-style: italic; 
   color: var(--text-muted);
   margin-top: 4px;
 }
+.pending-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ─── Pagina 404 ──────────────────────────────────────────────────────── */
 .not-found-icon {

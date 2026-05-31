@@ -184,8 +184,15 @@ def list_visible_pending_actions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Lista pendentes que outros diretores podem cancelar (peer review).
-    So aparece para diretores e admins."""
+    """Lista pendentes que diretores/admins podem ver e atuar (peer review).
+    Cada item ganha can_confirm/can_cancel pra UI decidir os botoes:
+
+    - target sempre pode cancelar (mas nunca confirmar)
+    - peer director pode cancelar E confirmar
+    - admin pode confirmar (sempre, exceto se foi o solicitante) e
+      cancelar (se nao foi solicitante)
+    - solicitante nao pode nem confirmar nem cancelar (auto-aprovacao)
+    """
     if current_user.role.value not in {"DIRECTOR", "ADMIN"}:
         return []
     run_due_actions(db)
@@ -195,7 +202,25 @@ def list_visible_pending_actions(
         .order_by(PendingAdminAction.effective_at.asc())
         .all()
     )
-    return [_serialize(i) for i in items]
+
+    out = []
+    for pa in items:
+        is_target = current_user.id == pa.target_user_id
+        is_solicitante = current_user.id == pa.requested_by_id
+        is_peer_director = (
+            current_user.role == UserRole.DIRECTOR
+            and current_user.is_active
+            and not is_target
+        )
+        is_neutral_admin = current_user.role == UserRole.ADMIN and not is_solicitante
+        can_confirm = (is_peer_director or is_neutral_admin) and not is_target and not is_solicitante
+        can_cancel = is_target or is_peer_director or is_neutral_admin
+        serialized = _serialize(pa)
+        serialized["can_confirm"] = can_confirm
+        serialized["can_cancel"] = can_cancel
+        serialized["is_target"] = is_target
+        out.append(serialized)
+    return out
 
 
 @router.post("/api/pending-actions/{action_id}/cancel")
@@ -267,6 +292,83 @@ def cancel_pending_action(
         pass
 
     return {"status": "ok", "message": "Acao cancelada."}
+
+
+@router.post("/api/pending-actions/{action_id}/confirm")
+def confirm_pending_action(
+    action_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Confirma uma pending antecipadamente — executa imediatamente sem
+    esperar as 24h. Caso de uso: demissao real do diretor. Outro diretor
+    ou um admin neutro confirma que a acao e legitima.
+
+    Quem pode confirmar:
+    - Qualquer diretor ativo que NAO seja o target
+    - Qualquer admin que NAO seja o solicitante (anti auto-aprovacao)
+
+    Diferente do cancel: target NAO pode confirmar sua propria desativacao
+    (impede um admin malicioso de coagir o diretor a 'apertar OK')."""
+    pa = db.query(PendingAdminAction).filter(PendingAdminAction.id == action_id).first()
+    if not pa:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Acao nao encontrada.")
+    if pa.status != PendingActionStatus.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Esta acao ja foi cancelada ou executada.",
+        )
+    if current_user.id == pa.target_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Voce nao pode confirmar sua propria desativacao.",
+        )
+    if current_user.id == pa.requested_by_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="O solicitante nao pode confirmar a propria solicitacao.",
+        )
+    is_peer_director = current_user.role == UserRole.DIRECTOR and current_user.is_active
+    is_admin = current_user.role == UserRole.ADMIN
+    if not (is_peer_director or is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas diretores ou administradores podem confirmar esta acao.",
+        )
+
+    _execute_action(db, pa)
+    pa.status = PendingActionStatus.EXECUTED
+    pa.executed_at = _now()
+    pa.executed_by_id = current_user.id
+
+    _audit(
+        db, request, current_user.id,
+        "CONFIRM_PENDING_ADMIN_ACTION",
+        pa.id,
+        f"Confirmou execucao de {pa.action_type.value} contra {pa.target_user_id} "
+        f"(solicitada por {pa.requested_by_id}). Aplicado imediatamente.",
+    )
+    db.commit()
+
+    # Notifica solicitante e target
+    try:
+        from app.services import email_service
+        for uid in [pa.requested_by_id, pa.target_user_id]:
+            recipient = db.query(User).filter(User.id == uid).first()
+            if recipient and recipient.email and not recipient.email.endswith("@desligado.local"):
+                email_service.send_email_async(
+                    recipient.email,
+                    subject=f"Acao confirmada e aplicada: {ACTION_LABELS.get(pa.action_type.value, '')}",
+                    html=f"<p>Ola {recipient.name},</p><p><strong>{current_user.name}</strong> "
+                         f"confirmou a execucao da acao "
+                         f"<strong>{ACTION_LABELS.get(pa.action_type.value, pa.action_type.value)}</strong>. "
+                         f"O efeito foi aplicado imediatamente, sem esperar as 24h.</p>",
+                )
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {"status": "ok", "message": "Acao confirmada e executada."}
 
 
 @router.post("/api/pending-actions/run-due")
