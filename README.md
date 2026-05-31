@@ -19,6 +19,7 @@ Financeiro.
 - [Perfis de usuário](#perfis-de-usuário)
 - [Fluxo de aprovação](#fluxo-de-aprovação)
 - [Segurança e LGPD](#segurança-e-lgpd)
+- [Defesa contra admin malicioso (insider threat)](#defesa-contra-admin-malicioso-insider-threat)
 - [Setup local](#setup-local)
 - [Deploy no Railway](#deploy-no-railway)
 - [Configurações](#configurações)
@@ -243,6 +244,37 @@ Cada transição gera entrada em `approval_history` + `audit_logs` com:
 ### CORS
 - Em PROD: restrito ao domínio público do Railway
 - Em DEV: aberto para facilitar testes locais
+
+## Defesa contra admin malicioso (insider threat)
+
+Modelo de ameaças assumido: **o admin do sistema não tem acesso ao Railway/banco**. Sob essa premissa, quatro camadas eliminam os ataques mais prováveis:
+
+| Ataque | Defesa | Comportamento |
+|---|---|---|
+| Trocar SMTP pra interceptar reset de senha | SMTP fora da UI | Configuração SMTP/Resend vive em `.env`. Quem opera o Railway controla; quem tem login admin não enxerga. |
+| Criar diretor fake pra fluxar fraude | Notificação peer | Todos os diretores ativos recebem email em segundos com nome do criador. |
+| Desativar/encerrar diretor "do nada" | Janela de 24h | Em vez de aplicar, cria `PendingAdminAction`. Diretor + outros diretores recebem email + banner vermelho no dashboard com botão "Não foi autorizada". |
+| Resetar senha de diretor pra logar como ele | Notificação imediata | Diretor afetado recebe email no ato da troca. |
+| Editar `audit_logs` direto no banco | Hash chain | Cada linha contém SHA-256 da anterior + dos próprios campos. `GET /api/admin/audit-logs/verify-chain` detecta tampering. |
+
+Variáveis de ambiente do envio de email (vivem só no Railway):
+
+```bash
+EMAIL_PROVIDER=RESEND   # SMTP | RESEND | DISABLED
+RESEND_API_KEY=re_...
+SMTP_FROM_EMAIL=nao-responder@economart.com.br
+# (alternativa SMTP)
+SMTP_HOST=...  SMTP_PORT=587  SMTP_USE_TLS=true
+SMTP_USER=...  SMTP_PASSWORD=...
+```
+
+O que **não está coberto técnicamente** (exige controle humano):
+
+- Dois admins colaborando — depende de RH e cota mínima de admins de times diferentes.
+- Mesma pessoa controlando app + infra — depende de separação física de funções.
+- Logs replicados fora do controle do operador da infra — recomendação futura.
+
+Detalhes completos do modelo, esquema das tabelas, fluxos e código em `DOCUMENTACAO.md` § 36–41.
 
 ## Setup local
 

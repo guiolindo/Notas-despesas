@@ -1296,4 +1296,284 @@ Pluralização correta: "1 nota vencida" em vez de "1 notas vencidas".
 
 ---
 
+## Apêndice D: Modelo de defesa contra admin malicioso (insider threat)
+
+Decisão arquitetural: o sistema parte do princípio de que o **admin do app
+não tem acesso à infraestrutura** (Railway / banco). Sob essa premissa,
+quatro controles em camadas eliminam os ataques mais prováveis.
+
+### 36. SMTP fora do alcance do admin do app
+
+Antes: admin configurava SMTP/Resend pela UI em `/admin/smtp`.
+
+Risco: admin malicioso troca o provider por um servidor próprio, pede
+"esqueci minha senha" de outro admin, intercepta o código de 6 dígitos,
+loga como ele. Driblava a regra "admin não reseta admin".
+
+Solução: SMTP movido inteiramente para variáveis de ambiente. Quem
+opera o `.env` no Railway controla o provider. Quem tem login admin não.
+
+```bash
+# .env (Railway)
+EMAIL_PROVIDER=RESEND       # SMTP | RESEND | DISABLED
+RESEND_API_KEY=re_...
+SMTP_FROM_EMAIL=nao-responder@economart.com.br
+SMTP_FROM_NAME=Economart
+# (para provider SMTP)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USE_TLS=true
+SMTP_USER=...
+SMTP_PASSWORD=...
+```
+
+Removido:
+- Página `/admin/smtp` (HTML)
+- Endpoints `GET/PUT /api/admin/smtp` e `POST /api/admin/smtp/test`
+- Link "Email automático" na navegação admin
+- 521 linhas líquidas de código (JS + HTML + Python)
+
+Preservado (compat de schema): tabela `smtp_settings` e modelo
+`SmtpSettings` permanecem — código não lê mais delas, mas a migração
+não destrutiva permite voltar atrás se necessário.
+
+Implementado em commit `5d3e0d9`.
+
+### 37. Notificação peer (alerta cruzado entre diretores)
+
+Quando admin executa ação sensível em conta com perfil DIRECTOR,
+**todos os outros diretores ativos** recebem email em segundos.
+
+Gatilhos:
+- Criação de novo diretor (`POST /api/admin/users` com `role=DIRECTOR`)
+- Promoção para diretor (`PUT /api/admin/users/{id}` mudando `role`)
+- Desativação de diretor (`PUT .../id` com `is_active=False`)
+- Encerramento de conta de diretor (`POST .../anonymize`)
+- Redefinição de senha de diretor (`POST .../reset-password`)
+
+Helper: `_notify_directors_peer(db, actor, action_label, target, exclude_target)`
+- Recipientes: `DIRECTOR` ativo, exceto o próprio target (ajustável)
+- Em desativação **inclui** o target — ele precisa saber primeiro
+- Fallback: se não houver outro diretor ativo (primeiro cadastro do
+  sistema), avisa todos os admins ativos exceto o ator
+- Envio via `send_email_async` (best-effort, não bloqueia request)
+
+Template: `template_director_peer_notify` em `email_service.py`.
+Contém: ação executada, diretor afetado, executor, timestamp BRT,
+instrução explícita "Se não autorizou, conteste imediatamente".
+
+Implementado em commit `e283732`.
+
+### 38. Janela de tolerância de 24h (pending admin actions)
+
+A jóia do modelo. Em vez de **aplicar** `is_active=False` num diretor
+imediatamente, o sistema **agenda** a aplicação para daqui a 24h e
+notifica o alvo e os pares.
+
+#### Modelo de dados (`app/models/pending_admin_actions.py`)
+
+```python
+class PendingActionType(str, enum.Enum):
+    DEACTIVATE_DIRECTOR = "DEACTIVATE_DIRECTOR"
+    ENCERRAR_DIRECTOR = "ENCERRAR_DIRECTOR"
+    RESET_PASSWORD_DIRECTOR = "RESET_PASSWORD_DIRECTOR"
+
+class PendingActionStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    CANCELLED = "CANCELLED"
+    EXECUTED = "EXECUTED"
+
+class PendingAdminAction(Base):
+    __tablename__ = "pending_admin_actions"
+    id, action_type, target_user_id, requested_by_id
+    requested_at, effective_at, status
+    reason, cancelled_by_id, cancelled_at, cancel_reason, executed_at
+    extra (JSON serializado, p/ futuras ações)
+
+GRACE_PERIOD_HOURS = 24
+```
+
+#### Fluxo
+
+```
+Admin: PUT /admin/users/{director-id} {"is_active": false}
+   ↓
+admin.update_user detecta role=DIRECTOR + is_active False→
+   ↓
+Cria PendingAdminAction {effective_at = now + 24h, status=PENDING}
+Retorna 200 {pending_action_id, message: "agendada para 24h"}
+   ↓
+Email pro target: "Sua desativacao foi solicitada. Conteste se nao autorizou."
+Email pros outros diretores: "Maria sera desativada em 24h por Joao."
+Banner vermelho no dashboard do target com contagem regressiva
+   ↓
+[Caminho A] Target ou outro diretor clica "Nao foi autorizada"
+   ↓ POST /api/pending-actions/{id}/cancel
+   status=CANCELLED, email pro solicitante "sua acao foi cancelada"
+   ↓
+[Caminho B] 24h passam sem cancelamento
+   ↓ run_due_actions() executa lazy (chamado em GET /me)
+   user.is_active = False, status=EXECUTED
+```
+
+#### Endpoints (`app/routers/pending_actions.py`)
+
+```
+GET  /api/pending-actions/me        # ações pendentes contra mim (banner)
+GET  /api/pending-actions/visible   # peer view (director/admin)
+POST /api/pending-actions/{id}/cancel
+POST /api/pending-actions/run-due   # idempotente
+```
+
+#### Quem pode cancelar
+
+- O próprio target (`current_user.id == target_user_id`)
+- Qualquer outro **diretor ativo** (peer veto)
+- Qualquer admin que **não seja** o solicitante (anti auto-aprovação)
+
+#### Idempotência sem cron externo
+
+`run_due_actions(db)` é chamada lazy em todo `GET /api/pending-actions/me`.
+Não precisa de scheduler externo — qualquer tráfego no sistema dispara
+o executor das pendentes vencidas.
+
+#### Frontend
+
+- `templates/dashboard.html`: `<div id="pending-actions-banner">` no topo
+- `static/js/dashboard-v2.js`: `loadPendingActions()` popula com items
+  - Botão "Não foi autorizada" abre `prompt()` pedindo motivo
+  - POST `/cancel` com motivo opcional
+- `static/css/main.css`: `.pending-banner` vermelho, item por linha, contagem regressiva
+
+#### Cobertura
+
+**Desativação direta**: coberta — passa pela janela.
+
+**Encerramento** (anonymize): coberto **transitivamente** — exige
+`user.is_active=False` antes, então tem que passar pela desativação
+de 24h primeiro. Encerramento direto sem desativação prévia é rejeitado
+com 400.
+
+**Reset de senha**: NÃO usa janela (executa direto), mas dispara
+notificação peer ao diretor afetado + outros diretores.
+
+Implementado em commit `0ba0a23`.
+
+### 39. Hash chain dos audit_logs (tamper detection)
+
+Defesa contra cenário em que admin tem **acesso direto ao banco**
+(psql, Railway SQL console) e edita `audit_logs` para cobrir rastros.
+
+#### Esquema
+
+```sql
+ALTER TABLE audit_logs ADD COLUMN prev_hash VARCHAR(64);
+ALTER TABLE audit_logs ADD COLUMN row_hash  VARCHAR(64);
+```
+
+Cada linha carrega o hash da linha anterior e o seu próprio:
+
+```python
+row_hash = SHA-256(
+    prev_hash | id | user_id | action | resource_type | resource_id |
+    ip_address | source_port | http_method | user_agent | timestamp |
+    success | detail
+)
+```
+
+Editar qualquer campo de uma linha quebra a cadeia: `row.row_hash`
+deixa de bater com `compute_row_hash(prev_hash, row)`. Todas as
+linhas **posteriores** também ficam inválidas porque seu `prev_hash`
+ainda aponta pro hash antigo da linha modificada.
+
+#### Hook de inserção (`app/models/audit_logs.py`)
+
+```python
+def attach_audit_chain_listener(SessionClass) -> None:
+    @event.listens_for(SessionClass, "before_flush")
+    def _audit_chain_before_flush(session, _flush_context, _instances):
+        pending = [obj for obj in session.new if isinstance(obj, AuditLog)]
+        if not pending: return
+        # Ordena cronologicamente
+        pending.sort(key=lambda o: (o.timestamp, o.id or ""))
+        # Ancora na ultima linha JA COMMITED do DB
+        last_db = (session.query(AuditLog)
+                   .order_by(AuditLog.timestamp.desc(), AuditLog.id.desc())
+                   .first())
+        prev = last_db.row_hash if last_db and last_db.row_hash else GENESIS_HASH
+        for obj in pending:
+            obj.prev_hash = prev
+            obj.row_hash = compute_row_hash(prev, obj)
+            prev = obj.row_hash
+```
+
+Atachado em `database.py::_wire_audit_chain()` após `SessionLocal`
+existir. Roda uma vez no boot.
+
+#### Por que `before_flush` e não `before_insert`
+
+`before_insert` dispara por linha durante o flush e **não enxerga
+linhas anteriores da mesma transação** ainda não persistidas. Resultado
+empírico: ao inserir 3 audits em batch, todas saiam com `prev=GENESIS`
+em vez de encadear. `before_flush` recebe todas as pendentes de uma
+vez via `session.new`, permitindo encadeamento correto.
+
+#### Detalhe crítico: normalização de timezone
+
+SQLite (e Postgres com `DateTime` sem `timezone=True`) **strip tzinfo**
+no roundtrip. Sem normalização:
+- Insert: `compute_row_hash(GENESIS, row)` usa `2026-05-31T15:35:56+00:00`
+- Verify (após reload do DB): mesmo registro tem `2026-05-31T15:35:56`
+- Hashes diferentes → cadeia parece quebrada quando não está
+
+Solução em `compute_row_hash`:
+```python
+t = row.timestamp
+if t.tzinfo is not None:
+    t = t.astimezone(timezone.utc).replace(tzinfo=None)
+ts = t.isoformat()
+```
+
+#### Endpoint de verificação
+
+```
+GET /api/admin/audit-logs/verify-chain
+→ {ok, total, first_broken_id, first_broken_at, message}
+```
+
+Recalcula a cadeia inteira do mais antigo ao mais recente. Linhas
+antigas pré-feature (com `row_hash NULL`) **não quebram** a verificação
+— a cadeia avança computando o hash esperado e seguindo. Apenas linhas
+COM row_hash que **divirjam** do recalculado disparam alarme.
+
+Implementado em commit `b14932b`.
+
+### 40. Resumo do modelo de ameaças coberto
+
+| Ataque do admin malicioso | Defesa |
+|---|---|
+| Troca SMTP pra interceptar reset de senha | §36 — SMTP fora da UI, só no `.env` |
+| Cria diretor fake pra fluxar fraude | §37 — outros diretores avisados em segundos |
+| Desativa diretor real pra fluxar fraude | §38 — janela 24h + contestação |
+| Encerra conta de diretor pra esconder rastro | §38 (transitiva) + §37 (notify) |
+| Reseta senha de diretor pra logar como ele | §37 (notify imediato ao alvo) |
+| Edita `audit_logs` direto no banco | §39 — hash chain detecta na verificação |
+
+### 41. O que ainda exige controles humanos/organizacionais
+
+Nenhuma defesa técnica neste código cobre:
+
+1. **Dois admins colaborando** — modelo assume admins adversários entre si.
+   Mitigação: política RH (background check) + cota mínima de 2 admins de
+   times diferentes.
+2. **Mesma pessoa com acesso ao app E ao Railway** — quem controla o `.env`
+   pode trocar SMTP, dropar tabelas, ler PDFs com a `MASTER_ENCRYPTION_KEY`.
+   Mitigação: separação física de funções.
+3. **Logs replicados fora da infra controlada pelo admin** — recomendação
+   futura. Hoje os audit_logs ficam só no Postgres do Railway. Cloudwatch /
+   S3 com Object Lock / Loki ofereceriam cópia imutável fora do alcance
+   de quem opera a infra. Não implementado.
+
+---
+
 **FIM da documentação técnica.**
