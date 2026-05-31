@@ -24,6 +24,7 @@ Financeiro.
 - [Configurações](#configurações)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Convenções de código](#convenções-de-código)
+- [Mudanças recentes](#mudanças-recentes)
 
 ---
 
@@ -44,8 +45,10 @@ imutáveis com pseudonimização de IPs via HMAC-SHA256.
 | Banco | PostgreSQL (Railway) / SQLite (dev local) |
 | Templates | Jinja2 (autoescape habilitado) |
 | Frontend | HTML5 + CSS3 + JS vanilla (sem framework) |
+| Ícones | Lucide vendorizado em `static/img/icons/` (CSS mask, CSP-safe) |
+| QR Scanner | jsQR via CDN jsdelivr (liberado na CSP) |
 | Storage de PDFs | Cloudflare R2 (S3-compatible, criptografia client-side) |
-| Email | SMTP via `smtplib` (Gmail App Password recomendado) |
+| Email | SMTP (`smtplib`) ou Resend (HTTP API, recomendado em Railway) |
 | Auth | JWT (access 60min) + refresh token HttpOnly (7 dias) |
 | Servidor | Gunicorn + Uvicorn workers |
 | Deploy | Railway |
@@ -55,6 +58,8 @@ imutáveis com pseudonimização de IPs via HMAC-SHA256.
 ### Para colaboradores
 - Criar nota fiscal com upload de **até 5 PDFs** (nota + boletos + comprovantes,
   10 MB cada, 25 MB total). Viewer mostra todos os anexos mesclados.
+- **CPF/CNPJ do fornecedor obrigatório** com validação Mod 11. CNPJ tem
+  autocomplete de razão social via API pública (opencnpj.org, cache de 6 meses).
 - Envio direto ao Gestor — ou ao Diretor (se configurado pelo Admin)
 - Editar/reenviar notas reprovadas (obrigatório alterar a descrição)
 - **Excluir notas reprovadas** que não vai reenviar (sem esperar auto-delete)
@@ -80,13 +85,28 @@ imutáveis com pseudonimização de IPs via HMAC-SHA256.
 - Botão único: **Imprimir e Lançar** — comprovante PDF **concatena capa + TODOS os anexos** da nota (QR code + nota + boletos)
 - Reimpressão de comprovantes a qualquer momento (sem poluir log)
 
+### Para contas a pagar (perfil `CONTAS_A_PAGAR`)
+- **Acesso read-only a todas as notas** — não cria, não aprova, não edita.
+- **Página /contas-a-pagar/scanner** com dois modos: bipador (entrada de texto
+  com auto-submit) e câmera (jsQR via `getUserMedia`, ideal smartphone).
+  Lê QR `/verify/<id>` ou UUID puro.
+- **Reimpressão de comprovante** permitida em notas já lançadas (status PAGO).
+- Atalho **F2** no dashboard abre o scanner direto.
+- Card "Conferidas hoje" — contador de reimpressões nas últimas 24h.
+
 ### Para admin
 - CRUD completo de usuários (com setor e gestor obrigatórios)
 - CRUD de setores com designação de diretores
 - Auditoria completa (filtros por ação, usuário, sucesso)
 - **Configuração de email automático** — escolha entre SMTP (Gmail, Outlook,
   SendGrid) ou Resend (HTTP API, funciona em Railway sem desbloqueio)
-- **Anonimização LGPD via botão na lista de usuários** (só para inativos não-admin)
+- **Encerrar conta de colaborador desligado** (pseudonimização irreversível —
+  nome/email/senha viram placeholders, login permanentemente bloqueado, mas
+  histórico de aprovações preservado por 5 anos CTN). Botão só aparece para
+  usuário inativo, não-admin, e que ainda não foi encerrado.
+- Linha de usuário encerrado tem badge cinza "encerrada" e nenhuma ação de
+  edição — o registro permanece para auditoria fiscal mas não pode mais ser
+  reativado, editado ou ter senha redefinida.
 - **Purge manual de reprovadas** (`/api/admin/maintenance/purge-rejected`)
 - Reset de senha de outros usuários (exceto outros admins, anti-sequestro)
 
@@ -110,16 +130,31 @@ imutáveis com pseudonimização de IPs via HMAC-SHA256.
 - **PDFs com JavaScript embutido bloqueados** no upload (anti-malware leve)
 - **Modo férias** — Gestor/Diretor pausam recebimento de notas em
   Configurações; banner amarelo confirma estado indisponível
+- **Dashboard adaptado por perfil** — quatro layouts distintos (Admin,
+  Employee, Aprovadores, Contas a Pagar) com hero, ações e alertas
+  específicos para cada papel
+- **Verify público com máscara LGPD** (`/verify/<id>`) — visitantes sem login
+  veem nome de fornecedor/gestor mascarado e CPF/CNPJ parcial; quem participa
+  do fluxo (criador, gestor, diretor, financeiro, contas a pagar, admin)
+  faz login e revela tudo automaticamente, sem flash
+- **Página 404 amigável** com contador 3s e redirect inteligente (logado →
+  dashboard, anônimo → login). Rotas de API continuam respondendo JSON.
+- **Transições suaves entre páginas** via View Transitions API (Chrome 126+),
+  fallback CSS para outros browsers, e barra de progresso fina no topo
+- **Critical CSS inline** no `<head>` para eliminar flash branco entre navegações
+- **Login respeita `?next=`** — usuário clica "Entrar" no /verify e volta
+  exatamente pra nota depois do login (validação anti open-redirect)
 
 ## Perfis de usuário
 
 | Role | Função |
 |---|---|
-| `ADMIN` | Acesso total. Gerencia usuários, setores e configuração do sistema |
+| `ADMIN` | Gerencia usuários, setores, auditoria e config do sistema. Não aprova notas. |
 | `EMPLOYEE` (Funcionário) | Cria notas e acompanha aprovação |
 | `MANAGER` (Gestor) | Aprova/reprova notas do seu setor |
-| `DIRECTOR` (Diretor) | Aprova/reprova após o gestor |
+| `DIRECTOR` (Diretor) | Aprova/reprova após o gestor. Pode criar nota própria direto pro Financeiro. |
 | `FINANCE` (Financeiro) | Lança notas aprovadas e gera comprovantes |
+| `CONTAS_A_PAGAR` | Read-only de todas as notas, scanner QR e reimpressão de lançadas |
 
 ## Fluxo de aprovação
 
@@ -195,12 +230,15 @@ Cada transição gera entrada em `approval_history` + `audit_logs` com:
 3. **Sanitização de filename** — UUID + extensão (anti header injection)
 
 ### Headers HTTP
-- `Content-Security-Policy` restritivo (script-src 'self')
+- `Content-Security-Policy` restritivo (script-src `'self' https://cdn.jsdelivr.net`
+  — jsdelivr liberado apenas para `jsQR` no scanner; sem `unsafe-inline`)
 - `X-Frame-Options: SAMEORIGIN`
 - `X-Content-Type-Options: nosniff`
 - `Strict-Transport-Security` (HSTS 1 ano)
 - `Referrer-Policy: strict-origin-when-cross-origin`
-- `Permissions-Policy` desabilitando câmera/microfone/geolocalização
+- `Permissions-Policy: camera=(self), microphone=(), geolocation=()` —
+  câmera liberada para a própria origem (necessária pro scanner do contas
+  a pagar); microfone e geolocalização seguem bloqueados
 
 ### CORS
 - Em PROD: restrito ao domínio público do Railway
@@ -324,10 +362,11 @@ economart_notas/
 │   ├── routers/                     # Endpoints
 │   │   ├── auth.py                  # Login, refresh, forgot/reset password
 │   │   ├── admin.py                 # /api/admin/* (users, depts, SMTP, audit)
-│   │   ├── invoices.py              # /api/invoices/* (CRUD + transições FSM)
+│   │   ├── invoices.py              # /api/invoices/* (CRUD + transições FSM + lookup-cnpj)
 │   │   ├── pages.py                 # Páginas HTML com role guard
 │   │   ├── alerts.py                # Alertas (vencendo, atrasadas)
-│   │   └── print_routes.py          # Comprovante PDF + verify público
+│   │   ├── contas_a_pagar.py        # /api/contas-a-pagar/stats (badge "conferidas hoje")
+│   │   └── print_routes.py          # Comprovante PDF + /verify público + /verify-full API
 │   ├── schemas/                     # Pydantic
 │   ├── security/
 │   │   ├── dependencies.py          # get_current_user, require_role
@@ -337,14 +376,26 @@ economart_notas/
 │   ├── services/                    # Business logic
 │   │   ├── invoice_service.py       # FSM, validações, triggers
 │   │   ├── drive_service.py         # R2 storage (criptografia Fernet)
-│   │   ├── email_service.py         # SMTP + templates
+│   │   ├── document_service.py      # Mod 11 CPF/CNPJ + lookup opencnpj + masks LGPD
+│   │   ├── email_service.py         # SMTP + Resend HTTP API + templates
 │   │   ├── pdf_service.py           # Geração de comprovante
 │   │   └── alert_service.py
 │   ├── static/
-│   │   ├── css/main.css             # Design system unificado
-│   │   ├── js/app.js                # Vanilla JS, SPA-like
-│   │   └── img/logo.png
+│   │   ├── css/main.css             # Design system unificado + tokens --role-*
+│   │   ├── js/
+│   │   │   ├── app.js               # Vanilla JS principal, helpers globais
+│   │   │   ├── dashboard-v2.js      # Lógica do dashboard novo (por perfil)
+│   │   │   ├── scanner.js           # Bipador + câmera (jsQR)
+│   │   │   ├── verify.js            # Lógica do /verify público
+│   │   │   └── not-found.js         # Countdown + redirect da página 404
+│   │   └── img/
+│   │       ├── logo.png
+│   │       └── icons/               # 36 SVGs Lucide vendorizados (MIT)
 │   └── templates/                   # Jinja2 com autoescape
+│       ├── 404.html                 # Página amigável com countdown
+│       ├── verify.html              # Verify público (LGPD mask + reveal)
+│       ├── contas_a_pagar/scanner.html
+│       └── ...
 ├── requirements.txt
 ├── Procfile                         # Gunicorn config Railway
 ├── railway.toml                     # Build/deploy config
@@ -361,6 +412,38 @@ economart_notas/
 - **Audit log**: toda ação importante registra em `audit_logs`
 - **Histórico**: transições de invoice em `approval_history` (visível na UI)
 - **Sem framework JS**: o frontend é vanilla pra reduzir superficie de ataque e dependências
+
+## Mudanças recentes
+
+Resumo das entregas das últimas semanas (commit-by-commit em
+`git log --oneline`):
+
+- **CPF/CNPJ obrigatório do fornecedor** com validação Mod 11 e autocomplete
+  via opencnpj.org (cache 6 meses)
+- **Página /verify pública com máscara LGPD** + revelação automática para
+  quem participa do fluxo da nota (criador, gestor, diretor, financeiro,
+  contas a pagar, admin)
+- **Novo role CONTAS_A_PAGAR** (read-only + scanner)
+- **Página /contas-a-pagar/scanner** com bipador e câmera (jsQR)
+- **Dashboard refeito por perfil** — 4 layouts distintos (Admin, Employee,
+  Aprovadores, Contas a Pagar)
+- **Sistema de ícones Lucide vendorizado** (36 SVGs em `static/img/icons/`,
+  renderizados via CSS mask para herdar `currentColor`)
+- **Tokens de role** (`--role-admin`, `--role-manager`, etc.) com paleta
+  institucional consistente
+- **Página 404 amigável** com contagem regressiva e redirect inteligente
+- **Critical CSS inline + View Transitions API + barra de progresso de
+  navegação** — eliminam flash branco entre páginas
+- **Login respeita `?next=`** (volta pro destino original com proteção
+  anti open-redirect)
+- **Documento `/privacidade` completo** com Aviso de Privacidade + Termos
+  de Uso + Segurança da Informação (4 partes navegáveis)
+- **Mensagens limpas** — sweep geral removendo jargão técnico ("token",
+  "cache", "bucket", "transição inválida"). Substituídas por linguagem
+  humana e instruções de ação.
+- **"Encerrar conta" no admin** (substitui o antigo "Anonimizar LGPD") —
+  pseudonimização irreversível, login permanentemente bloqueado, histórico
+  preservado por exigência fiscal (5 anos CTN)
 
 ## Licença
 
