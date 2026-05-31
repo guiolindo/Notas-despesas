@@ -40,6 +40,16 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+def _wire_audit_chain():
+    """Encadeamento de hashes nos audit_logs. Ligado apos a definicao
+    do SessionLocal e antes de qualquer insert acontecer."""
+    from app.models.audit_logs import attach_audit_chain_listener
+    attach_audit_chain_listener(SessionLocal)
+
+
+_wire_audit_chain()
+
+
 def get_db():
     db = SessionLocal()
     try:

@@ -931,6 +931,56 @@ def anonymize_terminated_user(
 # mas o codigo nao le mais dela.
 
 
+# ─── Verificacao da cadeia de auditoria ────────────────────────────────────
+
+@router.get("/audit-logs/verify-chain")
+def verify_audit_chain(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("ADMIN")),
+):
+    """Recalcula o hash de cada audit_log da mais antiga para a mais recente
+    e compara com o valor salvo. Qualquer divergencia indica edicao
+    retroativa direta no banco — defesa contra admin com acesso ao SQL.
+
+    Retorna {ok, total, first_broken_id, first_broken_at, message}.
+    """
+    from app.models.audit_logs import GENESIS_HASH, compute_row_hash
+
+    rows = (
+        db.query(AuditLog)
+        .order_by(AuditLog.timestamp.asc(), AuditLog.id.asc())
+        .all()
+    )
+    prev = GENESIS_HASH
+    broken = None
+    for row in rows:
+        expected = compute_row_hash(prev, row)
+        if row.row_hash and row.row_hash != expected:
+            broken = row
+            break
+        # Se row_hash for None (linhas antigas pre-feature), nao quebra
+        # a verificacao — apenas avanca a cadeia computando o hash.
+        prev = row.row_hash or expected
+    if broken:
+        return {
+            "ok": False,
+            "total": len(rows),
+            "first_broken_id": broken.id,
+            "first_broken_at": broken.timestamp.isoformat() if broken.timestamp else None,
+            "message": (
+                "Cadeia de auditoria quebrada. Edicao retroativa detectada na "
+                f"linha {broken.id}. Investigar acesso direto ao banco."
+            ),
+        }
+    return {
+        "ok": True,
+        "total": len(rows),
+        "first_broken_id": None,
+        "first_broken_at": None,
+        "message": "Cadeia integra.",
+    }
+
+
 # ─── Manutencao / Limpeza ──────────────────────────────────────────────────
 
 @router.post("/maintenance/purge-rejected")
