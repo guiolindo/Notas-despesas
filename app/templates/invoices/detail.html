@@ -22,6 +22,26 @@
       <div class="detail-grid" id="detail-grid"></div>
       <div class="section-header"><h2>Timeline de aprovacao</h2></div>
       <div class="timeline" id="invoice-timeline"></div>
+
+      <div class="section-header" id="comments-header">
+        <h2>Comentarios <span class="text-muted text-xs" id="comments-count"></span></h2>
+      </div>
+      <div class="comments-thread" id="comments-thread">
+        <p class="text-muted text-xs">Carregando comentarios...</p>
+      </div>
+      <form id="comments-form" class="comments-form">
+        <textarea
+          id="comments-input"
+          class="form-input"
+          rows="2"
+          maxlength="2000"
+          placeholder="Pergunte algo ao gestor, diretor ou criador — sem precisar reprovar a nota."
+        ></textarea>
+        <div class="comments-form-actions">
+          <span class="text-muted text-xs" id="comments-help">Maximo 2000 caracteres. Comentarios sao permanentes.</span>
+          <button type="submit" class="btn btn-primary btn-sm" id="comments-submit" disabled>Comentar</button>
+        </div>
+      </form>
     </div>
 
     <!-- Coluna direita: PDF inline -->
