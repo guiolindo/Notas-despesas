@@ -29,8 +29,6 @@
       "Sao alertas informativos: se a nota foi enviada com data de emissao do mes anterior, ou se o vencimento esta proximo (menos de 72h). Sao apenas avisos — nao bloqueiam o fluxo.") }}
     {{ qa("O sistema esta lento ou da erro. O que faco?",
       "Recarregue a pagina (Ctrl+F5). Se persistir, faca logout e login novamente. Se ainda assim nao funcionar, contate o administrador.") }}
-    {{ qa("Por que tenho que digitar CPF ou CNPJ do fornecedor?",
-      "Identifica univocamente quem recebera o pagamento e da rastreabilidade fiscal. O sistema valida o dgito (Mod 11) — se voce digitar errado, ele avisa. Para CNPJ, a razao social e preenchida automaticamente pelo sistema apos a validacao.") }}
     {{ qa("Para que serve a pagina /verify do QR code?",
       "Permite a qualquer pessoa conferir a autenticidade de um comprovante impresso. Sem login, aparece a versao publica (numero, valor, status, assinatura digital — dados sensiveis como CPF/CNPJ e nomes ficam parcialmente ocultos). Quem participa do fluxo (criador, gestor, diretor, financeiro, contas a pagar) pode fazer login para ver o detalhamento completo.") }}
   </div>
@@ -43,6 +41,8 @@
     <h2 class="section-title">Para funcionarios</h2>
     {{ qa("Como crio uma nota fiscal?",
       "Acesse <strong>Notas Fiscais</strong> no menu lateral e clique em <em>Nova Nota</em>. Preencha numero, datas, valor, descricao e anexe o PDF (maximo 10 MB). Voce pode salvar como rascunho ou enviar direto pro seu gestor.") }}
+    {{ qa("Por que tenho que digitar CPF ou CNPJ do fornecedor?",
+      "Identifica univocamente quem recebera o pagamento e da rastreabilidade fiscal. O sistema valida o digito (Mod 11) — se voce digitar errado, ele avisa. Para CNPJ, a razao social e preenchida automaticamente apos a validacao.") }}
     {{ qa("Minha nota foi reprovada. E agora?",
       "Acesse a nota, clique em <em>Editar</em>, ajuste a descricao conforme o motivo apontado e clique em <em>Reenviar</em>. <strong>Voce e obrigado a editar a descricao</strong> antes de reenviar — sem alteracao o sistema bloqueia. Notas reprovadas sao apagadas automaticamente apos <strong>90 dias</strong>, entao corrija e reenvie antes.") }}
     {{ qa("Posso cancelar uma nota que ja enviei?",
@@ -87,6 +87,8 @@
       "Acesse <strong>Fila de aprovacao</strong>, abra a nota e clique em <em>Aprovar</em>. Apos sua aprovacao a nota fica disponivel pra todo o Financeiro lancar.") }}
     {{ qa("Posso criar e enviar uma nota propria direto ao Financeiro?",
       "Sim. Va em <strong>Notas Fiscais</strong> -> <em>Nova Nota</em>. Preencha os dados e clique em <em>Criar e Enviar ao Financeiro</em>. A nota e auto-aprovada (voce e diretor) e vai direto pra fila de lancamento. Util quando voce mesmo e o solicitante e aprovador.") }}
+    {{ qa("Por que tenho que digitar CPF ou CNPJ do fornecedor quando crio nota?",
+      "Identifica univocamente quem recebera o pagamento e da rastreabilidade fiscal. O sistema valida o digito (Mod 11). Para CNPJ, a razao social e preenchida automaticamente apos a validacao.") }}
     {{ qa("Como reprovo uma nota?",
       "Clique em <em>Reprovar</em> e escreva o motivo no modal (minimo 10 caracteres). O criador e notificado por email e pode editar e reenviar.") }}
     {{ qa("Vejo notas de outros diretores?",
