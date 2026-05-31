@@ -213,11 +213,66 @@
     }
   }
 
+  // ─── Banner de acoes pendentes contra o usuario logado ──────────────
+  async function loadPendingActions() {
+    const banner = $('#pending-actions-banner');
+    if (!banner) return;
+    try {
+      const items = await apiFetch('/api/pending-actions/me');
+      if (!items || !items.length) {
+        banner.classList.add('hidden');
+        return;
+      }
+      banner.innerHTML = items.map((pa) => {
+        const hours = Math.floor(pa.seconds_remaining / 3600);
+        const mins = Math.floor((pa.seconds_remaining % 3600) / 60);
+        const left = pa.seconds_remaining > 0
+          ? `Tempo restante: <strong>${hours}h ${mins}min</strong>`
+          : '<strong>Janela expirada</strong> (sera aplicada na proxima atualizacao).';
+        return `<div class="pending-banner-item">
+          <div>
+            <strong>${escapeHtml(pa.action_label)}</strong> solicitada por
+            <strong>${escapeHtml(pa.requested_by_name || '?')}</strong>.
+            <div class="pending-banner-sub">${left}</div>
+          </div>
+          <div>
+            <button class="btn btn-primary btn-sm" data-pending-cancel="${escapeHtml(pa.id)}">
+              Nao foi autorizada
+            </button>
+          </div>
+        </div>`;
+      }).join('');
+      banner.classList.remove('hidden');
+      banner.querySelectorAll('[data-pending-cancel]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.pendingCancel;
+          const reason = window.prompt(
+            'Descreva brevemente porque esta acao nao foi autorizada (opcional):'
+          );
+          if (reason === null) return;
+          try {
+            await apiFetch(`/api/pending-actions/${id}/cancel`, {
+              method: 'POST',
+              body: JSON.stringify({ reason: reason || null }),
+            });
+            await loadPendingActions();
+          } catch (e) {
+            alert(e.message || 'Erro ao cancelar.');
+          }
+        });
+      });
+    } catch (err) {
+      // Endpoint indisponivel: nao incomoda o usuario
+      banner.classList.add('hidden');
+    }
+  }
+
   // ─── Init ───────────────────────────────────────────────────────────
   async function init() {
     setGreeting();
     bindScannerShortcut();
     bindRecentTableClicks();
+    loadPendingActions();
 
     // Paineis principais: dispara em paralelo, trata individualmente.
     // /api/contas-a-pagar/stats so faz sentido pra CONTAS_A_PAGAR — a

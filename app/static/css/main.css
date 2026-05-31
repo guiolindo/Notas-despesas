@@ -1495,6 +1495,33 @@ tr.row-anonymized td { background: #f5f5f5; color: #6b7280; font-style: italic; 
 .btn-danger-text { color: var(--error); }
 .text-xs { font-size: 12px; }
 
+/* ─── Banner de acoes administrativas pendentes ─────────────────────── */
+.pending-banner {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-left: 4px solid var(--error);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+}
+.pending-banner-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.pending-banner-item + .pending-banner-item {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #FECACA;
+}
+.pending-banner-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
 /* ─── Pagina 404 ──────────────────────────────────────────────────────── */
 .not-found-icon {
   width: 64px; height: 64px;

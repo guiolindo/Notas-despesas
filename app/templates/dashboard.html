@@ -3,6 +3,9 @@
 {% block page_id %}dashboard{% endblock %}
 {% block nav_dashboard %}active{% endblock %}
 {% block content %}
+{# Banner de acoes administrativas pendentes contra o usuario atual.
+   Populado por dashboard-v2.js via GET /api/pending-actions/me. #}
+<div id="pending-actions-banner" class="pending-banner hidden"></div>
 {#
   Dashboard com layout condicional por perfil. Quatro ramos:
     CONTAS_A_PAGAR  -> conferencia (scanner + 'Conferidas hoje')

@@ -197,7 +197,15 @@ app.add_middleware(
 )
 
 from app.routers import admin as admin_router
-from app.routers import alerts, auth, contas_a_pagar, invoices, pages, print_routes
+from app.routers import (
+    alerts,
+    auth,
+    contas_a_pagar,
+    invoices,
+    pages,
+    pending_actions,
+    print_routes,
+)
 
 app.include_router(auth.router, prefix="/auth", tags=["Autenticacao"])
 app.include_router(admin_router.router, tags=["Admin"])
@@ -206,6 +214,7 @@ app.include_router(print_routes.router, tags=["Impressao"])
 app.include_router(pages.router, tags=["Paginas"])
 app.include_router(invoices.router, prefix="/api/invoices", tags=["Notas Fiscais API"])
 app.include_router(contas_a_pagar.router, tags=["Contas a Pagar"])
+app.include_router(pending_actions.router, tags=["Acoes Pendentes"])
 
 
 @app.get("/health")

@@ -391,6 +391,66 @@ def update_user(
             detail="Voce nao pode desativar a propria conta",
         )
 
+    # ─── Janela de 24h para desativacao de diretor ───
+    # Defesa contra cenario de admin malicioso: em vez de executar
+    # imediatamente, cria PendingAdminAction. O target e outros diretores
+    # sao avisados e podem cancelar dentro da janela.
+    if (
+        user.role == UserRole.DIRECTOR
+        and user.is_active is True
+        and body.is_active is False
+    ):
+        from datetime import timedelta
+        from app.models import (
+            GRACE_PERIOD_HOURS,
+            PendingActionStatus,
+            PendingActionType,
+            PendingAdminAction,
+        )
+        # Bloqueia se ja houver outra pendente do mesmo tipo pro mesmo target
+        existing = (
+            db.query(PendingAdminAction)
+            .filter(
+                PendingAdminAction.target_user_id == user.id,
+                PendingAdminAction.action_type == PendingActionType.DEACTIVATE_DIRECTOR,
+                PendingAdminAction.status == PendingActionStatus.PENDING,
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ja existe uma solicitacao de desativacao pendente para este diretor.",
+            )
+        now = _now()
+        pa = PendingAdminAction(
+            id=str(uuid.uuid4()),
+            action_type=PendingActionType.DEACTIVATE_DIRECTOR,
+            target_user_id=user.id,
+            requested_by_id=current_user.id,
+            requested_at=now,
+            effective_at=now + timedelta(hours=GRACE_PERIOD_HOURS),
+            status=PendingActionStatus.PENDING,
+            reason=None,
+        )
+        db.add(pa)
+        _add_audit_log(
+            db, request, current_user,
+            "REQUEST_DEACTIVATE_DIRECTOR", user.id,
+            f"Solicitou desativacao do diretor {user.email}. Efetiva em {GRACE_PERIOD_HOURS}h se nao cancelada.",
+        )
+        # Notifica target + outros diretores
+        _notify_directors_peer(
+            db, current_user, "Solicitacao de desativacao de diretor (24h)", user,
+            exclude_target=False,
+        )
+        db.commit()
+        return {
+            "message": "Desativacao agendada para daqui a 24h. O diretor afetado e os "
+                       "demais foram avisados e podem cancelar dentro da janela.",
+            "pending_action_id": pa.id,
+        }
+
     removing_last_admin_role = body.role is not None and body.role != UserRole.ADMIN and user.role == UserRole.ADMIN
     deactivating_last_admin = body.is_active is False and user.role == UserRole.ADMIN
     if (removing_last_admin_role or deactivating_last_admin) and _active_admins_except(db, user_id) == 0:
@@ -498,6 +558,15 @@ def reset_password(
             detail="Esta conta foi encerrada — o login esta permanentemente bloqueado.",
         )
 
+    # Notificacao peer: reset de senha de diretor avisa todos os outros
+    # (incluindo o proprio target, que precisa saber que sua senha vai mudar).
+    # Disparado pos-commit no fim deste handler.
+    notify_director_reset = (
+        user.role == UserRole.DIRECTOR
+        and user.id != current_user.id
+        and user.is_active
+    )
+
     # PROTECAO: nenhum admin pode resetar senha de outro admin (evita sequestro de conta).
     # Cada admin so pode redefinir a propria senha por aqui ou pelo /auth/change-password.
     if user.role == UserRole.ADMIN and user.id != current_user.id:
@@ -535,6 +604,11 @@ def reset_password(
         f"Redefiniu senha do usuario {user.email}",
     )
     db.commit()
+    if notify_director_reset:
+        _notify_directors_peer(
+            db, current_user, "Redefinicao de senha de diretor", user,
+            exclude_target=False,  # diretor afetado tambem recebe
+        )
     return {"message": "Senha redefinida. Usuario deve trocar no proximo login."}
 
 
