@@ -178,7 +178,7 @@ def _assert_transition(invoice: Invoice, transition: str) -> InvoiceStatus:
     if expected is not None and invoice.status != expected:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Transicao invalida para status {invoice.status.value}",
+            detail="Esta acao nao pode ser feita na nota neste momento.",
         )
     return target
 
@@ -235,7 +235,7 @@ def _status_from_filter(status_filter: str | None) -> InvoiceStatus | None:
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Status invalido",
+            detail="Filtro de status invalido.",
         ) from exc
 
 
@@ -492,7 +492,7 @@ def submit_invoice(
     }:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Nota no status {invoice.status.value} nao pode ser enviada",
+            detail="Esta nota nao pode ser enviada no momento.",
         )
     # Bloqueio: nota com vencimento ja passado nao pode ser enviada.
     # Aprovacao demoraria mais do que o titulo permite — sem sentido fiscal.
@@ -573,7 +573,7 @@ def manager_review(
     if invoice.status != InvoiceStatus.AGUARDANDO_GESTOR:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Transicao invalida para status {invoice.status.value}",
+            detail="Esta acao nao pode ser feita na nota neste momento.",
         )
 
     invoice.manager_reviewed_at = _now()
@@ -616,7 +616,7 @@ def director_review(
     if invoice.status != InvoiceStatus.AGUARDANDO_DIRETOR:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Transicao invalida para status {invoice.status.value}",
+            detail="Esta acao nao pode ser feita na nota neste momento.",
         )
 
     invoice.director_reviewed_at = _now()
@@ -905,7 +905,7 @@ def mark_paid(db: Session, invoice_id: str, finance_user: User, ip: str | None =
     if invoice.status != InvoiceStatus.APROVADO:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Transicao invalida para status {invoice.status.value}",
+            detail="Esta acao nao pode ser feita na nota neste momento.",
         )
     invoice.status = InvoiceStatus.PAGO
     invoice.finance_id = finance_user.id

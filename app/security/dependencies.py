@@ -19,7 +19,7 @@ def get_current_user(
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token invalido",
+            detail="Sessao invalida. Faca login novamente.",
         )
 
     user = db.query(User).filter(User.id == user_id).first()

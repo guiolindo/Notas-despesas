@@ -149,13 +149,13 @@ def refresh_token(
     if not refresh_token_cookie:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token ausente",
+            detail="Sessao expirada. Faca login novamente.",
         )
 
     payload = decode_token(refresh_token_cookie, expected_type="refresh")
     user_id = payload.get("sub")
     if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalido")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sessao invalida. Faca login novamente.")
 
     # Revalida o usuario no DB. Sem isso, conta desativada/bloqueada/anonimizada
     # ou role rebaixado continuariam com access token novo por ate 7 dias.

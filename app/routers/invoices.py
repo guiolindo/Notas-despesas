@@ -438,9 +438,9 @@ def list_invoices(
     current_user: User = Depends(get_current_user),
 ):
     if page < 1:
-        raise HTTPException(status_code=400, detail="page deve ser >= 1")
+        raise HTTPException(status_code=400, detail="Numero de pagina invalido.")
     if per_page < 1 or per_page > 100:
-        raise HTTPException(status_code=400, detail="per_page deve ficar entre 1 e 100")
+        raise HTTPException(status_code=400, detail="Quantidade por pagina invalida.")
 
     # Validacao de datas ISO — sem isso "from_date=abc" causa 500
     from datetime import date as _date
@@ -449,7 +449,7 @@ def list_invoices(
             try:
                 _date.fromisoformat(value)
             except ValueError:
-                raise HTTPException(status_code=400, detail=f"{label}: formato de data invalido (use YYYY-MM-DD)")
+                raise HTTPException(status_code=400, detail=f"Data invalida em '{label}'. Use o formato dd/mm/aaaa.")
 
     items, total, total_amount = invoice_service.get_invoices_for_user(
         db,
@@ -559,7 +559,7 @@ def get_attachment_merged(
             continue
 
     if len(writer.pages) == 0:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Falha ao montar anexos")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nao foi possivel abrir os anexos desta nota.")
 
     output = io.BytesIO()
     writer.write(output)

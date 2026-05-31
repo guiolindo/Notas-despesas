@@ -309,7 +309,7 @@ def update_user(
     if _is_anonymized(user):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Usuario anonimizado (LGPD) — nao pode ser reativado nem reeditado. "
+            detail="Esta conta ja foi encerrada — nao pode mais ser reativada nem editada. "
                    "Cadastre um novo usuario se a pessoa retornar.",
         )
 
@@ -419,7 +419,7 @@ def reset_password(
     if _is_anonymized(user):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Usuario anonimizado (LGPD) — login esta permanentemente bloqueado.",
+            detail="Esta conta foi encerrada — o login esta permanentemente bloqueado.",
         )
 
     # PROTECAO: nenhum admin pode resetar senha de outro admin (evita sequestro de conta).

@@ -41,11 +41,11 @@ def decode_token(token: str, expected_type: str = "access") -> dict:
         if payload.get("type") != expected_type:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token invalido",
+                detail="Sessao invalida. Faca login novamente.",
             )
         return payload
     except JWTError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token invalido ou expirado",
+            detail="Sessao expirada. Faca login novamente.",
         ) from exc

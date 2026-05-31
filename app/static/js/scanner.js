@@ -35,7 +35,7 @@
     function handleSubmit() {
       var id = extractInvoiceId(input.value);
       if (!id) {
-        setFeedback('Codigo invalido — nao parece um QR de nota.', false);
+        setFeedback('Codigo nao reconhecido. Confira o QR ou cole o link da nota.', false);
         return;
       }
       goToInvoice(id);
@@ -80,7 +80,7 @@
             goToInvoice(id);
             return;
           }
-          if (status) status.textContent = 'QR lido mas nao parece uma nota: ' + code.data.substring(0, 60);
+          if (status) status.textContent = 'QR lido, mas nao parece ser de uma nota fiscal. Tente de novo.';
         }
       } catch (e) {}
     }
@@ -104,11 +104,11 @@
   if (startBtn) {
     startBtn.addEventListener('click', async function () {
       if (!window.jsQR) {
-        setFeedback('Biblioteca de QR nao carregou. Verifique a conexao.', false);
+        setFeedback('Nao foi possivel preparar a leitura por camera. Verifique sua conexao e tente de novo.', false);
         return;
       }
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setFeedback('Camera nao disponivel neste navegador.', false);
+        setFeedback('Este navegador nao consegue acessar a camera. Use o bipador acima ou abra no celular.', false);
         return;
       }
       try {
@@ -125,7 +125,18 @@
         if (status) status.textContent = 'Aponte o QR code para a camera.';
         rafId = requestAnimationFrame(tick);
       } catch (e) {
-        setFeedback('Falha ao acessar camera: ' + (e.message || e), false);
+        // Mensagens nativas do browser (NotAllowedError, NotFoundError...) sao
+        // demasiado tecnicas. Damos uma explicacao em portugues humano.
+        var msg = 'Nao conseguimos acessar a camera.';
+        var name = (e && e.name) || '';
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+          msg = 'Permissao da camera negada. Libere o acesso nas configuracoes do navegador.';
+        } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+          msg = 'Nenhuma camera encontrada neste dispositivo.';
+        } else if (name === 'NotReadableError') {
+          msg = 'A camera esta sendo usada por outro aplicativo. Feche-o e tente de novo.';
+        }
+        setFeedback(msg, false);
       }
     });
   }
