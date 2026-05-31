@@ -1767,7 +1767,17 @@ let adminUsersCache = [];
 let adminAuditState = { page: 1, pages: 1, filters: {} };
 
 function adminRoleBadge(role) {
-  return `<span class="role-chip role-${String(role).toLowerCase()}">${adminRoleLabels[role] || role}</span>`;
+  // CONTAS_A_PAGAR -> contas-a-pagar pra casar com os tokens --role-* do CSS
+  const cls = String(role).toLowerCase().replace(/_/g, '-');
+  return `<span class="role-chip role-${cls}">${adminRoleLabels[role] || role}</span>`;
+}
+
+function adminAvatar(name) {
+  if (!name) return '<span class="avatar">?</span>';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] || '';
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return `<span class="avatar">${escapeHtml((first + last).toUpperCase())}</span>`;
 }
 
 function adminUserStatus(user) {
@@ -1904,27 +1914,25 @@ function renderAdminUsersTable(users) {
     // Usuario anonimizado e estado final: nenhuma acao de identidade
     // permitida. So sobra abrir o registro pra historico.
     const toggleBtn = (!isAdmin && !isSelf && !isAnon)
-      ? `<button class="btn ${user.is_active ? 'btn-ghost' : 'btn-secondary'} btn-sm" data-action="toggle" data-id="${user.id}" data-active="${user.is_active}">${user.is_active ? 'Desativar' : 'Ativar'}</button>`
+      ? `<button class="btn ${user.is_active ? 'btn-ghost' : 'btn-secondary'} btn-sm" data-action="toggle" data-id="${user.id}" data-active="${user.is_active}" title="${user.is_active ? 'Desativar' : 'Ativar'}" aria-label="${user.is_active ? 'Desativar' : 'Ativar'}"><span class="icon icon-${user.is_active ? 'eye-off' : 'eye'} ic-16"></span></button>`
       : '';
     const unlockBtn = (blocked && !isAdmin && !isAnon)
-      ? `<button class="btn btn-ghost btn-sm" data-action="unlock" data-id="${user.id}">Desbloquear</button>`
+      ? `<button class="btn btn-ghost btn-sm" data-action="unlock" data-id="${user.id}" title="Desbloquear" aria-label="Desbloquear"><span class="icon icon-circle-check ic-16"></span></button>`
       : '';
-    // "Encerrar conta": so para usuarios INATIVOS, nao-admin, nao o proprio,
-    // e que ainda nao foram encerrados. O endpoint backend faz a
-    // pseudonimizacao irreversivel exigida apos desligamento.
     const anonymizeBtn = (!isAdmin && !isSelf && !user.is_active && !isAnon)
-      ? `<button class="btn btn-danger btn-sm" data-action="anonymize" data-id="${user.id}" data-name="${escapeHtml(user.name)}">Encerrar conta</button>`
+      ? `<button class="btn btn-ghost btn-sm" data-action="anonymize" data-id="${user.id}" data-name="${escapeHtml(user.name)}" title="Encerrar conta" aria-label="Encerrar conta" style="color:var(--error)"><span class="icon icon-archive ic-16"></span></button>`
       : '';
     const editBtns = isAnon
-      ? '<span class="text-muted" title="Conta encerrada — registro preservado para auditoria fiscal">Conta encerrada</span>'
+      ? '<span class="text-muted" title="Conta encerrada — registro preservado para auditoria fiscal" style="font-size:12px">Conta encerrada</span>'
       : `
-        <a class="btn btn-ghost btn-sm" href="/admin/users/${user.id}/edit">Editar</a>
-        <button class="btn btn-ghost btn-sm" data-action="quick-edit" data-id="${user.id}">Editar rapido</button>
-        <button class="btn btn-ghost btn-sm" data-action="reset" data-id="${user.id}">Redefinir senha</button>
+        <a class="btn btn-ghost btn-sm" href="/admin/users/${user.id}/edit" title="Editar completo" aria-label="Editar completo"><span class="icon icon-external-link ic-16"></span></a>
+        <button class="btn btn-ghost btn-sm" data-action="quick-edit" data-id="${user.id}" title="Editar rapido" aria-label="Editar rapido"><span class="icon icon-pencil ic-16"></span></button>
+        <button class="btn btn-ghost btn-sm" data-action="reset" data-id="${user.id}" title="Redefinir senha" aria-label="Redefinir senha"><span class="icon icon-lock ic-16"></span></button>
       `;
     const rowCls = isAdmin ? ' class="row-admin"' : (isAnon ? ' class="row-anonymized"' : '');
-    return `<tr${rowCls}>
-      <td>${escapeHtml(user.name)}${isSelf ? ' <span class="badge-self">voce</span>' : ''}${isAnon ? ' <span class="badge-anon">encerrada</span>' : ''}</td>
+    const nameCell = `<div style="display:flex;gap:10px;align-items:center">${adminAvatar(user.name)}<div><strong style="font-weight:600">${escapeHtml(user.name)}</strong>${isSelf ? ' <span class="badge-self">voce</span>' : ''}${isAnon ? ' <span class="badge-anon">encerrada</span>' : ''}</div></div>`;
+    return `<tr${rowCls} data-user-id="${user.id}" data-anonymized="${isAnon}">
+      <td>${nameCell}</td>
       <td>${escapeHtml(user.email)}</td>
       <td>${adminRoleBadge(user.role)}</td>
       <td>${escapeHtml(user.department_name || '-')}</td>
@@ -2823,7 +2831,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   if (page === 'dashboard') {
-    initShell().then(() => initDashboard());
+    // Dashboard agora e renderizado via dashboard.html novo + dashboard-v2.js.
+    // initDashboard() antigo procurava elementos (#stats-grid etc.) que nao
+    // existem mais — manter chamada aqui daria erro silencioso e poluiria a
+    // greeting que o dashboard-v2 ja gerencia. So o shell e necessario.
+    initShell();
   } else if (page === 'invoices-list') {
     initShell().then(() => initInvoicesList());
   } else if (page === 'invoice-create') {

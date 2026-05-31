@@ -45,7 +45,11 @@ def dashboard_page(request: Request, db: Session = Depends(get_db)):
     guard = require_page_login(request, db)
     if not isinstance(guard, User):
         return guard
-    return templates.TemplateResponse(request, "dashboard.html")
+    # dashboard.html ramifica layout por current_user.role (CONTAS_A_PAGAR
+    # vs aprovadores), entao precisa do user no contexto.
+    return templates.TemplateResponse(
+        request, "dashboard.html", {"current_user": guard}
+    )
 
 
 @router.get("/change-password", response_class=HTMLResponse)

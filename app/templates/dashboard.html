@@ -3,26 +3,123 @@
 {% block page_id %}dashboard{% endblock %}
 {% block nav_dashboard %}active{% endblock %}
 {% block content %}
+{#
+  Dashboard server-rendered, com layout condicional por perfil.
+  Variável esperada do contexto: current_user (com .role e .name).
+
+  Para MANAGER, DIRECTOR e FINANCE → layout "aprovadores" (hero Revisar fila).
+  Para CONTAS_A_PAGAR → layout "conferência" (hero scanner + atalho F2).
+  Para EMPLOYEE → layout mínimo (notas próprias).
+  ADMIN cai no layout "aprovadores" por padrão (acompanhamento operacional).
+
+  Contadores em data-attrs são populados pelo dashboard-v2.js a partir
+  de /api/alerts (e /api/contas-a-pagar/stats quando aplicável).
+#}
 <div class="page-header">
-  <h1>Dashboard</h1>
-  <p class="text-muted" id="dashboard-greeting"></p>
+  <h1 id="dashboard-greeting">Olá, {{ current_user.name.split(' ')[0] }}</h1>
+  <p class="text-muted" id="dashboard-subtitle">Acompanhe suas notas e os alertas do dia.</p>
 </div>
 
-<div class="stats-grid" id="stats-grid">
-  <div class="stat-card loading"></div>
-  <div class="stat-card loading"></div>
-  <div class="stat-card loading"></div>
-  <div class="stat-card loading"></div>
-</div>
+{% set role = current_user.role.value if current_user.role.value is defined else current_user.role %}
 
-<div class="section-header">
-  <h2>Alertas</h2>
-</div>
-<div id="alerts-section"></div>
+{# ────────────── PERFIL: CONTAS_A_PAGAR ────────────── #}
+{% if role == 'CONTAS_A_PAGAR' %}
+<section aria-labelledby="acoes-h">
+  <div class="section-header"><h2 id="acoes-h">Ações</h2></div>
+  <div class="qa-stack">
+    <a class="qa qa-hero" href="/contas-a-pagar/scanner" id="qa-open-scanner">
+      <span class="qa-ic ic-28"><span class="icon icon-scan-line"></span></span>
+      <span class="qa-body"><strong>Abrir scanner</strong><p>Bipador ou câmera — modo de leitura contínua</p></span>
+      <span class="qa-shortcut">F2</span>
+    </a>
+    <div class="qa-grid-2">
+      <a class="qa" href="/invoices?status=APROVADO">
+        <span class="qa-ic ic-20"><span class="icon icon-search"></span></span>
+        <span class="qa-body"><strong>Buscar nota</strong><p>Pelo número ou ID do QR</p></span>
+      </a>
+      <a class="qa" href="/invoices?conferred_today=1">
+        <span class="qa-ic ic-20"><span class="icon icon-check"></span></span>
+        <span class="qa-body"><strong>Conferidas hoje</strong><p>Histórico do turno</p></span>
+        <span class="qa-count qa-count-success" id="conferidas-hoje-count">—</span>
+      </a>
+    </div>
+  </div>
+</section>
 
-<div class="section-header">
-  <h2>Notas Recentes</h2>
-  <a href="/invoices" class="btn btn-ghost btn-sm">Ver todas</a>
-</div>
-<div id="recent-invoices"></div>
+<section aria-labelledby="alertas-h">
+  <div class="section-header"><h2 id="alertas-h">Alertas</h2></div>
+  <div class="qa-stack" id="dashboard-alerts-cap">
+    {# Populado por dashboard-v2.js (renderAlertsCap) a partir de /api/alerts #}
+  </div>
+</section>
+
+{# ────────────── PERFIL: APROVADORES (MANAGER / DIRECTOR / FINANCE / ADMIN) ────────────── #}
+{% else %}
+<section aria-labelledby="acoes-h">
+  <div class="section-header"><h2 id="acoes-h">Ações</h2></div>
+  <div class="qa-stack">
+    {% if role == 'MANAGER' or role == 'ADMIN' %}
+    <a class="qa qa-hero" href="/manager/queue" id="qa-review-queue">
+      <span class="qa-ic ic-28"><span class="icon icon-activity"></span></span>
+      <span class="qa-body"><strong>Revisar fila</strong><p>Aprovar ou reprovar notas do seu setor</p></span>
+      <span class="qa-count" id="qa-review-count">—</span>
+    </a>
+    {% elif role == 'DIRECTOR' %}
+    <a class="qa qa-hero" href="/director/queue" id="qa-review-queue">
+      <span class="qa-ic ic-28"><span class="icon icon-activity"></span></span>
+      <span class="qa-body"><strong>Aprovar como diretor</strong><p>Notas encaminhadas pelos gestores</p></span>
+      <span class="qa-count" id="qa-review-count">—</span>
+    </a>
+    {% elif role == 'FINANCE' %}
+    <a class="qa qa-hero" href="/finance/queue" id="qa-review-queue">
+      <span class="qa-ic ic-28"><span class="icon icon-circle-dollar-sign"></span></span>
+      <span class="qa-body"><strong>Lançar notas aprovadas</strong><p>Fila do Financeiro</p></span>
+      <span class="qa-count" id="qa-review-count">—</span>
+    </a>
+    {% endif %}
+
+    <div class="qa-grid-3">
+      <a class="qa" href="/invoices/new">
+        <span class="qa-ic ic-20"><span class="icon icon-plus"></span></span>
+        <span class="qa-body"><strong>Nova nota</strong><p>Lançar uma nota fiscal</p></span>
+      </a>
+      <a class="qa" href="/invoices">
+        <span class="qa-ic ic-20"><span class="icon icon-search"></span></span>
+        <span class="qa-body"><strong>Buscar notas</strong><p>Filtros e totalizer</p></span>
+      </a>
+      <a class="qa" href="/invoices?created_by=me">
+        <span class="qa-ic ic-20"><span class="icon icon-file-text"></span></span>
+        <span class="qa-body"><strong>Minhas notas</strong><p id="qa-mine-meta">Suas notas em andamento</p></span>
+        <span class="qa-count hidden" id="qa-mine-count">—</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="alertas-h">
+  <div class="section-header"><h2 id="alertas-h">Alertas</h2></div>
+  <div class="qa-stack" id="dashboard-alerts-approver">
+    {# Populado por dashboard-v2.js (renderAlertsApprover) a partir de /api/alerts #}
+  </div>
+</section>
+{% endif %}
+
+<section aria-labelledby="recentes-h">
+  <div class="section-header">
+    <h2 id="recentes-h">Notas recentes</h2>
+    <a href="/invoices" class="btn btn-ghost btn-sm">Ver todas</a>
+  </div>
+  <div class="table-wrap">
+    <table class="table" id="dashboard-recent">
+      <thead><tr><th>Número</th><th>Fornecedor</th><th>Valor</th><th>Vencimento</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td colspan="5" class="text-muted" style="text-align:center; padding: 22px">Carregando…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/dashboard-v2.js" defer></script>
 {% endblock %}

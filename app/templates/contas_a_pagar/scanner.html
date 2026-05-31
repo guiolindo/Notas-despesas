@@ -2,43 +2,69 @@
 {% block title %}Scanner QR - Contas a Pagar{% endblock %}
 {% block page_id %}cap-scanner{% endblock %}
 {% block content %}
+{#
+  Visual refeito sobre o design system novo (.scanner-layout, .scanner-card,
+  .scanner-cam, .cam-frame, .cam-laser). IDs preservados pra scanner.js:
+    #cap-scan-input    (input do bipador)
+    #cap-cam-wrap      (container da camera, hidden ate clicar 'Iniciar')
+    #cap-cam-video     (elemento video)
+    #cap-cam-canvas    (canvas pra jsQR)
+    #cap-cam-start     (botao iniciar)
+    #cap-cam-stop      (botao parar)
+    #cap-cam-status    (texto de status da camera)
+    #cap-scan-feedback (mensagem geral, sucesso/erro)
+#}
 <div class="page-header">
   <h1>Scanner de Nota</h1>
-  <p class="text-muted">
-    Use o bipador (digita a URL/ID automaticamente) ou a camera (smartphone).
-    A nota completa abre apos validar o codigo.
-  </p>
+  <p class="text-muted">Use o bipador (Enter envia automaticamente) ou a camera (ideal no smartphone).</p>
 </div>
 
-<div class="card" style="max-width:720px;margin:0 auto">
-  <div class="form-group">
-    <label for="cap-scan-input"><strong>1. Bipador / digitar manualmente</strong></label>
+<div class="scanner-layout">
+  <div class="card scanner-card">
+    <div class="scanner-icon-big">
+      <span class="icon icon-scan-line ic-28"></span>
+    </div>
+    <h2 style="font-size:18px;margin-bottom:6px">Bipador / digitar manualmente</h2>
+    <p class="text-muted" style="font-size:13px;max-width:320px">
+      O leitor envia o conteudo seguido de Enter — abrira a nota automaticamente.
+    </p>
     <input
       type="text"
       id="cap-scan-input"
-      class="form-input"
-      placeholder="Bipe o QR ou cole o link da nota (ex: https://.../verify/<id>)"
+      class="form-input scanner-input"
+      placeholder="Bipe o QR ou cole o link"
       autocomplete="off"
       autofocus
       inputmode="text"
+      style="margin-top:18px"
     >
-    <p class="field-help">
-      O leitor envia o conteudo seguido de Enter — abrira a nota automaticamente.
-    </p>
+    <p class="scanner-hint">Aceita link <code>/verify/&lt;id&gt;</code> ou UUID puro.</p>
   </div>
 
-  <div class="form-group" style="margin-top:24px">
-    <label><strong>2. Camera (smartphone / webcam)</strong></label>
-    <button type="button" id="cap-cam-start" class="btn btn-ghost">Iniciar camera</button>
-    <button type="button" id="cap-cam-stop" class="btn btn-ghost hidden">Parar camera</button>
-    <div id="cap-cam-wrap" class="hidden" style="margin-top:12px;text-align:center">
-      <video id="cap-cam-video" playsinline style="max-width:100%;border-radius:8px;background:#000"></video>
-      <canvas id="cap-cam-canvas" style="display:none"></canvas>
-      <p class="field-help" id="cap-cam-status">Aponte o QR code para a camera.</p>
+  <aside>
+    <div class="card scanner-card" style="padding:24px 20px;min-height:auto">
+      <div class="scanner-icon-big" style="background:#FEEAD9;color:var(--orange);width:56px;height:56px">
+        <span class="icon icon-camera ic-22"></span>
+      </div>
+      <h3 style="font-size:15px;margin-bottom:6px">Camera</h3>
+      <p class="text-muted" style="font-size:12px;text-align:center;margin-bottom:14px">
+        Para smartphones — usa a camera traseira por padrao.
+      </p>
+      <button type="button" id="cap-cam-start" class="btn btn-ghost">Iniciar camera</button>
+      <button type="button" id="cap-cam-stop" class="btn btn-ghost hidden">Parar camera</button>
+
+      <div id="cap-cam-wrap" class="hidden" style="margin-top:14px;width:100%">
+        <div class="scanner-cam" style="margin:0 auto">
+          <video id="cap-cam-video" playsinline></video>
+          <canvas id="cap-cam-canvas" style="display:none"></canvas>
+          <div class="cam-frame"><div class="cam-laser"></div></div>
+        </div>
+        <p class="scanner-hint" id="cap-cam-status" style="text-align:center">Aponte o QR code para a camera.</p>
+      </div>
     </div>
-  </div>
 
-  <div id="cap-scan-feedback" class="field-help" style="margin-top:16px;min-height:20px"></div>
+    <div id="cap-scan-feedback" class="field-help" style="margin-top:14px;min-height:20px;text-align:center"></div>
+  </aside>
 </div>
 {% endblock %}
 {% block scripts %}
