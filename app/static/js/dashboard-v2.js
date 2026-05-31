@@ -93,6 +93,36 @@
       href: '/invoices?status=REPROVADO_GESTOR' },
   ];
 
+  // ADMIN ve o sistema todo — sem 'pending_review' (nao aprova) e sem
+  // 'rejected' (nao cria); so o que importa pra acompanhar o operacional.
+  const ADMIN_SPECS = [
+    { bucket: 'overdue',      cls: 'ar-err',  icon: 'icon-circle-alert',
+      title: n => `${n} ${n === 1 ? 'nota vencida' : 'notas vencidas'} no sistema`,
+      meta: 'Considere alertar os responsaveis.',
+      href: '/alerts?bucket=overdue' },
+    { bucket: 'due_72h',      cls: 'ar-warn', icon: 'icon-clock',
+      title: n => `${n} ${n === 1 ? 'nota vence' : 'notas vencem'} em ate 72 horas`,
+      meta: 'Visao operacional do sistema.',
+      href: '/alerts?bucket=due_72h' },
+    { bucket: 'old_emission', cls: 'ar-info', icon: 'icon-calendar',
+      title: n => `${n} ${n === 1 ? 'nota com emissao' : 'notas com emissao'} antiga`,
+      meta: 'Pode indicar atraso no lancamento.',
+      href: '/alerts?bucket=old_emission' },
+  ];
+
+  // EMPLOYEE so cria notas — alertas relevantes sao as proprias reprovadas
+  // (precisam de correcao) e vencimentos curtos nas suas notas em fluxo.
+  const EMPLOYEE_SPECS = [
+    { bucket: 'rejected', cls: 'ar-err',  icon: 'icon-x',
+      title: n => `${n} ${n === 1 ? 'nota sua foi reprovada' : 'notas suas foram reprovadas'}`,
+      meta: 'Corrija o que foi apontado e reenvie.',
+      href: '/invoices?status=REPROVADO_GESTOR' },
+    { bucket: 'due_72h',  cls: 'ar-warn', icon: 'icon-clock',
+      title: n => `${n} ${n === 1 ? 'das suas notas vence' : 'das suas notas vencem'} em ate 72 horas`,
+      meta: 'Cobre aprovacao se ainda estiverem pendentes.',
+      href: '/invoices?created_by=me' },
+  ];
+
   function renderAlerts(rootSel, alerts, specs) {
     const root = $(rootSel);
     if (!root) return;
@@ -166,8 +196,12 @@
   }
 
   // ─── Hidratacao dos paineis principais ──────────────────────────────
+  // Cada perfil tem seu proprio root no template; renderAlerts faz no-op
+  // se o seletor nao encontrar nada, entao so um dos quatro entra em jogo.
   function hydrateAlerts(alerts) {
     renderAlerts('#dashboard-alerts-cap',      alerts, CAP_SPECS);
+    renderAlerts('#dashboard-alerts-admin',    alerts, ADMIN_SPECS);
+    renderAlerts('#dashboard-alerts-employee', alerts, EMPLOYEE_SPECS);
     renderAlerts('#dashboard-alerts-approver', alerts, APPROVER_SPECS);
     updateQuickActionCounts(alerts);
   }
