@@ -21,6 +21,21 @@ class Settings(BaseSettings):
     LOGIN_BLOCK_MINUTES: int = 10
     ENVIRONMENT: str = "DEV"
 
+    # ─── Email — agora exclusivamente via env (admin do app nao mexe) ───
+    # Esta separacao garante que um admin malicioso da aplicacao nao
+    # consiga redirecionar SMTP para interceptar codigos de reset de senha
+    # de outros admins/diretores. A configuracao SMTP fica em quem tem
+    # acesso ao Railway, nao em quem tem login no app.
+    EMAIL_PROVIDER: str = "SMTP"            # SMTP | RESEND | DISABLED
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USE_TLS: bool = True               # True=STARTTLS na porta 587, False=SSL na 465
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""                  # em texto puro no .env (acesso restrito)
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_FROM_NAME: str = "Economart"
+    RESEND_API_KEY: str = ""                # alternativa HTTP API (funciona em Railway Hobby)
+
     class Config:
         env_file = ".env"
         case_sensitive = True

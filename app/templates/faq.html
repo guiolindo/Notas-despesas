@@ -124,7 +124,7 @@
     {{ qa("Por que nao consigo resetar a senha de outro admin?",
       "Protecao contra sequestro de conta. Apenas o proprio admin pode redefinir a propria senha (via 'Esqueci minha senha' ou 'Trocar senha' apos login).") }}
     {{ qa("Como configuro o envio de email automatico?",
-      "Va em <strong>Email automatico</strong> no menu. Recomendamos o provedor <em>Resend</em> (HTTP API) — funciona no Railway sem precisar fazer upgrade de plano. SMTP do Gmail e bloqueado pelo Railway nos planos Trial/Hobby.") }}
+      "Por seguranca, o SMTP/Resend agora e configurado em variaveis de ambiente do servidor (<code>EMAIL_PROVIDER</code>, <code>SMTP_HOST</code>, <code>SMTP_PASSWORD</code> ou <code>RESEND_API_KEY</code>) — admin do app nao mexe mais nisso. Quem opera a infra (Railway) ajusta direto no painel. Razao: impedir que um admin mal-intencionado redirecione SMTP para interceptar codigos de reset de senha.") }}
     {{ qa("Como encerro o cadastro de um colaborador que se desligou?",
       "Primeiro <em>Desative</em> o usuario. Depois use o botao <em>Encerrar conta</em>. Nome e email sao substituidos por placeholders e o login fica permanentemente bloqueado; o historico de aprovacoes e preservado por exigencia fiscal (CTN, 5 anos).") }}
     {{ qa("O que sao os 'alertas' que aparecem no topo das notas?",

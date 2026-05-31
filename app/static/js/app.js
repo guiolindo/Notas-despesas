@@ -364,14 +364,10 @@ function addApprovalQueueLink(role) {
     audit.id = 'nav-admin-audit';
     audit.className = 'nav-item';
     audit.innerHTML = '<span class="nav-icon">&#9998;</span> Auditoria';
-    const smtp = document.createElement('a');
-    smtp.href = '/admin/smtp';
-    smtp.id = 'nav-admin-smtp';
-    smtp.className = 'nav-item';
-    smtp.innerHTML = '<span class="nav-icon">&#9993;</span> Email automatico';
+    // 'Email automatico' removido — SMTP agora e configurado via .env
+    // (so quem opera o Railway, nao quem tem login no app).
     nav.insertBefore(users, document.getElementById('nav-alerts'));
     nav.insertBefore(depts, document.getElementById('nav-alerts'));
-    nav.insertBefore(smtp, document.getElementById('nav-alerts'));
     nav.insertBefore(audit, document.getElementById('nav-alerts'));
   }
   if (['MANAGER', 'DIRECTOR'].includes(role) && !document.getElementById('nav-approval-queue')) {
@@ -2786,8 +2782,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initShell().then(() => initAdminAuditLogs());
   } else if (page === 'admin-departments') {
     initShell().then(() => initAdminDepartments());
-  } else if (page === 'admin-smtp') {
-    initShell().then(() => initAdminSmtp());
   } else if (page === 'configuracoes') {
     initShell().then(() => initConfiguracoes());
   } else if (page === 'forgot-password') {
@@ -2856,159 +2850,6 @@ function initResetPasswordPage() {
 }
 
 
-// ─── Admin SMTP ───────────────────────────────────────────────────────────
-
-const SMTP_PRESETS = {
-  gmail:    { host: 'smtp.gmail.com',         port: 587, tls: true },
-  outlook:  { host: 'smtp.office365.com',     port: 587, tls: true },
-  sendgrid: { host: 'smtp.sendgrid.net',      port: 2525, tls: true },
-};
-
-async function initAdminSmtp() {
-  document.getElementById('smtp-form')?.addEventListener('submit', saveAdminSmtp);
-  document.getElementById('smtp-edit-btn')?.addEventListener('click', showSmtpForm);
-  document.getElementById('smtp-cancel-btn')?.addEventListener('click', loadAdminSmtp);
-  document.getElementById('smtp-test-btn')?.addEventListener('click', testSmtp);
-  document.getElementById('smtp-provider')?.addEventListener('change', toggleSmtpProviderFields);
-  // Botoes de preset SMTP
-  document.querySelectorAll('[data-preset]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const p = SMTP_PRESETS[btn.dataset.preset];
-      if (!p) return;
-      document.getElementById('smtp-host').value = p.host;
-      document.getElementById('smtp-port').value = p.port;
-      document.getElementById('smtp-use-tls').checked = p.tls;
-    });
-  });
-  await loadAdminSmtp();
-}
-
-function toggleSmtpProviderFields() {
-  const provider = document.getElementById('smtp-provider').value;
-  const isResend = provider === 'RESEND';
-  document.getElementById('smtp-resend-fields').classList.toggle('hidden', !isResend);
-  document.getElementById('smtp-smtp-fields').classList.toggle('hidden', isResend);
-}
-
-async function loadAdminSmtp() {
-  try {
-    const cfg = await apiFetch('/api/admin/smtp');
-    const summary = document.getElementById('smtp-summary');
-    const form = document.getElementById('smtp-form');
-    if (cfg.configured && cfg.has_password) {
-      const providerLabel = cfg.provider === 'RESEND' ? 'Resend (HTTP API)' : 'SMTP';
-      document.getElementById('smtp-status-badge').innerHTML = cfg.enabled
-        ? '<span class="status-badge status-aprovado">Ativo</span>'
-        : '<span class="status-badge status-rascunho">Desabilitado</span>';
-      document.getElementById('smtp-summary-provider').textContent = providerLabel;
-      document.getElementById('smtp-summary-host').textContent =
-        cfg.provider === 'RESEND' ? 'api.resend.com (HTTP)' : `${cfg.smtp_host}:${cfg.smtp_port}`;
-      document.getElementById('smtp-summary-from').textContent = cfg.smtp_from_email;
-      document.getElementById('smtp-summary-updated').textContent =
-        cfg.updated_at ? `Atualizado em ${formatDateTime(cfg.updated_at)}` : '';
-      summary.classList.remove('hidden');
-      form.classList.add('hidden');
-    } else {
-      summary.classList.add('hidden');
-      showSmtpForm(null, cfg);
-    }
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-function showSmtpForm(_evt, cfg) {
-  const form = document.getElementById('smtp-form');
-  const summary = document.getElementById('smtp-summary');
-  if (!cfg) {
-    apiFetch('/api/admin/smtp').then((data) => populateSmtpForm(data));
-  } else {
-    populateSmtpForm(cfg);
-  }
-  form.classList.remove('hidden');
-  summary.classList.add('hidden');
-}
-
-function populateSmtpForm(cfg) {
-  document.getElementById('smtp-provider').value = cfg.provider || 'RESEND';
-  toggleSmtpProviderFields();
-  // SMTP fields
-  document.getElementById('smtp-host').value = cfg.smtp_host || '';
-  document.getElementById('smtp-port').value = cfg.smtp_port || 587;
-  document.getElementById('smtp-user').value = cfg.smtp_user || '';
-  document.getElementById('smtp-from-email').value = cfg.smtp_from_email || '';
-  document.getElementById('smtp-from-name').value = cfg.smtp_from_name || 'Economart Notas';
-  document.getElementById('smtp-use-tls').checked = cfg.use_tls !== false;
-  document.getElementById('smtp-password').value = '';
-  // Resend fields
-  document.getElementById('smtp-resend-from').value = cfg.smtp_from_email || '';
-  document.getElementById('smtp-resend-from-name').value = cfg.smtp_from_name || 'Economart Notas';
-  document.getElementById('smtp-resend-key').value = '';
-  // Comum
-  document.getElementById('smtp-enabled').checked = cfg.enabled !== false;
-  // Help text de senha
-  const smtpHelp = document.getElementById('smtp-password-required');
-  const resendHelp = document.getElementById('smtp-resend-key-required');
-  if (cfg.has_password) {
-    [smtpHelp, resendHelp].forEach((el) => { if (el) el.textContent = '(em branco = manter atual)'; });
-    document.getElementById('smtp-password').placeholder = '••••••••••••••••';
-    document.getElementById('smtp-resend-key').placeholder = 're_••••••••••••••••';
-  } else {
-    [smtpHelp, resendHelp].forEach((el) => { if (el) el.textContent = '*'; });
-  }
-}
-
-async function saveAdminSmtp(event) {
-  event.preventDefault();
-  const provider = document.getElementById('smtp-provider').value;
-  let payload;
-  if (provider === 'RESEND') {
-    payload = {
-      provider: 'RESEND',
-      smtp_from_email: document.getElementById('smtp-resend-from').value.trim(),
-      smtp_from_name: document.getElementById('smtp-resend-from-name').value.trim(),
-      smtp_host: 'api.resend.com',
-      smtp_port: 443,
-      smtp_user: 'resend',
-      use_tls: true,
-      enabled: document.getElementById('smtp-enabled').checked,
-    };
-    const key = document.getElementById('smtp-resend-key').value.trim();
-    if (key) payload.smtp_password = key;
-  } else {
-    payload = {
-      provider: 'SMTP',
-      smtp_host: document.getElementById('smtp-host').value.trim(),
-      smtp_port: parseInt(document.getElementById('smtp-port').value, 10) || 587,
-      smtp_user: document.getElementById('smtp-user').value.trim(),
-      smtp_from_email: document.getElementById('smtp-from-email').value.trim(),
-      smtp_from_name: document.getElementById('smtp-from-name').value.trim(),
-      use_tls: document.getElementById('smtp-use-tls').checked,
-      enabled: document.getElementById('smtp-enabled').checked,
-    };
-    const password = document.getElementById('smtp-password').value;
-    if (password) payload.smtp_password = password;
-  }
-  try {
-    await apiFetch('/api/admin/smtp', { method: 'PUT', body: JSON.stringify(payload) });
-    showToast('Configuracao salva com sucesso.', 'success');
-    await loadAdminSmtp();
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-async function testSmtp() {
-  const btn = document.getElementById('smtp-test-btn');
-  btn.disabled = true;
-  btn.textContent = 'Enviando...';
-  try {
-    const resp = await apiFetch('/api/admin/smtp/test', { method: 'POST' });
-    showToast(resp.message || 'Email de teste enviado!', 'success');
-  } catch (e) {
-    showToast(e.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Enviar email de teste';
-  }
-}
+// SMTP config foi removido da UI — agora vive em .env (so quem opera
+// o Railway pode editar). Removidas as funcoes initAdminSmtp,
+// loadAdminSmtp, saveAdminSmtp, testSmtp, populateSmtpForm.

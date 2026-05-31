@@ -6,7 +6,7 @@ from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import AuditLog, Department, SmtpSettings, User, UserRole
+from app.models import AuditLog, Department, User, UserRole
 from app.security.dependencies import require_role
 from app.security.hashing import hash_password, pseudonymize_ip
 from app.services import email_service
@@ -753,148 +753,18 @@ def anonymize_terminated_user(
     }
 
 
-# ─── SMTP / Email automatico ────────────────────────────────────────────────
-
-class SmtpSettingsRequest(BaseModel):
-    provider: str = "SMTP"  # SMTP | RESEND
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str | None = None  # None = manter atual (senha SMTP ou API key Resend)
-    smtp_from_email: str
-    smtp_from_name: str = "Economart Notas"
-    use_tls: bool = True
-    enabled: bool = True
-
-    @field_validator("smtp_from_email")
-    @classmethod
-    def not_empty(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Campo obrigatorio")
-        return value
-
-    @field_validator("provider")
-    @classmethod
-    def valid_provider(cls, value: str) -> str:
-        value = (value or "SMTP").upper()
-        if value not in {"SMTP", "RESEND"}:
-            raise ValueError("Provider deve ser SMTP ou RESEND")
-        return value
-
-
-@router.get("/smtp")
-def get_smtp_config(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("ADMIN")),
-):
-    """Retorna config atual. Senha/API key NUNCA expostas."""
-    cfg = email_service.get_smtp_settings(db)
-    if not cfg:
-        return {
-            "configured": False,
-            "provider": "RESEND",  # default sugerido para o user
-            "smtp_host": "",
-            "smtp_port": 587,
-            "smtp_user": "",
-            "smtp_from_email": "",
-            "smtp_from_name": "Economart Notas",
-            "use_tls": True,
-            "enabled": False,
-            "has_password": False,
-        }
-    return {
-        "configured": True,
-        "provider": cfg.provider or "SMTP",
-        "smtp_host": cfg.smtp_host,
-        "smtp_port": cfg.smtp_port,
-        "smtp_user": cfg.smtp_user,
-        "smtp_from_email": cfg.smtp_from_email,
-        "smtp_from_name": cfg.smtp_from_name,
-        "use_tls": cfg.use_tls,
-        "enabled": cfg.enabled,
-        "has_password": bool(cfg.smtp_password_enc),
-        "updated_at": _utc_iso(cfg.updated_at),
-    }
-
-
-@router.put("/smtp")
-def update_smtp_config(
-    body: SmtpSettingsRequest,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("ADMIN")),
-):
-    from sqlalchemy.exc import IntegrityError
-    cfg = email_service.get_smtp_settings(db)
-    if not cfg:
-        cfg = SmtpSettings(id=1)
-        db.add(cfg)
-        # Tenta flush para detectar conflito antes de aplicar mudancas (race
-        # com outro admin salvando simultaneamente)
-        try:
-            db.flush()
-        except IntegrityError:
-            db.rollback()
-            cfg = email_service.get_smtp_settings(db)  # le o que o outro salvou
-            if not cfg:
-                raise HTTPException(500, "Falha ao salvar configuracao. Tente novamente.")
-
-    cfg.provider = body.provider
-    cfg.smtp_host = body.smtp_host.strip()
-    cfg.smtp_port = body.smtp_port
-    cfg.smtp_user = body.smtp_user.strip()
-    cfg.smtp_from_email = body.smtp_from_email.strip()
-    cfg.smtp_from_name = body.smtp_from_name.strip() or "Economart Notas"
-    cfg.use_tls = body.use_tls
-    cfg.enabled = body.enabled
-    if body.smtp_password:  # SMTP password OR Resend API key
-        cfg.smtp_password_enc = email_service.encrypt_password(body.smtp_password)
-    cfg.updated_at = _now()
-    cfg.updated_by_id = current_user.id
-
-    _add_audit_log(
-        db, request, current_user,
-        "UPDATE_SMTP_CONFIG", "smtp_settings",
-        f"Atualizou config email: provider={cfg.provider} from={cfg.smtp_from_email} enabled={cfg.enabled}",
-    )
-    db.commit()
-    return {"message": "Configuracao atualizada"}
-
-
-@router.post("/smtp/test")
-def test_smtp_config(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("ADMIN")),
-):
-    """Envia email de teste para o admin que solicitou."""
-    cfg = email_service.get_smtp_settings(db)
-    if not cfg or not cfg.smtp_password_enc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Configuracao SMTP incompleta — salve antes de testar.",
-        )
-    if not current_user.email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Seu usuario nao tem email cadastrado para receber o teste.",
-        )
-
-    # Forca enabled=True temporariamente apenas para esse envio
-    was_enabled = cfg.enabled
-    cfg.enabled = True
-    subject, html, text = email_service.template_smtp_test(current_user.name)
-    ok = email_service.send_email(db, current_user.email, subject, html, text)
-    cfg.enabled = was_enabled
-    db.commit()
-
-    if not ok:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Falha ao enviar email. Verifique host/porta/credenciais nos logs do servidor.",
-        )
-    return {"message": f"Email de teste enviado para {current_user.email}"}
+# ─── SMTP — REMOVIDO da UI por seguranca ────────────────────────────────────
+# A configuracao SMTP/Resend foi movida para variaveis de ambiente. Razao:
+# admin malicioso poderia redirecionar SMTP pra interceptar codigos de reset
+# de senha de outros admins/diretores. Agora o provider vive em quem tem
+# acesso ao Railway (.env), nao em quem tem login no app.
+#
+# Variaveis novas em .env: EMAIL_PROVIDER, SMTP_HOST, SMTP_PORT, SMTP_USE_TLS,
+# SMTP_USER, SMTP_PASSWORD, SMTP_FROM_EMAIL, SMTP_FROM_NAME, RESEND_API_KEY.
+#
+# Os endpoints GET /admin/smtp, PUT /admin/smtp e POST /admin/smtp/test
+# foram removidos. A tabela smtp_settings permanece (migration nao destrutiva)
+# mas o codigo nao le mais dela.
 
 
 # ─── Manutencao / Limpeza ──────────────────────────────────────────────────

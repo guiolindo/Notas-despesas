@@ -1,12 +1,16 @@
-"""Servico de envio de emails via SMTP configuravel pelo admin.
+"""Servico de envio de emails — configuracao SOMENTE via env (.env).
 
-A senha SMTP eh persistida criptografada com Fernet/MASTER_ENCRYPTION_KEY.
+Decisao de seguranca: o admin do app NAO pode mais editar SMTP pela UI.
+Razao: admin malicioso poderia trocar o provedor por um servidor proprio
+e interceptar codigos de reset de senha de outros admins/diretores. Agora
+o provedor SMTP/Resend vive em variaveis de ambiente — controlado por
+quem opera a infra (Railway), nao por quem tem login no app.
+
 Envios sao defensivos: erro de SMTP NUNCA quebra o fluxo principal —
 apenas loga e segue, evitando que email caido impeca aprovacao de notas.
 """
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import smtplib
@@ -18,36 +22,24 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
 
-from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import SmtpSettings
 
 
 logger = logging.getLogger(__name__)
 
 
-def _master_key() -> bytes:
-    key = settings.MASTER_ENCRYPTION_KEY
-    if isinstance(key, str):
-        key = key.strip().encode("utf-8")
-    Fernet(key)  # valida formato
-    return key
-
-
-def encrypt_password(plain: str) -> str:
-    encrypted = Fernet(_master_key()).encrypt(plain.encode("utf-8"))
-    return base64.urlsafe_b64encode(encrypted).decode("ascii")
-
-
-def decrypt_password(encrypted_b64: str) -> str:
-    encrypted = base64.urlsafe_b64decode(encrypted_b64.encode("ascii"))
-    return Fernet(_master_key()).decrypt(encrypted).decode("utf-8")
-
-
-def get_smtp_settings(db: Session) -> Optional[SmtpSettings]:
-    return db.query(SmtpSettings).first()
+def _email_provider() -> str:
+    """Retorna provider efetivo: SMTP, RESEND ou DISABLED."""
+    p = (settings.EMAIL_PROVIDER or "SMTP").upper()
+    if p == "DISABLED":
+        return "DISABLED"
+    if p == "RESEND" and settings.RESEND_API_KEY:
+        return "RESEND"
+    if p == "SMTP" and settings.SMTP_HOST and settings.SMTP_USER and settings.SMTP_PASSWORD:
+        return "SMTP"
+    return "DISABLED"  # falta credencial -> tratado como desabilitado
 
 
 def _build_message(
@@ -64,7 +56,6 @@ def _build_message(
     msg["To"] = to_email
     msg["Reply-To"] = "noreply@economart.local"
     msg["X-Auto-Response-Suppress"] = "All"
-    # Texto plano como fallback
     text_part = text or "Esta mensagem requer um cliente que renderize HTML."
     msg.attach(MIMEText(text_part, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
@@ -72,54 +63,38 @@ def _build_message(
 
 
 def send_email(
-    db: Session,
+    db: Optional[Session],          # parametro mantido por compat com chamadas antigas
     to_email: str,
     subject: str,
     html: str,
     text: Optional[str] = None,
 ) -> bool:
-    """Envia email via provider configurado (SMTP ou Resend). Best-effort."""
-    cfg = get_smtp_settings(db)
-    if not cfg or not cfg.enabled:
+    """Envia email via provider configurado em .env. Best-effort."""
+    provider = _email_provider()
+    if provider == "DISABLED":
         logger.info(f"[email] desabilitado — pulando envio para {to_email}")
         return False
-    if not cfg.smtp_password_enc:
-        logger.warning("[email] habilitado mas sem credencial (senha/API key)")
-        return False
-
-    try:
-        secret = decrypt_password(cfg.smtp_password_enc)
-    except Exception as exc:  # noqa: BLE001
-        logger.error(f"[email] falha ao descriptografar credencial: {exc}")
-        return False
-
-    provider = (cfg.provider or "SMTP").upper()
     if provider == "RESEND":
-        return _send_via_resend(cfg, secret, to_email, subject, html, text)
-    return _send_via_smtp(cfg, secret, to_email, subject, html, text)
+        return _send_via_resend(to_email, subject, html, text)
+    return _send_via_smtp(to_email, subject, html, text)
 
 
-def _send_via_smtp(cfg, password, to_email, subject, html, text):
-    if not cfg.smtp_host or not cfg.smtp_user:
-        logger.warning("[email] SMTP sem host ou usuario configurado")
-        return False
-    msg = _build_message(
-        cfg.smtp_from_email or cfg.smtp_user,
-        cfg.smtp_from_name or "Economart",
-        to_email, subject, html, text,
-    )
+def _send_via_smtp(to_email, subject, html, text):
+    from_email = settings.SMTP_FROM_EMAIL or settings.SMTP_USER
+    from_name = settings.SMTP_FROM_NAME or "Economart"
+    msg = _build_message(from_email, from_name, to_email, subject, html, text)
     try:
-        if cfg.use_tls:
+        if settings.SMTP_USE_TLS:
             ctx = ssl.create_default_context()
-            with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=15) as server:
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as server:
                 server.ehlo()
                 server.starttls(context=ctx)
                 server.ehlo()
-                server.login(cfg.smtp_user, password)
+                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
                 server.send_message(msg)
         else:
-            with smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=15) as server:
-                server.login(cfg.smtp_user, password)
+            with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as server:
+                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
                 server.send_message(msg)
         logger.info(f"[email-smtp] enviado para {to_email}: {subject}")
         return True
@@ -128,10 +103,9 @@ def _send_via_smtp(cfg, password, to_email, subject, html, text):
         return False
 
 
-def _send_via_resend(cfg, api_key, to_email, subject, html, text):
-    """Envia via Resend HTTP API. Funciona em Railway (sem bloqueio SMTP)."""
-    from_email = cfg.smtp_from_email or "onboarding@resend.dev"
-    from_name = cfg.smtp_from_name or "Economart"
+def _send_via_resend(to_email, subject, html, text):
+    from_email = settings.SMTP_FROM_EMAIL or "onboarding@resend.dev"
+    from_name = settings.SMTP_FROM_NAME or "Economart"
     payload = {
         "from": f"{from_name} <{from_email}>",
         "to": [to_email],
@@ -148,10 +122,8 @@ def _send_via_resend(cfg, api_key, to_email, subject, html, text):
         "https://api.resend.com/emails",
         data=data,
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
             "Content-Type": "application/json",
-            # Cloudflare bloqueia User-Agent padrao do urllib (Python-urllib/X.Y)
-            # com erro 1010. Identificamo-nos como aplicacao real.
             "User-Agent": "Economart-Notas/1.0 (+https://economart.com.br)",
             "Accept": "application/json",
         },
@@ -159,7 +131,6 @@ def _send_via_resend(cfg, api_key, to_email, subject, html, text):
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
-            body = resp.read().decode("utf-8")
             logger.info(f"[email-resend] enviado para {to_email}: {subject} ({resp.status})")
             return True
     except urllib.error.HTTPError as exc:
@@ -188,10 +159,8 @@ def send_email_async(
     (recuperacao de senha), usar BackgroundTasks do FastAPI no endpoint.
     """
     def _worker():
-        from app.database import SessionLocal
         try:
-            with SessionLocal() as session:
-                send_email(session, to_email, subject, html, text)
+            send_email(None, to_email, subject, html, text)
         except Exception as exc:  # noqa: BLE001
             logger.error(f"[email-async] worker falhou para {to_email}: {exc}")
 
@@ -294,12 +263,3 @@ def template_password_reset_code(
     return subject, html, text
 
 
-def template_smtp_test(admin_name: str) -> tuple[str, str, str]:
-    subject = "Teste de envio - Economart"
-    html = _wrap(f"""
-      <h1>SMTP funcionando!</h1>
-      <p>Ola, {admin_name}. Este email confirma que a configuracao SMTP esta operacional.</p>
-      <p>Voce pode habilitar o envio automatico nas configuracoes do admin.</p>
-    """)
-    text = "Teste de SMTP enviado com sucesso."
-    return subject, html, text

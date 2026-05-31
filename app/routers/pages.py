@@ -228,9 +228,3 @@ def contas_a_pagar_scanner(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "contas_a_pagar/scanner.html")
 
 
-@router.get("/admin/smtp", response_class=HTMLResponse)
-def admin_smtp_page(request: Request, db: Session = Depends(get_db)):
-    guard = require_page_role(request, db, "ADMIN")
-    if not isinstance(guard, User):
-        return guard
-    return templates.TemplateResponse(request, "admin/smtp.html", {})
