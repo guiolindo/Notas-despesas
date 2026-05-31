@@ -223,7 +223,162 @@ function confirmAction(message) {
 }
 
 function toggleSidebar() {
-  document.getElementById('sidebar')?.classList.toggle('collapsed');
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  sidebar.classList.toggle('collapsed');
+  _syncSidebarBackdrop();
+}
+
+function _isMobileViewport() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function _syncSidebarBackdrop() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  let backdrop = document.getElementById('sidebar-backdrop');
+  const open = sidebar.classList.contains('collapsed') && _isMobileViewport();
+  if (open) {
+    if (!backdrop) {
+      backdrop = document.createElement('div');
+      backdrop.id = 'sidebar-backdrop';
+      backdrop.className = 'sidebar-backdrop';
+      backdrop.addEventListener('click', () => {
+        sidebar.classList.remove('collapsed');
+        _syncSidebarBackdrop();
+      });
+      document.body.appendChild(backdrop);
+    }
+    backdrop.classList.add('active');
+  } else if (backdrop) {
+    backdrop.classList.remove('active');
+  }
+}
+
+// ─── Atalhos de teclado globais ─────────────────────────────────────
+// /         -> foca primeiro campo de busca da pagina
+// n         -> /invoices/new (so quem pode criar nota)
+// g d       -> dashboard
+// g i       -> /invoices
+// g a       -> /alerts
+// ?         -> cheatsheet
+function _shortcutsCheatsheet() {
+  const me = Auth.getUser();
+  const canCreate = me && !['CONTAS_A_PAGAR', 'FINANCE'].includes(me.role);
+  const rows = [
+    ['<kbd>/</kbd>', 'Focar a busca'],
+    canCreate ? ['<kbd>n</kbd>', 'Nova nota'] : null,
+    ['<kbd>g</kbd> <kbd>d</kbd>', 'Dashboard'],
+    ['<kbd>g</kbd> <kbd>i</kbd>', 'Notas fiscais'],
+    ['<kbd>g</kbd> <kbd>a</kbd>', 'Alertas'],
+    ['<kbd>?</kbd>', 'Mostrar esta lista'],
+    ['<kbd>Esc</kbd>', 'Fechar drawer/modal'],
+  ].filter(Boolean);
+  const html = `<div class="modal-backdrop" id="shortcuts-modal-backdrop">
+    <div class="modal">
+      <h2 style="font-size:1.1rem;margin-bottom:1rem">Atalhos de teclado</h2>
+      <table class="shortcuts-table">
+        ${rows.map(([k, l]) => `<tr><td>${k}</td><td>${l}</td></tr>`).join('')}
+      </table>
+      <p class="text-muted text-xs" style="margin-top:1rem">
+        Atalhos sao desativados enquanto voce digita em um campo. Pressione <kbd>Esc</kbd> para fechar.
+      </p>
+      <div style="text-align:right;margin-top:1rem">
+        <button class="btn btn-ghost btn-sm" id="shortcuts-close">Fechar</button>
+      </div>
+    </div>
+  </div>`;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  const overlay = tmp.firstChild;
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+  overlay.querySelector('#shortcuts-close').addEventListener('click', close);
+  document.body.appendChild(overlay);
+}
+
+let _shortcutPrefix = null;       // 'g' apos primeira tecla
+let _shortcutPrefixTimer = null;
+
+function _isTypingInField(target) {
+  if (!target) return false;
+  const tag = target.tagName || '';
+  if (target.isContentEditable) return true;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+function _wireGlobalShortcuts() {
+  if (window._shortcutsBound) return;
+  window._shortcutsBound = true;
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (_isTypingInField(e.target)) {
+      if (e.key === 'Escape' && _shortcutPrefix) _shortcutPrefix = null;
+      return;
+    }
+    // 1a tecla 'g' aguarda 2a tecla
+    if (e.key === 'g' && !_shortcutPrefix) {
+      _shortcutPrefix = 'g';
+      clearTimeout(_shortcutPrefixTimer);
+      _shortcutPrefixTimer = setTimeout(() => { _shortcutPrefix = null; }, 1200);
+      e.preventDefault();
+      return;
+    }
+    if (_shortcutPrefix === 'g') {
+      _shortcutPrefix = null;
+      if (e.key === 'd') { window.location.href = '/dashboard'; e.preventDefault(); return; }
+      if (e.key === 'i') { window.location.href = '/invoices'; e.preventDefault(); return; }
+      if (e.key === 'a') { window.location.href = '/alerts'; e.preventDefault(); return; }
+      return;
+    }
+    if (e.key === '/') {
+      const search = document.querySelector('input[type="search"]') || document.querySelector('#invoices-search');
+      if (search) { search.focus(); e.preventDefault(); }
+      return;
+    }
+    if (e.key === 'n') {
+      const me = Auth.getUser();
+      if (me && !['CONTAS_A_PAGAR', 'FINANCE'].includes(me.role)) {
+        window.location.href = '/invoices/new';
+        e.preventDefault();
+      }
+      return;
+    }
+    if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+      _shortcutsCheatsheet();
+      e.preventDefault();
+      return;
+    }
+    if (e.key === 'Escape') {
+      // Fecha drawer global se aberto
+      document.querySelector('.drawer.open, .drawer-open')?.classList.remove('open', 'drawer-open');
+      // Fecha modal de atalhos
+      document.getElementById('shortcuts-modal-backdrop')?.remove();
+    }
+  });
+}
+
+// Em mobile: clicar num link da nav fecha o drawer automaticamente.
+// Resize do desktop: garante que o backdrop suma se a janela cresceu.
+function _wireSidebarMobile() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  sidebar.querySelectorAll('.nav-item').forEach((link) => {
+    link.addEventListener('click', () => {
+      if (_isMobileViewport()) {
+        sidebar.classList.remove('collapsed');
+        _syncSidebarBackdrop();
+      }
+    });
+  });
+  window.addEventListener('resize', () => {
+    if (!_isMobileViewport()) {
+      const backdrop = document.getElementById('sidebar-backdrop');
+      if (backdrop) backdrop.classList.remove('active');
+    }
+  });
 }
 
 async function logout() {
@@ -330,6 +485,8 @@ async function initShell() {
   // Shell ja vem visivel do HTML (cores aplicadas inline no <head>).
   // JS so completa os textos dinamicos do header.
   document.getElementById('header-user-name').textContent = user.name;
+  _wireSidebarMobile();
+  _wireGlobalShortcuts();
   document.getElementById('header-user-role').textContent = ROLE_LABELS[user.role] || user.role;
   addApprovalQueueLink(user.role);
   renderGlobalAvailabilityBanner();
@@ -1456,6 +1613,38 @@ async function fetchAndOpenPdf(url) {
 
 // ── PDF inline + director selection helpers ─────────────────────────────────
 
+// Estado do viewer PDF (zoom + rotacao)
+let _pdfViewerState = { zoom: 1, rotate: 0 };
+
+function _applyPdfTransform() {
+  const iframe = document.getElementById('pdf-iframe');
+  if (!iframe) return;
+  iframe.style.transform = `rotate(${_pdfViewerState.rotate}deg) scale(${_pdfViewerState.zoom})`;
+  const label = document.getElementById('pdf-zoom-label');
+  if (label) label.textContent = `${Math.round(_pdfViewerState.zoom * 100)}%`;
+}
+
+function _setupPdfToolbar() {
+  const panel = document.getElementById('pdf-panel');
+  if (!panel || panel.dataset.toolbarReady) return;
+  panel.dataset.toolbarReady = '1';
+  document.getElementById('pdf-zoom-in')?.addEventListener('click', () => {
+    _pdfViewerState.zoom = Math.min(_pdfViewerState.zoom + 0.1, 3);
+    _applyPdfTransform();
+  });
+  document.getElementById('pdf-zoom-out')?.addEventListener('click', () => {
+    _pdfViewerState.zoom = Math.max(_pdfViewerState.zoom - 0.1, 0.4);
+    _applyPdfTransform();
+  });
+  document.getElementById('pdf-rotate')?.addEventListener('click', () => {
+    _pdfViewerState.rotate = (_pdfViewerState.rotate + 90) % 360;
+    _applyPdfTransform();
+  });
+  document.getElementById('pdf-fullscreen')?.addEventListener('click', () => {
+    panel.classList.toggle('fullscreen');
+  });
+}
+
 async function loadPdfInline(invoiceId) {
   const panel = document.getElementById('pdf-panel');
   if (!panel) return;
@@ -1472,6 +1661,9 @@ async function loadPdfInline(invoiceId) {
     if (iframe) iframe.src = url;
     if (link) link.href = url;
     panel.style.display = 'block';
+    _pdfViewerState = { zoom: 1, rotate: 0 };
+    _applyPdfTransform();
+    _setupPdfToolbar();
   } catch {}
 }
 
