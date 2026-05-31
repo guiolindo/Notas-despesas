@@ -215,6 +215,60 @@ def _validate_user_structure(
         )
 
 
+def _notify_directors_peer(
+    db: Session,
+    actor: User,
+    action_label: str,
+    target: User,
+    exclude_target: bool = True,
+) -> int:
+    """Dispara emails async para todos os diretores ativos avisando que um
+    movimento sensivel aconteceu no perfil de diretor. Se nao houver diretor
+    ativo (ex: primeiro cadastro), avisa todos os admins ativos como fallback.
+
+    Retorna a quantidade de avisos enviados.
+    """
+    from datetime import datetime, timedelta, timezone
+    from app.services import email_service
+
+    # Recipientes: diretores ativos (exceto o proprio target em encerramento)
+    q = db.query(User).filter(
+        User.role == UserRole.DIRECTOR,
+        User.is_active.is_(True),
+    )
+    if exclude_target and target:
+        q = q.filter(User.id != target.id)
+    recipients = q.all()
+
+    if not recipients:
+        # Fallback: avisa admins (primeiro diretor sendo cadastrado, p.ex)
+        recipients = (
+            db.query(User)
+            .filter(User.role == UserRole.ADMIN, User.is_active.is_(True), User.id != actor.id)
+            .all()
+        )
+
+    if not recipients:
+        return 0
+
+    now_br = (datetime.now(timezone.utc) - timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
+    count = 0
+    for r in recipients:
+        if not r.email or r.email.lower().endswith("@desligado.local"):
+            continue
+        subject, html, text = email_service.template_director_peer_notify(
+            recipient_name=r.name or "",
+            actor_name=actor.name or actor.email,
+            action_label=action_label,
+            target_name=target.name or "(sem nome)",
+            target_email=target.email or "(sem email)",
+            occurred_at_br=now_br,
+        )
+        email_service.send_email_async(r.email, subject, html, text)
+        count += 1
+    return count
+
+
 def _active_admins_except(db: Session, user_id: str) -> int:
     return (
         db.query(User)
@@ -277,6 +331,11 @@ def create_user(
     )
     db.commit()
     db.refresh(new_user)
+    # Notificacao peer: criacao de diretor avisa todos os outros diretores
+    if new_user.role == UserRole.DIRECTOR:
+        _notify_directors_peer(
+            db, current_user, "Criacao de novo diretor", new_user, exclude_target=True,
+        )
     return {"id": new_user.id, "message": "Usuario criado com sucesso"}
 
 
@@ -340,6 +399,10 @@ def update_user(
             detail="Nao e possivel remover o ultimo ADMIN do sistema",
         )
 
+    # Snapshot pre-update para detectar mudancas que disparam notificacao peer
+    pre_role = user.role
+    pre_active = user.is_active
+
     # Calcula estado final ANTES de aplicar para validar consistencia
     final_role = body.role if body.role is not None else user.role
     final_dept_id = (
@@ -401,6 +464,19 @@ def update_user(
         f"Editou campos: {', '.join(changes) or 'nenhum'} do usuario {user.email}",
     )
     db.commit()
+
+    # Notificacoes peer (apos commit pra refletir estado real)
+    became_director = pre_role != UserRole.DIRECTOR and user.role == UserRole.DIRECTOR
+    deactivated_director = pre_role == UserRole.DIRECTOR and pre_active and not user.is_active
+    if became_director:
+        _notify_directors_peer(
+            db, current_user, "Promocao para diretor", user, exclude_target=True,
+        )
+    elif deactivated_director:
+        # Avisa outros diretores E o proprio target — ele precisa saber.
+        _notify_directors_peer(
+            db, current_user, "Desativacao de diretor", user, exclude_target=False,
+        )
     return {"message": "Usuario atualizado com sucesso"}
 
 
@@ -730,6 +806,12 @@ def anonymize_terminated_user(
             detail="Contas de administrador nao podem ser anonimizadas por este canal.",
         )
 
+    # Snapshot pre-mudanca pra notificacao peer com nome real
+    was_director = user.role == UserRole.DIRECTOR
+    target_snapshot = User(
+        id=user.id, name=user.name, email=user.email, role=user.role,
+    )  # nao adicionado ao db — so usado como veiculo de dados
+
     # Pseudonimizacao irreversivel dos campos identificaveis
     suffix = str(uuid.uuid4())[:8]
     user.name = f"Colaborador Desligado {suffix}"
@@ -746,6 +828,14 @@ def anonymize_terminated_user(
         f"Pseudonimizacao LGPD aplicada ao usuario {user_id} (registro preservado para auditoria fiscal)",
     )
     db.commit()
+
+    # Notificacao peer: encerramento de conta de diretor avisa todos os outros
+    if was_director:
+        _notify_directors_peer(
+            db, current_user, "Encerramento de conta de diretor", target_snapshot,
+            exclude_target=True,
+        )
+
     return {
         "status": "ok",
         "message": "Pseudonimizacao concluida. Dados de identificacao civil substituidos. "

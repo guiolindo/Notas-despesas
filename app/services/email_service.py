@@ -244,6 +244,45 @@ def template_account_blocked(
     return subject, html, text
 
 
+def template_director_peer_notify(
+    recipient_name: str,
+    actor_name: str,
+    action_label: str,
+    target_name: str,
+    target_email: str,
+    occurred_at_br: str,
+) -> tuple[str, str, str]:
+    """Aviso a outros diretores quando um movimento sensivel acontece no
+    perfil de diretor (criacao, encerramento, mudanca de role).
+
+    Objetivo: visibilidade peer — se um admin cria um diretor 'fake' ou
+    encerra um diretor sem motivo, os outros diretores ficam sabendo em
+    minutos e podem questionar.
+    """
+    subject = f"Aviso de seguranca - {action_label}: {target_name}"
+    html = _wrap(f"""
+      <h1>Ola, {recipient_name}</h1>
+      <p>Voce esta recebendo este aviso como diretor ativo no sistema.</p>
+      <div class="meta">
+        <p><strong>Acao:</strong> {action_label}</p>
+        <p><strong>Diretor afetado:</strong> {target_name} ({target_email})</p>
+        <p><strong>Executado por:</strong> {actor_name}</p>
+        <p><strong>Quando:</strong> {occurred_at_br}</p>
+      </div>
+      <p>Se voce <strong>nao</strong> autorizou ou nao foi informado sobre esta
+         acao, conteste imediatamente com a diretoria. Se foi voce ou esta
+         tudo certo, ignore este email.</p>
+    """)
+    text = (
+        f"Aviso de seguranca: {action_label}\n"
+        f"Diretor afetado: {target_name} ({target_email})\n"
+        f"Executado por: {actor_name}\n"
+        f"Quando: {occurred_at_br}\n"
+        f"Conteste se nao foi autorizado."
+    )
+    return subject, html, text
+
+
 def template_password_reset_code(
     user_name: str,
     code: str,
