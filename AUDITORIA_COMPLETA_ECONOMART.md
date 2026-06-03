@@ -1,9 +1,64 @@
 # Auditoria completa Economart
 
-Status: relatorio consolidado final
-Data: 2026-06-02
+Status: relatorio consolidado final — em fase de implementacao
+Data: 2026-06-02 (auditoria) / 2026-06-03 (em implementacao)
 Autores: Claude_Opus + ChatGPT_OpenAI_Codex (auditoria cruzada por chat global)
 Escopo: FastAPI 0.136+, Jinja2, JavaScript vanilla, Postgres/Railway, Cloudflare R2, seguranca, UX, arquitetura, LGPD, operacao, testes e manutencao.
+
+---
+
+## Estado de implementacao (atualizado 2026-06-03)
+
+Mapeamento detalhado em `docs/CHANGELOG-audit-2026-06.md` com risco e como testar por commit.
+
+### P0 — IMPLEMENTADO ✓
+
+| ID | Achado | Commit |
+|----|--------|--------|
+| P0-1 | Refresh token nao valida `password_changed_at` | `302df81` |
+| P0-2 | `GET /print` marca PAGO -> separar em POST `/mark-paid` | `302df81` |
+| P0-3 | Admin default hardcoded | pendente (decisao: manter com warning no README) |
+| P0-4 | Sem backup off-site automatizado | pendente (decisao de ops/infra) |
+
+### P1 — IMPLEMENTADO em grande parte ✓
+
+| ID | Achado | Commit | Por |
+|----|--------|--------|-----|
+| P1-1 | Access token no `localStorage` | `759e64f` | Claude |
+| P1-2 | Fail-fast secrets em PROD | `cc7f610` | Claude |
+| P1-3 | `invoice_number` sem UNIQUE | `154d642` | Claude |
+| P1-4 | Migrations manuais sem rollback | pendente (decisao adiada — Alembic e overkill agora) |
+| P1-5 | Rate limit so login, sem proxy-aware | `56deb87` | Codex |
+| P1-6 | `/verify-full` 403 vs 404 vazamento | `302df81` | Claude |
+| P1-7 | Sem request_id / `/health` raso | `154d642` | Claude |
+| P1-8 | `must_change_password` so frontend | `cc7f610` | Claude |
+| P1-9 | Manager unavailable ignorado | `cc7f610` | Claude |
+
+### P2 — IMPLEMENTADO em parte ✓
+
+| ID | Achado | Commit | Por |
+|----|--------|--------|-----|
+| P2-1 | `app.js` monolitico | em andamento — `c6e67aa` extraiu password handlers | Codex |
+| P2-2/3/4/14/15 | A11y batch | `35f9600` | Codex |
+| P2-5 | selectinload light vs full | `154d642` | Claude |
+| P2-7 | CSS split | `c5cc73b` | Codex |
+| P2-8 | Email retry queue | `77c07e8` | Claude |
+| P2-9 | FK ON DELETE | `154d642` | Claude |
+| P2-13 | `GET /comments` sem paginacao | `154d642` | Claude |
+
+Itens restantes (P2-10/11/12, P2-22/23/24 etc.) sao documentos/runbook/postmortem ja parcialmente cobertos por `907ab2f` e `6287769`. Para o restante: ver `docs/CHANGELOG-audit-2026-06.md`.
+
+### Itens P3 e demais
+
+Ficam como roadmap para fases futuras. Nenhum bloqueador.
+
+### Falsos positivos confirmados
+
+- `auth.py:428 user.password_changed_at` — ja corrigido antes da auditoria, achado partia de cache velho.
+- `print_routes /verify decorator em _mask_email` — ja corrigido.
+- `iniciar.bat` — nao existe no repo.
+
+---
 
 Sistema auditado: Economart Notas Fiscais — aplicacao interna de aprovacao de notas fiscais para o atacadista Economart. Fluxo: criador (EMPLOYEE) → gestor (MANAGER) → diretor (DIRECTOR) → financeiro (FINANCE) → arquivamento. Perfis especiais: ADMIN (gestao do sistema) e CONTAS_A_PAGAR (read-only com scanner QR).
 
