@@ -4,8 +4,13 @@
   'use strict';
 
   function hasSession() {
+    // P1-1: access token nao vive mais em localStorage. Usa o hint de
+    // sessao (sessionStorage), que e o sinal "ja logou nesta aba" sem
+    // expor segredo. Cobre 95% dos casos; quem chega no 404 sem app.js
+    // carregado cai como anonimo, comportamento aceitavel.
     try {
-      return Boolean(localStorage.getItem('access_token'));
+      if (window.Auth) return Boolean(window.Auth.getToken() || window.Auth.hasSessionHint());
+      return sessionStorage.getItem('auth_has_session') === '1';
     } catch (e) {
       return false;
     }

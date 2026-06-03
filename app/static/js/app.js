@@ -73,31 +73,122 @@
   else window.addEventListener('load', finish);
 })();
 
-const Auth = {
-  getToken: () => localStorage.getItem('access_token'),
-  setToken: (token) => localStorage.setItem('access_token', token),
-  removeToken: () => localStorage.removeItem('access_token'),
-  getUser: () => JSON.parse(localStorage.getItem('user') || 'null'),
-  setUser: (user) => localStorage.setItem('user', JSON.stringify(user)),
-  clear: () => {
-    Auth.removeToken();
-    localStorage.removeItem('user');
+// ─── Auth helper ───────────────────────────────────────────────────────────
+// P1-1 da auditoria: access token sai do localStorage. Antes, XSS bem
+// sucedido lia `localStorage.access_token` e assumia a sessao. Agora o
+// token vive em memoria (variavel modulo) — um XSS sobreviveria so
+// enquanto a aba estiver aberta, e tampouco da pra exfiltrar via DOM
+// fora deste contexto.
+//
+// Reload da pagina (F5) PRECISA continuar funcionando: o cookie
+// HttpOnly de refresh ja resolve isso — chamamos /auth/refresh assim
+// que o app carrega sem token em memoria. apiFetch detecta 401 e dispara
+// _ensureToken() automaticamente.
+//
+// `user` (objeto basico de identidade pra UI) continua no localStorage —
+// nao contem dado sensivel (id, nome, role, dept), serve so pra renderizar
+// menus antes do /auth/me chegar. Pode ser sobrescrito a qualquer momento.
+const Auth = (() => {
+  let _accessToken = null;        // memoria — zera ao recarregar
+  let _refreshPromise = null;      // dedup paralelo: 5 fetches concorrentes -> 1 /refresh
+
+  // Reaproveita o sessionStorage SO como sinalizacao "esta logado", pra
+  // outras tabs/recarregamentos saberem se vale a pena chamar /refresh
+  // antes do primeiro fetch falhar. Nao guardamos token aqui.
+  const SESSION_KEY = 'auth_has_session';
+  const markSession = () => { try { sessionStorage.setItem(SESSION_KEY, '1'); } catch (e) {} };
+  const unmarkSession = () => { try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {} };
+  const hasSessionHint = () => {
+    try { return sessionStorage.getItem(SESSION_KEY) === '1'; } catch (e) { return false; }
+  };
+
+  async function _doRefresh() {
+    // Cookie HttpOnly de refresh viaja sozinho. credentials:include necessario
+    // pra que o cookie seja enviado mesmo em fetch absoluto.
+    const resp = await fetch('/auth/refresh', { method: 'POST', credentials: 'include' });
+    if (!resp.ok) {
+      _accessToken = null;
+      unmarkSession();
+      return null;
+    }
+    const data = await resp.json();
+    _accessToken = data.access_token || null;
+    if (_accessToken) markSession();
+    return _accessToken;
   }
-};
+
+  /** Garante um access token em memoria. Devolve null se refresh falhou. */
+  async function ensureToken() {
+    if (_accessToken) return _accessToken;
+    if (!_refreshPromise) {
+      _refreshPromise = _doRefresh().finally(() => { _refreshPromise = null; });
+    }
+    return _refreshPromise;
+  }
+
+  return {
+    /** Token cru em memoria. Use ensureToken() pra carregar via /refresh quando vazio. */
+    getToken: () => _accessToken,
+    setToken: (token) => {
+      _accessToken = token || null;
+      if (_accessToken) markSession(); else unmarkSession();
+    },
+    removeToken: () => { _accessToken = null; unmarkSession(); },
+    ensureToken,
+    /** Hint de sessao (sem o segredo) — usado por boot scripts pra decidir
+     *  se vale chamar /refresh antes do primeiro fetch falhar. */
+    hasSessionHint,
+
+    getUser: () => {
+      try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch (e) { return null; }
+    },
+    setUser: (user) => {
+      try { localStorage.setItem('user', JSON.stringify(user)); } catch (e) {}
+    },
+    clear: () => {
+      _accessToken = null;
+      unmarkSession();
+      try { localStorage.removeItem('user'); } catch (e) {}
+    },
+  };
+})();
+
+// Exposto pra scripts secundarios (verify.js, scanner.js etc.) consumirem
+// o mesmo helper sem duplicar logica e sem mexer em localStorage.
+if (typeof window !== 'undefined') window.Auth = Auth;
 
 async function apiFetch(url, options = {}) {
   const headers = new Headers(options.headers || {});
-  const token = Auth.getToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
   if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(url, { ...options, headers, credentials: 'include' });
+  // P1-1: token vive em memoria. Se ainda nao temos (reload, abrir outra
+  // aba), tenta hidratar via cookie HttpOnly de refresh antes do fetch.
+  // Sem token e sem hint de sessao, manda sem Authorization — endpoint
+  // que exige auth vai responder 401 e cairemos no fluxo abaixo.
+  let token = Auth.getToken();
+  if (!token && Auth.hasSessionHint()) {
+    token = await Auth.ensureToken();
+  }
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  let response = await fetch(url, { ...options, headers, credentials: 'include' });
+
+  // 401: tenta UMA renovacao via cookie de refresh antes de mandar pro
+  // /login. Cobre access expirado naturalmente (1h) sem virar tela branca
+  // pro usuario. Se /refresh tambem falhar, ai sim logout.
   if (response.status === 401) {
-    Auth.clear();
-    window.location.href = '/login';
-    throw new Error('Sessao expirada');
+    const newToken = await Auth.ensureToken();
+    if (newToken && newToken !== token) {
+      headers.set('Authorization', `Bearer ${newToken}`);
+      response = await fetch(url, { ...options, headers, credentials: 'include' });
+    }
+    if (response.status === 401) {
+      Auth.clear();
+      window.location.href = '/login';
+      throw new Error('Sessao expirada');
+    }
   }
   // 428 Precondition Required = backend exige troca de senha antes da acao.
   // P1-8 da auditoria: a regra deixou de ser apenas redirect do frontend.
@@ -3287,9 +3378,15 @@ document.addEventListener('click', (event) => {
 
 // ── DOMContentLoaded dispatch ────────────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const page = document.body.dataset.page;
   if (page === 'login') {
+    // Token vive em memoria desde P1-1; reload chega sem token. Se temos
+    // hint de sessao, tenta renovar antes — usuario que ja estava logado
+    // em outra aba nao deve ver o /login.
+    if (!Auth.getToken() && Auth.hasSessionHint()) {
+      try { await Auth.ensureToken(); } catch (e) {}
+    }
     if (Auth.getToken()) {
       // Se chegou aqui com ?next=, manda direto pra la (caso usuario clique
       // 'Entrar' no /verify mas ja tem sessao ativa em outra aba).
@@ -3298,6 +3395,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('login-form')?.addEventListener('submit', handleLogin);
     document.getElementById('toggle-password')?.addEventListener('click', togglePasswordVisibility);
     return;
+  }
+  // Paginas autenticadas: hidrata token em memoria via cookie de refresh
+  // antes do primeiro fetch. Sem isso, todo F5 dispararia 401 -> retry,
+  // gastando uma rodada extra. Falha aqui nao redireciona — apiFetch ja
+  // cuida do fluxo de 401 se ainda nao deu pra refresh.
+  if (!Auth.getToken() && Auth.hasSessionHint()) {
+    try { await Auth.ensureToken(); } catch (e) {}
   }
   if (page === 'change-password') {
     initChangePasswordPage();

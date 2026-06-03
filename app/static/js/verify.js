@@ -13,8 +13,12 @@
   var INVOICE_ID = root.getAttribute('data-invoice-id');
   if (!INVOICE_ID) return;
 
-  var token = null;
-  try { token = localStorage.getItem('access_token'); } catch (e) {}
+  // P1-1 auditoria: pegamos token do window.Auth (memoria, definido pelo
+  // app.js) em vez de localStorage. Quem chega na pagina /verify sem o
+  // app.js carregado (link publico, aba isolada) cai como anonimo, o que
+  // e o comportamento esperado — a pagina ja serve resumo publico
+  // mascarado por padrao.
+  var Auth = (typeof window !== 'undefined' && window.Auth) ? window.Auth : null;
 
   var banner = {
     pub: document.getElementById('verify-banner-public'),
@@ -30,33 +34,39 @@
   if (switchBtn) {
     switchBtn.addEventListener('click', function (e) {
       e.preventDefault();
-      try {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('user');
-      } catch (err) {}
+      if (Auth) Auth.clear();
       window.location.href = '/login?next=/verify/' + encodeURIComponent(INVOICE_ID);
     });
   }
 
-  // Sem token: visitante / cliente / auditor externo. Mostra resumo publico.
-  if (!token) {
-    show(banner.pub);
-    return;
+  function obtainToken() {
+    if (!Auth) return Promise.resolve(null);
+    if (Auth.getToken()) return Promise.resolve(Auth.getToken());
+    // hint de sessao (sessionStorage) indica que existe cookie de refresh
+    // valido — vale gastar 1 /refresh antes de assumir anonimo.
+    if (Auth.hasSessionHint()) return Auth.ensureToken();
+    return Promise.resolve(null);
   }
 
-  // Com token: tenta abrir os dados completos.
-  show(banner.load);
-
-  fetch('/api/invoices/' + encodeURIComponent(INVOICE_ID) + '/verify-full', {
-    headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
-  })
+  obtainToken().then(function (token) {
+    if (!token) {
+      show(banner.pub);
+      return;
+    }
+    show(banner.load);
+    return fetch('/api/invoices/' + encodeURIComponent(INVOICE_ID) + '/verify-full', {
+      headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' },
+      credentials: 'include'
+    })
     .then(function (r) {
       if (r.status === 401) {
-        try { localStorage.removeItem('access_token'); } catch (e) {}
+        if (Auth) Auth.clear();
         hideAll(); show(banner.pub);
         return null;
       }
-      if (r.status === 403) {
+      // 404 cobre ambos "nao existe" e "sem permissao" desde P1-6.
+      // Mantemos a UI publica nesses casos — sem revelar nada extra.
+      if (r.status === 403 || r.status === 404) {
         hideAll(); show(banner.denied);
         return null;
       }
@@ -96,4 +106,5 @@
     .catch(function () {
       hideAll(); show(banner.pub);
     });
+  });
 })();
