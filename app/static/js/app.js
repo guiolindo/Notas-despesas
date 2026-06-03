@@ -176,6 +176,19 @@ const Auth = (() => {
 // o mesmo helper sem duplicar logica e sem mexer em localStorage.
 if (typeof window !== 'undefined') window.Auth = Auth;
 
+// Pre-aquece /auth/refresh assim que o script carrega — antes do DOM ficar
+// pronto. Em redes/instancias com cold start (Railway free tier), o /refresh
+// pode demorar 3-8s. Disparando aqui no topo do parsing, ate o
+// DOMContentLoaded disparar e o usuario clicar em algo, o token tipicamente
+// ja chegou. Sem isso, o primeiro click acionava ensureToken sequencialmente
+// e o usuario via delay visivel ("ficou parado uns 10s"). Defesa: silencia
+// rejection — se falhar, apiFetch ainda tenta novamente em 401.
+try {
+  if (Auth.hasSessionHint && Auth.hasSessionHint()) {
+    Auth.ensureToken().catch(() => {});
+  }
+} catch (e) { /* ignora — pior caso cai no fluxo 401 */ }
+
 async function apiFetch(url, options = {}) {
   const headers = new Headers(options.headers || {});
   if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
