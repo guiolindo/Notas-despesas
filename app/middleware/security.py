@@ -1,11 +1,102 @@
+import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from app.config import settings
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 
-login_attempts_by_ip: dict[str, list[datetime]] = {}
+rate_limit_buckets: dict[str, list[datetime]] = {}
+
+
+@dataclass(frozen=True)
+class RateLimitPolicy:
+    name: str
+    methods: frozenset[str]
+    pattern: re.Pattern[str]
+    max_requests: int
+    window_seconds: int
+
+
+RATE_LIMIT_POLICIES: tuple[RateLimitPolicy, ...] = (
+    RateLimitPolicy(
+        name="auth-login",
+        methods=frozenset({"POST"}),
+        pattern=re.compile(r"^/auth/login$"),
+        max_requests=10,
+        window_seconds=60,
+    ),
+    RateLimitPolicy(
+        name="auth-forgot-password",
+        methods=frozenset({"POST"}),
+        pattern=re.compile(r"^/auth/forgot-password$"),
+        max_requests=5,
+        window_seconds=600,
+    ),
+    RateLimitPolicy(
+        name="auth-reset-password",
+        methods=frozenset({"POST"}),
+        pattern=re.compile(r"^/auth/reset-password$"),
+        max_requests=8,
+        window_seconds=600,
+    ),
+    RateLimitPolicy(
+        name="lookup-cnpj",
+        methods=frozenset({"GET"}),
+        pattern=re.compile(r"^/api/invoices/lookup-cnpj/[^/]+$"),
+        max_requests=30,
+        window_seconds=60,
+    ),
+    RateLimitPolicy(
+        name="invoice-comments",
+        methods=frozenset({"GET", "POST"}),
+        pattern=re.compile(r"^/api/invoices/[^/]+/comments$"),
+        max_requests=30,
+        window_seconds=60,
+    ),
+)
+
+
+def _client_ip(request: Request) -> str:
+    """Identifica o cliente para rate limit.
+
+    Em producao atras de proxy (Railway/nginx/etc.), o socket costuma ser do
+    proxy. Nessa situacao usamos o primeiro IP de X-Forwarded-For, que e o
+    cliente original na convencao HTTP. Em dev/local, evita confiar em header
+    forjado por cliente direto.
+    """
+    if settings.ENVIRONMENT.upper() in {"PROD", "PRODUCTION"}:
+        forwarded_for = request.headers.get("x-forwarded-for", "")
+        first_hop = forwarded_for.split(",", 1)[0].strip()
+        if first_hop:
+            return first_hop[:64]
+    return (request.client.host if request.client else "unknown")[:64]
+
+
+def _matching_policy(request: Request) -> RateLimitPolicy | None:
+    method = request.method.upper()
+    path = request.url.path
+    for policy in RATE_LIMIT_POLICIES:
+        if method in policy.methods and policy.pattern.match(path):
+            return policy
+    return None
+
+
+def _sweep_expired(now: datetime) -> None:
+    """Remove buckets antigos para conter crescimento em ataque distribuido."""
+    if len(rate_limit_buckets) < 1000:
+        return
+    oldest_window = now - timedelta(
+        seconds=max(policy.window_seconds for policy in RATE_LIMIT_POLICIES)
+    )
+    expired = [
+        key for key, timestamps in rate_limit_buckets.items()
+        if not any(timestamp > oldest_window for timestamp in timestamps)
+    ]
+    for key in expired:
+        del rate_limit_buckets[key]
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -42,33 +133,30 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.url.path == "/auth/login" and request.method.upper() == "POST":
+        policy = _matching_policy(request)
+        if policy:
             now = datetime.now(timezone.utc)
-            window_start = now - timedelta(seconds=60)
-            ip = request.client.host if request.client else "unknown"
+            window_start = now - timedelta(seconds=policy.window_seconds)
+            ip = _client_ip(request)
+            bucket_key = f"{policy.name}:{ip}"
             timestamps = [
                 timestamp
-                for timestamp in login_attempts_by_ip.get(ip, [])
+                for timestamp in rate_limit_buckets.get(bucket_key, [])
                 if timestamp > window_start
             ]
-            if len(timestamps) >= 10:
-                login_attempts_by_ip[ip] = timestamps
+            if len(timestamps) >= policy.max_requests:
+                rate_limit_buckets[bucket_key] = timestamps
                 return JSONResponse(
                     status_code=429,
-                    content={"detail": "Muitas tentativas. Aguarde 1 minuto."},
+                    content={"detail": "Muitas tentativas. Aguarde antes de tentar novamente."},
+                    headers={
+                        "Retry-After": str(policy.window_seconds),
+                        "X-RateLimit-Limit": str(policy.max_requests),
+                        "X-RateLimit-Window": str(policy.window_seconds),
+                    },
                 )
             timestamps.append(now)
-            login_attempts_by_ip[ip] = timestamps
-
-            # Evita memory leak: a cada 100 requests faz sweep removendo
-            # IPs cujas janelas expiraram. Sem isso, atacante distribuido
-            # com IPs diferentes inflaria o dict indefinidamente.
-            if len(login_attempts_by_ip) > 1000 and len(login_attempts_by_ip) % 100 == 0:
-                expired = [
-                    k for k, v in login_attempts_by_ip.items()
-                    if not any(t > window_start for t in v)
-                ]
-                for k in expired:
-                    del login_attempts_by_ip[k]
+            rate_limit_buckets[bucket_key] = timestamps
+            _sweep_expired(now)
 
         return await call_next(request)
