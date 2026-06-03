@@ -126,6 +126,24 @@ const Auth = (() => {
     return _refreshPromise;
   }
 
+  // Migracao defensiva: usuario que estava logado ANTES do P1-1 (token
+  // ainda em localStorage) precisa entrar no fluxo novo. Limpa o
+  // localStorage.access_token antigo (se existir) e marca o hint pra que
+  // o proximo apiFetch hidrate o token via /refresh.
+  // Tambem: se ja tem localStorage.user (sessao em curso), marca o hint —
+  // F5 sem hint deixa a UI batendo em 401 ate o fallback ressuscitar,
+  // causando flicker e suspeita de "botoes nao clicam".
+  try {
+    const legacyToken = localStorage.getItem('access_token');
+    if (legacyToken !== null) {
+      localStorage.removeItem('access_token');
+      markSession();
+    }
+    if (localStorage.getItem('user')) {
+      markSession();
+    }
+  } catch (e) { /* storage indisponivel — ignora */ }
+
   return {
     /** Token cru em memoria. Use ensureToken() pra carregar via /refresh quando vazio. */
     getToken: () => _accessToken,
@@ -144,6 +162,7 @@ const Auth = (() => {
     },
     setUser: (user) => {
       try { localStorage.setItem('user', JSON.stringify(user)); } catch (e) {}
+      markSession();
     },
     clear: () => {
       _accessToken = null;
@@ -165,10 +184,15 @@ async function apiFetch(url, options = {}) {
 
   // P1-1: token vive em memoria. Se ainda nao temos (reload, abrir outra
   // aba), tenta hidratar via cookie HttpOnly de refresh antes do fetch.
-  // Sem token e sem hint de sessao, manda sem Authorization — endpoint
-  // que exige auth vai responder 401 e cairemos no fluxo abaixo.
+  //
+  // Defesa-em-profundidade: tentamos ensureToken SEMPRE quando nao temos
+  // token, sem depender do hint. O hint acelera o feedback (evita um round
+  // de 401 -> retry), mas em sessoes antigas (pre-P1-1) ele pode nao
+  // existir. O custo extra de chamar /refresh quando ja seriamos anonimos
+  // e baixo: cookie HttpOnly ausente -> backend responde rapido com 401
+  // e ensureToken devolve null sem efeito colateral.
   let token = Auth.getToken();
-  if (!token && Auth.hasSessionHint()) {
+  if (!token) {
     token = await Auth.ensureToken();
   }
   if (token) headers.set('Authorization', `Bearer ${token}`);
