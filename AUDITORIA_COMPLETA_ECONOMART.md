@@ -38,13 +38,22 @@ Mapeamento detalhado em `docs/CHANGELOG-audit-2026-06.md` com risco e como testa
 
 | ID | Achado | Commit | Por |
 |----|--------|--------|-----|
-| P2-1 | `app.js` monolitico | em andamento — `c6e67aa` extraiu password handlers | Codex |
+| P2-1 | `app.js` monolitico | **REVERTED** — splits `2b3c105` + `c6e67aa` revertidos em `d6f0e33` + `d86308b` apos regressao em producao | Codex |
 | P2-2/3/4/14/15 | A11y batch | `35f9600` | Codex |
 | P2-5 | selectinload light vs full | `154d642` | Claude |
 | P2-7 | CSS split | `c5cc73b` | Codex |
 | P2-8 | Email retry queue | `77c07e8` | Claude |
 | P2-9 | FK ON DELETE | `154d642` | Claude |
 | P2-13 | `GET /comments` sem paginacao | `154d642` | Claude |
+| P2-12 | Smoke test pytest | `863007d` + `0ef8e45` (21 testes) | Claude |
+
+### Bugs descobertos pelos testes e corrigidos
+
+| Bug | Commit | Risco evitado |
+|-----|--------|---------------|
+| `/auth/refresh` nao limpava cookie em falhas | `863007d` | Cookie comprometido sobrevivia em browser do atacante |
+| `token_is_pre_password_change` com falso positivo | `863007d` | Logout em loop apos troca de senha imediata |
+| Sessao pre-P1-1 sem hint | `6481bee` | UI parecia "morta" pra usuarios ja logados antes do deploy |
 
 Itens restantes (P2-10/11/12, P2-22/23/24 etc.) sao documentos/runbook/postmortem ja parcialmente cobertos por `907ab2f` e `6287769`. Para o restante: ver `docs/CHANGELOG-audit-2026-06.md`.
 
