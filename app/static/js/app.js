@@ -125,9 +125,40 @@ async function apiFetch(url, options = {}) {
       const field = Array.isArray(first?.loc) ? first.loc[first.loc.length - 1] : '';
       throw new Error(field ? `${field}: ${first.msg}` : (first?.msg || 'Dados invalidos'));
     }
+    // 409 com payload estruturado (ex: DUPLICATE_INVOICE_NUMBER do P1-3).
+    // Repassa o objeto inteiro num campo .data pra quem chama poder oferecer
+    // 'enviar mesmo assim' sem reparsear a mensagem.
+    if (response.status === 409 && data?.detail && typeof data.detail === 'object') {
+      const err = new Error(data.detail.message || 'Conflito de duplicidade');
+      err.code = data.detail.code;
+      err.data = data.detail;
+      err.status = 409;
+      throw err;
+    }
     throw new Error(data?.detail || (typeof data === 'string' ? data : null) || 'Erro na requisicao');
   }
   return data;
+}
+
+/** Submete uma nota com tratamento do soft-check de duplicidade (P1-3).
+ *  Tenta uma vez; se backend devolver DUPLICATE_INVOICE_NUMBER, pergunta ao
+ *  usuario se quer enviar mesmo assim e reenvia com confirm_duplicate=true.
+ *  Devolve a Invoice atualizada ou null se o usuario cancelou. */
+async function submitInvoiceWithDuplicateCheck(invoiceId, directorId = null) {
+  const base = `/api/invoices/${invoiceId}/submit`;
+  const query = new URLSearchParams();
+  if (directorId) query.set('director_id', directorId);
+  try {
+    return await apiFetch(`${base}?${query.toString()}`, { method: 'POST' });
+  } catch (err) {
+    if (err.code !== 'DUPLICATE_INVOICE_NUMBER') throw err;
+    const ok = await confirmAction(
+      `${err.data?.message || 'Nota duplicada detectada.'}\n\nDeseja enviar mesmo assim?`,
+    );
+    if (!ok) return null;
+    query.set('confirm_duplicate', 'true');
+    return apiFetch(`${base}?${query.toString()}`, { method: 'POST' });
+  }
 }
 
 function showToast(message, type = 'info') {
@@ -1406,12 +1437,20 @@ function renderComments(items) {
   }).join('');
 }
 
+// Backend agora pagina: GET /comments retorna { items, page, per_page, total, has_next }.
+// Normalizamos pra { items, total } pra UI nao se importar com a paginacao
+// agora (a carga inicial pega ate per_page=50 — suficiente pra maioria).
+function _normalizeCommentsResponse(payload) {
+  if (Array.isArray(payload)) return { items: payload, total: payload.length };
+  return { items: payload?.items ?? [], total: payload?.total ?? 0 };
+}
+
 async function setupComments(invoiceId) {
   const thread = document.getElementById('comments-thread');
   if (!thread) return;
   try {
-    const items = await apiFetch(`/api/invoices/${invoiceId}/comments`);
-    renderComments(items);
+    const data = _normalizeCommentsResponse(await apiFetch(`/api/invoices/${invoiceId}/comments`));
+    renderComments(data.items);
   } catch (e) {
     thread.innerHTML = `<p class="text-muted text-xs">Erro ao carregar comentarios: ${escapeHtml(e.message || '')}</p>`;
   }
@@ -1436,8 +1475,8 @@ async function setupComments(invoiceId) {
       });
       input.value = '';
       // Recarrega thread
-      const items = await apiFetch(`/api/invoices/${invoiceId}/comments`);
-      renderComments(items);
+      const data = _normalizeCommentsResponse(await apiFetch(`/api/invoices/${invoiceId}/comments`));
+      renderComments(data.items);
     } catch (err) {
       showToast(err.message || 'Erro ao comentar.', 'error');
     } finally {
@@ -1556,14 +1595,16 @@ async function renderDetailActions(invoice) {
     button.addEventListener('click', async () => {
       try {
         if (button.dataset.action === 'submit') {
-          const updated = await apiFetch(`/api/invoices/${invoice.id}/submit`, { method: 'POST' });
+          const updated = await submitInvoiceWithDuplicateCheck(invoice.id);
+          if (!updated) return;
           showToast('Nota enviada para o gestor.', 'success');
           renderInvoiceDetail(updated);
           if (updated.has_attachment) loadPdfInline(updated.id);
         } else if (button.dataset.action === 'submit-direct') {
           const dirId = document.getElementById('detail-chosen-director')?.value;
           if (!dirId) { showToast('Selecione um diretor.', 'error'); return; }
-          const updated = await apiFetch(`/api/invoices/${invoice.id}/submit?director_id=${encodeURIComponent(dirId)}`, { method: 'POST' });
+          const updated = await submitInvoiceWithDuplicateCheck(invoice.id, dirId);
+          if (!updated) return;
           showToast('Nota enviada para o diretor.', 'success');
           renderInvoiceDetail(updated);
           if (updated.has_attachment) loadPdfInline(updated.id);
@@ -2855,13 +2896,15 @@ async function _renderDrawerActions(invoice, user) {
     btn.addEventListener('click', async () => {
       try {
         if (btn.dataset.action === 'submit') {
-          await apiFetch(`/api/invoices/${invoice.id}/submit`, { method: 'POST' });
+          const updated = await submitInvoiceWithDuplicateCheck(invoice.id);
+          if (!updated) return;
           showToast('Nota enviada para o gestor.', 'success');
           _refreshAfterAction();
         } else if (btn.dataset.action === 'submit-direct') {
           const dirId = document.getElementById('drawer-dir-chosen')?.value;
           if (!dirId) { showToast('Selecione um diretor.', 'error'); return; }
-          await apiFetch(`/api/invoices/${invoice.id}/submit?director_id=${encodeURIComponent(dirId)}`, { method: 'POST' });
+          const updated = await submitInvoiceWithDuplicateCheck(invoice.id, dirId);
+          if (!updated) return;
           showToast('Nota enviada para o diretor.', 'success');
           _refreshAfterAction();
         } else if (btn.dataset.action === 'cancel') {

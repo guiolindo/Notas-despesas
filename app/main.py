@@ -12,7 +12,15 @@ from sqlalchemy import text
 from app import models
 from app.config import startup_security_failure
 from app.database import Base, engine
+from app.middleware.observability import (
+    RequestIdMiddleware,
+    install_request_id_logging,
+)
 from app.middleware.security import RateLimitMiddleware, SecurityHeadersMiddleware
+
+
+# Instala logger com request_id antes de qualquer log de startup — P1-7.
+install_request_id_logging()
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -43,9 +51,15 @@ if _startup_failure is not None:
 @app.middleware("http")
 async def _intercept_startup_failure(request: Request, call_next):
     """Quando o app subiu em PROD sem secrets criticos, intercepta TODAS as
-    requests e devolve a tela amigavel + 503. /static ainda funciona pra
-    nao quebrar a renderizacao da propria pagina."""
-    if _startup_failure is None or request.url.path.startswith("/static"):
+    requests e devolve a tela amigavel + 503. Excecoes: /static (a propria
+    pagina precisa carregar) e /health/live (orquestrador precisa saber que
+    o processo respira; readiness ja vai falhar pelos checks normais)."""
+    path = request.url.path
+    if (
+        _startup_failure is None
+        or path.startswith("/static")
+        or path == "/health/live"
+    ):
         return await call_next(request)
     # API recebe JSON com pista pra ops; navegacao recebe HTML.
     if request.url.path.startswith(("/api/", "/auth/")):
@@ -250,6 +264,9 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RateLimitMiddleware)
+# RequestIdMiddleware vem por ultimo (= executa por primeiro), pra que o id
+# ja esteja disponivel quando os outros middlewares logarem.
+app.add_middleware(RequestIdMiddleware)
 
 # CORS — em PROD restringe ao dominio publico; em DEV aceita qualquer origem
 # para facilitar testes locais (Vite, ngrok, etc.)
@@ -290,7 +307,92 @@ app.include_router(pending_actions.router, tags=["Acoes Pendentes"])
 
 @app.get("/health")
 def health():
+    """Alias historico — equivalente a /health/live. Mantido pra orquestradores
+    que ja apontam pra /health."""
     return {"status": "ok"}
+
+
+@app.get("/health/live")
+def health_live():
+    """Liveness: processo respondendo. Nao toca DB nem R2 — orquestrador usa
+    isso pra decidir 'reiniciar pod ou nao'. Falha aqui = matar o processo."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+def health_ready():
+    """Readiness: app pronto pra receber trafego.
+
+    Checa DB com um SELECT 1 com timeout curto. Falha aqui faz o orquestrador
+    tirar o pod do round-robin SEM matar — quando o DB volta, o app volta
+    automaticamente. Cobre P1-7 da auditoria (antes /health era so um echo).
+    """
+    from app.database import SessionLocal
+    db_ok = False
+    db_error: str | None = None
+    try:
+        with SessionLocal() as session:
+            session.execute(text("SELECT 1"))
+            db_ok = True
+    except Exception as exc:  # noqa: BLE001
+        db_error = str(exc)[:200]
+    status_code = 200 if db_ok else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ready" if db_ok else "not_ready",
+            "checks": {"db": {"ok": db_ok, "error": db_error}},
+        },
+    )
+
+
+@app.get("/health/dependencies")
+def health_dependencies():
+    """Best-effort: status detalhado de dependencias externas (DB, R2, email).
+
+    Nao usar pra readiness — uma falha do R2 nao deveria tirar o app do
+    trafego se a maior parte das rotas continua respondendo. Util pra
+    dashboard de status manual.
+    """
+    from app.config import settings
+    from app.database import SessionLocal
+
+    checks: dict[str, dict] = {}
+
+    # DB
+    try:
+        with SessionLocal() as session:
+            session.execute(text("SELECT 1"))
+        checks["db"] = {"ok": True}
+    except Exception as exc:  # noqa: BLE001
+        checks["db"] = {"ok": False, "error": str(exc)[:200]}
+
+    # R2 (so reportar configuracao — nao fazer round-trip aqui pra evitar
+    # custo a cada call ao endpoint)
+    r2_configured = bool(
+        settings.R2_ACCESS_KEY_ID
+        and settings.R2_SECRET_ACCESS_KEY
+        and settings.R2_BUCKET_NAME
+    )
+    checks["r2"] = {
+        "ok": r2_configured,
+        "fallback_local": not r2_configured,
+    }
+
+    # Email provider
+    provider = (settings.EMAIL_PROVIDER or "").upper()
+    if provider == "SMTP":
+        checks["email"] = {"provider": "SMTP", "configured": bool(settings.SMTP_HOST)}
+    elif provider == "RESEND":
+        checks["email"] = {"provider": "RESEND", "configured": bool(settings.RESEND_API_KEY)}
+    else:
+        checks["email"] = {"provider": "DISABLED"}
+
+    all_ok = all(c.get("ok", True) for c in checks.values())
+    return {
+        "status": "ok" if all_ok else "degraded",
+        "checks": checks,
+    }
 
 
 # ─── 404 amigavel pra URLs digitadas erradas ─────────────────────────────

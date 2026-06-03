@@ -151,6 +151,8 @@ def _add_audit(
 
 
 def _invoice_options() -> tuple:
+    """Eager loading completo — usado em /api/invoices/{id} (detail) e por
+    listagens que precisam montar timeline + anexos no MESMO payload."""
     return (
         selectinload(Invoice.approval_history).selectinload(ApprovalHistory.user),
         selectinload(Invoice.created_by).selectinload(User.department_obj),
@@ -158,6 +160,22 @@ def _invoice_options() -> tuple:
         selectinload(Invoice.director),
         selectinload(Invoice.finance),
         selectinload(Invoice.attachments),
+    )
+
+
+def _invoice_options_light() -> tuple:
+    """Eager loading SO do essencial pra renderizar uma linha de listagem
+    (criador + responsaveis). approval_history e attachments ficam de fora
+    porque sao os caros — em /invoices/?per_page=100 disparam 2*100 sub-rows.
+
+    P2-5 da auditoria: separar list de detail. Quem precisa de detalhes da
+    nota chama GET /api/invoices/{id} depois.
+    """
+    return (
+        selectinload(Invoice.created_by).selectinload(User.department_obj),
+        selectinload(Invoice.manager),
+        selectinload(Invoice.director),
+        selectinload(Invoice.finance),
     )
 
 
@@ -205,8 +223,9 @@ def _can_view(invoice: Invoice, user: User) -> bool:
     return False
 
 
-def _query_visible_invoices(db: Session, user: User):
-    query = db.query(Invoice).options(*_invoice_options())
+def _query_visible_invoices(db: Session, user: User, *, light: bool = False):
+    options = _invoice_options_light() if light else _invoice_options()
+    query = db.query(Invoice).options(*options)
     if user.role == UserRole.ADMIN:
         return query
     if user.role == UserRole.EMPLOYEE:
@@ -401,6 +420,70 @@ def _get_manager_for_user(db: Session, user: User) -> User:
     )
 
 
+def _check_duplicate_invoice_number(
+    db: Session,
+    *,
+    user_id: str,
+    supplier_document: str | None,
+    invoice_number: str,
+    exclude_id: str | None = None,
+) -> Invoice | None:
+    """Retorna a primeira nota ATIVA com mesmo numero, ou None.
+
+    P1-3 da auditoria: invoice_number nao tem UNIQUE no DB porque, no Brasil,
+    fornecedores diferentes podem usar a mesma numeracao (NF 0001 do
+    fornecedor A nao colide com NF 0001 do fornecedor B). UNIQUE simples
+    bloquearia isso e UNIQUE composto ainda quebraria dados historicos.
+    Solucao: deteccao suave (soft-check) no momento do submit. Considera-se
+    duplicada quando coincide:
+      - (created_by_id, invoice_number), OU
+      - (supplier_document, invoice_number) — quando supplier_document existe.
+    Notas REPROVADO ou RASCUNHO antigas nao contam (foram corrigidas/descartadas).
+    """
+    from sqlalchemy import or_
+
+    if not invoice_number:
+        return None
+    candidates = db.query(Invoice).filter(
+        Invoice.invoice_number == invoice_number,
+        Invoice.status.notin_({
+            InvoiceStatus.RASCUNHO,
+            InvoiceStatus.REPROVADO_GESTOR,
+            InvoiceStatus.REPROVADO_DIRETOR,
+        }),
+    )
+    if exclude_id:
+        candidates = candidates.filter(Invoice.id != exclude_id)
+    # Match: ou mesmo criador, ou mesmo fornecedor.
+    same_user = Invoice.created_by_id == user_id
+    if supplier_document:
+        candidates = candidates.filter(
+            or_(same_user, Invoice.supplier_document == supplier_document)
+        )
+    else:
+        candidates = candidates.filter(same_user)
+    return candidates.order_by(Invoice.created_at.desc()).first()
+
+
+def _raise_duplicate_invoice_number(existing: Invoice) -> None:
+    """Resposta 409 padronizada quando duplicidade e detectada e o cliente
+    nao passou confirm_duplicate. A UI pode mostrar mensagem amigavel com
+    referencia a nota existente e oferecer 'enviar mesmo assim'."""
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "DUPLICATE_INVOICE_NUMBER",
+            "message": (
+                f"Ja existe uma nota com o numero '{existing.invoice_number}' "
+                f"(status: {existing.status.value}). "
+                "Reenvie marcando 'confirmar duplicidade' se realmente for outra nota."
+            ),
+            "existing_invoice_id": existing.id,
+            "existing_status": existing.status.value,
+        },
+    )
+
+
 def create_invoice(
     db: Session,
     data,
@@ -414,6 +497,18 @@ def create_invoice(
     """Cria nota com lista de arquivos (1-5 anexos PDF)."""
     from app.services.document_service import detect_document_type, strip_non_digits
     supplier_doc = strip_non_digits(data.supplier_document)
+    # Soft-check de duplicidade so quando o submit ja vai pra cima (RASCUNHO
+    # nao bloqueia — usuario pode estar reorganizando). Quando submit_now=False,
+    # a checagem acontece de novo no momento do envio.
+    if submit_now and not getattr(data, "confirm_duplicate", False):
+        existing = _check_duplicate_invoice_number(
+            db,
+            user_id=user.id,
+            supplier_document=supplier_doc,
+            invoice_number=_sanitize_text(data.invoice_number),
+        )
+        if existing:
+            _raise_duplicate_invoice_number(existing)
     invoice = Invoice(
         id=str(uuid.uuid4()),
         invoice_number=_sanitize_text(data.invoice_number),
@@ -519,10 +614,24 @@ def submit_invoice(
     director_id: str | None = None,
     ip: str | None = None,
     port: int | None = None,
+    confirm_duplicate: bool = False,
 ) -> Invoice:
     invoice = _get_invoice(db, invoice_id)
     if invoice.created_by_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissao insuficiente")
+    # P1-3 da auditoria: detecta duplicidade no momento do envio. Permite
+    # forcar via confirm_duplicate=True (fornecedores diferentes podem
+    # reaproveitar numeracao no Brasil — UNIQUE no schema quebraria isso).
+    if not confirm_duplicate:
+        existing = _check_duplicate_invoice_number(
+            db,
+            user_id=user.id,
+            supplier_document=invoice.supplier_document,
+            invoice_number=invoice.invoice_number,
+            exclude_id=invoice.id,
+        )
+        if existing:
+            _raise_duplicate_invoice_number(existing)
     # Aceita reenvio de notas reprovadas (apos edicao) — usuario nao precisa
     # criar nota nova a cada reprovacao.
     if invoice.status not in {
@@ -822,6 +931,7 @@ def get_invoices_for_user(
     created_by: str | None = None,
     supplier: str | None = None,
     department_id: str | None = None,
+    light: bool = False,
 ) -> tuple[list[Invoice], int, float]:
     """Retorna (items_paginados, total_geral, soma_valor_total).
 
@@ -838,7 +948,7 @@ def get_invoices_for_user(
     """
     from sqlalchemy import func, or_
 
-    query = _query_visible_invoices(db, user)
+    query = _query_visible_invoices(db, user, light=light)
     invoice_status = _status_from_filter(status_filter)
     if invoice_status:
         query = query.filter(Invoice.status == invoice_status)

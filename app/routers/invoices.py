@@ -374,6 +374,7 @@ def submit_invoice(
     invoice_id: str,
     request: Request,
     director_id: Optional[str] = None,
+    confirm_duplicate: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value, UserRole.DIRECTOR.value)),
 ):
@@ -382,6 +383,7 @@ def submit_invoice(
         director_id=director_id,
         ip=_client_ip(request),
         port=_client_port(request),
+        confirm_duplicate=confirm_duplicate,
     )
     return invoice_response(invoice)
 
@@ -436,6 +438,7 @@ def list_invoices(
     created_by: str | None = None,
     supplier: str | None = None,
     department_id: str | None = None,
+    fields: str | None = None,  # "light" usa loader leve (P2-5 auditoria)
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -443,6 +446,7 @@ def list_invoices(
         raise HTTPException(status_code=400, detail="Numero de pagina invalido.")
     if per_page < 1 or per_page > 100:
         raise HTTPException(status_code=400, detail="Quantidade por pagina invalida.")
+    light = (fields or "").lower() == "light"
 
     # Validacao de datas ISO — sem isso "from_date=abc" causa 500
     from datetime import date as _date
@@ -469,6 +473,7 @@ def list_invoices(
         created_by=created_by,
         supplier=supplier,
         department_id=department_id,
+        light=light,
     )
     return PaginatedInvoices(
         items=[invoice_response(invoice) for invoice in items],
@@ -544,32 +549,59 @@ class CommentRequest(BaseModel):
 @router.get("/{invoice_id}/comments")
 def list_comments(
     invoice_id: str,
+    page: int = 1,
+    per_page: int = 50,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Lista comentarios da nota em ordem cronologica.
-    Quem pode visualizar a nota pode ler os comentarios."""
+    """Lista comentarios da nota em ordem cronologica, paginados.
+
+    P2 da auditoria: antes retornava tudo num shot — nota com 200 comentarios
+    pesava a query e o JS. Agora pagina (default 50 por pagina).
+
+    Quem pode visualizar a nota pode ler os comentarios.
+    """
     invoice = invoice_service.get_invoice_or_403(db, invoice_id, current_user)
     from app.models import InvoiceComment
-    comments = (
+
+    # Clamp defensivo: evita per_page absurdo (custo de query) e page negativo.
+    page = max(1, page)
+    per_page = max(1, min(per_page, 200))
+
+    base_query = (
         db.query(InvoiceComment)
         .filter(InvoiceComment.invoice_id == invoice.id)
-        .order_by(InvoiceComment.created_at.asc())
+    )
+    total = base_query.count()
+    comments = (
+        base_query.order_by(InvoiceComment.created_at.asc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
         .all()
     )
-    return [
-        {
-            "id": c.id,
-            "body": c.body,
-            "created_at": c.created_at.replace(tzinfo=None).isoformat() if c.created_at and c.created_at.tzinfo is None else (c.created_at.isoformat() if c.created_at else None),
-            "user": {
-                "id": c.user.id,
-                "name": c.user.name,
-                "role": c.user.role.value,
-            } if c.user else None,
-        }
-        for c in comments
-    ]
+    return {
+        "items": [
+            {
+                "id": c.id,
+                "body": c.body,
+                "created_at": (
+                    c.created_at.replace(tzinfo=None).isoformat()
+                    if c.created_at and c.created_at.tzinfo is None
+                    else (c.created_at.isoformat() if c.created_at else None)
+                ),
+                "user": {
+                    "id": c.user.id,
+                    "name": c.user.name,
+                    "role": c.user.role.value,
+                } if c.user else None,
+            }
+            for c in comments
+        ],
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "has_next": page * per_page < total,
+    }
 
 
 @router.post("/{invoice_id}/comments", status_code=status.HTTP_201_CREATED)

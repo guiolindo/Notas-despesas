@@ -35,10 +35,16 @@ class Invoice(Base):
 
     status = Column(Enum(InvoiceStatus), default=InvoiceStatus.RASCUNHO, nullable=False)
 
+    # FKs de auditoria do fluxo de aprovacao. ondelete=SET NULL preserva a
+    # nota (e o historico) caso um usuario seja deletado fisicamente no
+    # futuro — hoje o sistema usa anonimizacao, mas o constraint protege.
+    # P2-9 da auditoria. created_by_id fica RESTRICT (default) porque a nota
+    # sem criador nao tem sentido — encerramento usa anonimizacao em vez
+    # de delete.
     created_by_id = Column(String(36), ForeignKey("users.id"), nullable=False)
-    manager_id = Column(String(36), ForeignKey("users.id"), nullable=True)
-    director_id = Column(String(36), ForeignKey("users.id"), nullable=True)
-    finance_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    manager_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    director_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    finance_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     drive_file_id = Column(String(255), nullable=True)
     drive_file_name = Column(String(255), nullable=True)
@@ -52,7 +58,7 @@ class Invoice(Base):
 
     print_drive_file_id = Column(String(255), nullable=True)
     printed_at = Column(DateTime, nullable=True)
-    printed_by_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    printed_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Snapshot da descricao no momento da reprovacao. Reenvio so e permitido
     # se a descricao atual diferir desta — evita reenvio sem alteracao real.

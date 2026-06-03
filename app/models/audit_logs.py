@@ -53,7 +53,9 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    # SET NULL preserva o audit_log mesmo se o usuario sumir fisicamente.
+    # Hoje sistema usa anonimizacao, mas o constraint protege (P2-9 auditoria).
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     action = Column(String(100), nullable=False)
     resource_type = Column(String(100), nullable=True)
     resource_id = Column(String(100), nullable=True)

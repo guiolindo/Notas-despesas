@@ -22,6 +22,12 @@ class InvoiceCreate(BaseModel):
     supplier_document: str = Field(min_length=11, max_length=18)  # com ou sem mascara
     supplier_name: Optional[str] = Field(default=None, max_length=255)
     supplier_legal_name: Optional[str] = Field(default=None, max_length=255)
+    # P1-3 (auditoria): soft-check de duplicidade. Quando o backend detecta
+    # outra nota ATIVA com mesmo (supplier_document, invoice_number) ou mesmo
+    # criador + numero, devolve 409 com codigo DUPLICATE_INVOICE_NUMBER.
+    # Cliente pode reenviar com confirm_duplicate=True para forcar (fornecedor
+    # diferente reaproveitando numeracao e legitimo no Brasil).
+    confirm_duplicate: bool = False
 
     @field_validator("due_date")
     @classmethod
@@ -50,6 +56,7 @@ class InvoiceUpdate(BaseModel):
     supplier_document: Optional[str] = Field(default=None, min_length=11, max_length=18)
     supplier_name: Optional[str] = Field(default=None, max_length=255)
     supplier_legal_name: Optional[str] = Field(default=None, max_length=255)
+    confirm_duplicate: bool = False  # mesma semantica do create (P1-3 auditoria)
 
     @model_validator(mode="after")
     def validate_dates(self):
