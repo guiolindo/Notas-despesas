@@ -278,6 +278,7 @@ function _shortcutsCheatsheet() {
     <div class="modal">
       <h2 style="font-size:1.1rem;margin-bottom:1rem">Atalhos de teclado</h2>
       <table class="shortcuts-table">
+        <caption class="sr-only">Atalhos de teclado disponiveis</caption>
         ${rows.map(([k, l]) => `<tr><td>${k}</td><td>${l}</td></tr>`).join('')}
       </table>
       <p class="text-muted text-xs" style="margin-top:1rem">
@@ -910,6 +911,7 @@ function renderInvoicesSkeleton(rows = 8) {
       <td><span class="skeleton-line w-40"></span></td>
     </tr>`;
   el.innerHTML = `<table class="skeleton-table" aria-busy="true">
+    <caption class="sr-only">Carregando notas fiscais</caption>
     <tbody>${rowHtml.repeat(rows)}</tbody>
   </table>`;
 }
@@ -981,7 +983,8 @@ function renderInvoicesTable(items) {
     return;
   }
   el.innerHTML = `<table class="table">
-    <thead><tr><th>Numero</th><th>Setor</th><th>Valor</th><th>Emissao</th><th>Vencimento</th><th>Status</th><th>Acoes</th></tr></thead>
+    <caption class="sr-only">Notas fiscais cadastradas</caption>
+    <thead><tr><th scope="col">Numero</th><th scope="col">Setor</th><th scope="col">Valor</th><th scope="col">Emissao</th><th scope="col">Vencimento</th><th scope="col">Status</th><th scope="col">Acoes</th></tr></thead>
     <tbody>${items.map((item) => {
       const canEdit = ['RASCUNHO', 'REPROVADO_GESTOR', 'REPROVADO_DIRETOR'].includes(item.status);
       // Excluivel: rascunho ou reprovada
@@ -1759,7 +1762,7 @@ async function initAlertsPage() {
 
 function renderAlertTable(items) {
   if (!items.length) return '<p class="text-muted">Nenhuma nota nesta categoria.</p>';
-  return `<table class="table"><thead><tr><th>Numero</th><th>Valor</th><th>Emissao</th><th>Vencimento</th><th>Status</th><th></th></tr></thead>
+  return `<table class="table"><caption class="sr-only">Notas do grupo de alertas</caption><thead><tr><th scope="col">Numero</th><th scope="col">Valor</th><th scope="col">Emissao</th><th scope="col">Vencimento</th><th scope="col">Status</th><th scope="col">Acoes</th></tr></thead>
     <tbody>${items.map((item) => `<tr><td>${escapeHtml(item.invoice_number)}</td><td>${formatCurrency(item.amount)}</td><td>${formatDate(item.issue_date)}</td><td>${formatDate(item.due_date)}</td><td>${statusBadge(item.status)}</td><td><button class="btn btn-ghost btn-sm" data-drawer="${escapeHtml(item.id)}">Ver</button></td></tr>`).join('')}</tbody></table>`;
 }
 
@@ -1823,8 +1826,8 @@ function renderFinanceQueue(items) {
     el.innerHTML = '<div class="alert-banner alert-info"><strong>Nenhuma nota nesta fila.</strong></div>';
     return;
   }
-  el.innerHTML = `<table class="table"><thead><tr>
-    <th>Numero</th><th>Criado por</th><th>Valor</th><th>Vencimento</th><th>Status</th><th>Acoes</th>
+  el.innerHTML = `<table class="table"><caption class="sr-only">Fila financeira de notas</caption><thead><tr>
+    <th scope="col">Numero</th><th scope="col">Criado por</th><th scope="col">Valor</th><th scope="col">Vencimento</th><th scope="col">Status</th><th scope="col">Acoes</th>
   </tr></thead><tbody>${items.map((item) => {
     const overdue = daysUntil(item.due_date) < 0 && item.status !== 'PAGO';
     return `<tr class="${overdue ? 'overdue-row' : ''}">
@@ -2009,9 +2012,9 @@ async function initReviewQueue(role) {
       container.innerHTML = '<div class="alert-banner alert-info"><strong>Nenhuma nota aguardando aprovacao.</strong></div>';
       return;
     }
-    const directorExtraHead = role === 'director' ? '<th>Gestor</th><th>Aprovado pelo Gestor em</th>' : '';
-    container.innerHTML = `<table class="table"><thead><tr>
-      <th>Funcionario</th><th>Setor</th><th>Numero da nota</th><th>Valor</th><th>Emissao</th><th>Vencimento</th><th>Dias ate vencer</th>${directorExtraHead}<th>Acoes</th>
+    const directorExtraHead = role === 'director' ? '<th scope="col">Gestor</th><th scope="col">Aprovado pelo Gestor em</th>' : '';
+    container.innerHTML = `<table class="table"><caption class="sr-only">Fila de notas aguardando aprovacao</caption><thead><tr>
+      <th scope="col">Funcionario</th><th scope="col">Setor</th><th scope="col">Numero da nota</th><th scope="col">Valor</th><th scope="col">Emissao</th><th scope="col">Vencimento</th><th scope="col">Dias ate vencer</th>${directorExtraHead}<th scope="col">Acoes</th>
     </tr></thead><tbody>${items.map((item) => {
       const canReview = item.status === statusFilter;
       const directorExtra = role === 'director' ? `<td>${escapeHtml(item.manager?.name || '-')}</td><td>${formatDateTime(item.manager_reviewed_at)}</td>` : '';
@@ -2133,7 +2136,15 @@ let adminAuditState = { page: 1, pages: 1, filters: {} };
 function adminRoleBadge(role) {
   // CONTAS_A_PAGAR -> contas-a-pagar pra casar com os tokens --role-* do CSS
   const cls = String(role).toLowerCase().replace(/_/g, '-');
-  return `<span class="role-chip role-${cls}">${adminRoleLabels[role] || role}</span>`;
+  const code = {
+    ADMIN: 'ADM',
+    FINANCE: 'FIN',
+    CONTAS_A_PAGAR: 'CAP',
+    DIRECTOR: 'DIR',
+    MANAGER: 'GES',
+    EMPLOYEE: 'FUN',
+  }[role] || String(role).slice(0, 3).toUpperCase();
+  return `<span class="role-chip role-${cls}"><span class="role-chip-code" aria-hidden="true">${escapeHtml(code)}</span><span>${escapeHtml(adminRoleLabels[role] || role)}</span></span>`;
 }
 
 function adminAvatar(name) {

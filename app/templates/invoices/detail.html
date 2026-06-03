@@ -35,6 +35,7 @@
           class="form-input"
           rows="2"
           maxlength="2000"
+          aria-describedby="comments-help"
           placeholder="Pergunte algo ao gestor, diretor ou criador — sem precisar reprovar a nota."
         ></textarea>
         <div class="comments-form-actions">
@@ -49,12 +50,12 @@
       <div class="pdf-panel-header">
         <span>Documento PDF</span>
         <div class="pdf-toolbar">
-          <button type="button" class="btn btn-ghost btn-sm" id="pdf-zoom-out" title="Diminuir zoom (Ctrl + -)">−</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="pdf-zoom-out" title="Diminuir zoom (Ctrl + -)" aria-label="Diminuir zoom do PDF">−</button>
           <span id="pdf-zoom-label" class="text-muted text-xs">100%</span>
-          <button type="button" class="btn btn-ghost btn-sm" id="pdf-zoom-in" title="Aumentar zoom (Ctrl + +)">+</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="pdf-rotate" title="Girar 90°">⟳</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="pdf-fullscreen" title="Tela cheia">⛶</button>
-          <a id="pdf-download-link" class="btn btn-ghost btn-sm" target="_blank" title="Abrir em nova aba">↗</a>
+          <button type="button" class="btn btn-ghost btn-sm" id="pdf-zoom-in" title="Aumentar zoom (Ctrl + +)" aria-label="Aumentar zoom do PDF">+</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="pdf-rotate" title="Girar 90°" aria-label="Girar PDF em 90 graus">⟳</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="pdf-fullscreen" title="Tela cheia" aria-label="Abrir PDF em tela cheia">⛶</button>
+          <a id="pdf-download-link" class="btn btn-ghost btn-sm" target="_blank" title="Abrir em nova aba" aria-label="Abrir PDF em nova aba">↗</a>
         </div>
       </div>
       <div class="pdf-iframe-wrap">
