@@ -1,0 +1,61 @@
+@media (max-width: 960px) {
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 768px) {
+  /* Sidebar vira drawer overlay */
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.collapsed { transform: translateX(0); width: 240px; }
+  .sidebar.collapsed .nav-item { justify-content: flex-start; padding: 0 12px; font-size: 15px; }
+  .main-wrapper,
+  .sidebar.collapsed + .main-wrapper { width: 100%; margin-left: 0; }
+  .content { padding: var(--space-md); }
+  .header { padding: 0 var(--space-md); }
+  .header-user { gap: var(--space-sm); }
+  .header-user .btn { display: none; }  /* esconde botoes de header em mobile (acessar via menu) */
+  .header-user-name { font-size: 13px; }
+
+  /* Inputs maiores (16px evita zoom no iOS) */
+  .form-input, select, textarea { font-size: 16px; min-height: 44px; }
+  .btn { min-height: 44px; padding: 0 var(--space-md); }
+  .btn-sm { min-height: 36px; }
+
+  /* Grids viram coluna unica */
+  .stats-grid { grid-template-columns: 1fr; }
+  .form-grid, .detail-grid { grid-template-columns: 1fr; }
+
+  /* Tabelas — scroll horizontal mas com indicador visual */
+  .table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-responsive { box-shadow: inset -10px 0 8px -8px rgba(0,0,0,0.1); }
+
+  /* Filter bar empilhado */
+  .filter-bar { flex-direction: column; align-items: stretch; }
+  .filter-bar .form-input,
+  .filter-bar select { width: 100%; min-width: 0; }
+  .filter-search { width: 100%; }
+  .filter-advanced { grid-template-columns: 1fr; }
+
+  /* Page header e ações em coluna */
+  .page-header-row,
+  .action-row,
+  .form-actions { align-items: stretch; flex-direction: column; }
+  .form-actions .btn { width: 100%; }
+
+  /* Detail layout (nota + PDF) vira coluna */
+  .detail-layout { flex-direction: column; }
+  .pdf-iframe { height: 50vh; }
+
+  /* Drawer ocupa quase a tela toda no mobile */
+  .drawer { width: 100% !important; max-width: 100% !important; }
+
+  /* Modais responsivos */
+  .modal { width: calc(100% - 32px); max-width: 100%; margin: 0 var(--space-md); }
+}
+
+/* Smartphones pequenos */
+@media (max-width: 480px) {
+  .content { padding: var(--space-sm); }
+  .page-header h1 { font-size: 20px; }
+  .page-title { font-size: 22px; }
+  .card-body { padding: var(--space-md); }
+}

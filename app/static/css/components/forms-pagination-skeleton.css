@@ -1,0 +1,35 @@
+.comments-form-actions {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; margin-top: 6px; flex-wrap: wrap;
+}
+
+/* ─── Paginacao melhorada ────────────────────────────────────────────── */
+.pagination {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 16px; flex-wrap: wrap; margin-top: 16px;
+  padding: 12px 0; border-top: 1px solid var(--border);
+}
+.pagination-info { font-size: 13px; color: var(--text-muted); }
+.pagination-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pagination-jump { width: 80px; text-align: center; }
+.pagination-perpage { width: 140px; }
+#page-indicator { font-size: 13px; color: var(--text); min-width: 110px; text-align: center; }
+
+/* ─── Skeleton loader pra listagens ──────────────────────────────────── */
+.skeleton-table { border-collapse: collapse; width: 100%; }
+.skeleton-table td {
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+}
+.skeleton-line {
+  display: block; height: 14px; border-radius: 4px;
+  background: linear-gradient(90deg, #eef0f3 25%, #f7f8fa 50%, #eef0f3 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+.skeleton-line.w-60 { width: 60%; }
+.skeleton-line.w-80 { width: 80%; }
+.skeleton-line.w-40 { width: 40%; }
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

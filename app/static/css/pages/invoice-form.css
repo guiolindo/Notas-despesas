@@ -1,0 +1,44 @@
+/* ─── New invoice form ───────────────────────────────────────────────── */
+.form-layout {
+  display: grid; grid-template-columns: 1.6fr 1fr;
+  gap: 22px; align-items: start;
+}
+.form-col { display: grid; gap: 18px; }
+.form-section h3 {
+  font-size: 15px; margin-bottom: 14px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.form-row { display: grid; gap: 14px; margin-bottom: 4px; }
+.form-row-2 { grid-template-columns: 1fr 1fr; }
+.form-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+.dropzone {
+  position: relative; border: 2px dashed var(--border);
+  border-radius: var(--radius); padding: 26px 20px; text-align: center;
+  color: var(--text-muted); cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.dropzone:hover, .dropzone.drag {
+  border-color: var(--orange); background: rgba(244,121,32,.04);
+}
+.dropzone strong { display: block; color: var(--text); margin: 8px 0 4px; font-size: 15px; }
+.dropzone p { font-size: 13px; }
+.dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.attach-list { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 6px; }
+.attach-list li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: #fff; font-size: 14px;
+}
+.form-actions { display: grid; gap: 8px; }
+.check-list { list-style: none; padding: 0; margin: 0; font-size: 14px; display: grid; gap: 6px; }
+.check-list li { display: flex; align-items: center; gap: 8px; }
+.check-list li.ok { color: var(--success-dark); }
+.check-list li.pending { color: var(--warning); }
+
+
+/* ─── Responsivo ─────────────────────────────────────────────────────── */
+@media (max-width: 940px) {
+  .scanner-layout, .form-layout { grid-template-columns: 1fr; }
+  .qa-grid-3 { grid-template-columns: 1fr; }
+  .qa-grid-2 { grid-template-columns: 1fr; }
+}

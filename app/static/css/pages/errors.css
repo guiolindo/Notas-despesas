@@ -1,0 +1,15 @@
+/* ─── Pagina 404 ──────────────────────────────────────────────────────── */
+.not-found-icon {
+  width: 64px; height: 64px;
+  margin: 0 auto 8px;
+  border-radius: 999px;
+  background: #FEEAD9;
+  color: var(--orange);
+  display: grid; place-items: center;
+}
+.not-found-countdown {
+  margin-top: 14px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.not-found-countdown strong { color: var(--blue); font-weight: 700; }

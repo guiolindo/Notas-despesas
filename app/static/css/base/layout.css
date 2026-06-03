@@ -1,0 +1,164 @@
+body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+a { color: var(--blue); text-decoration: none; }
+a:hover { color: var(--orange); }
+
+.hidden { display: none !important; }
+.text-muted { color: var(--text-muted); }
+.layout { display: flex; min-height: 100vh; }
+
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 240px;
+  background: var(--blue);
+  color: var(--white);
+  transition: width var(--transition), transform var(--transition);
+  z-index: 20;
+}
+
+.sidebar.collapsed { width: 76px; }
+.sidebar-logo { padding: 16px 18px; border-bottom: 1px solid rgba(255, 255, 255, 0.14); background: #fff; border-radius: 0; }
+.logo { display: block; max-width: 160px; height: auto; }
+.sidebar.collapsed .logo { max-width: 44px; object-fit: cover; object-position: left; }
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 4px; padding: 14px 10px; }
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  color: var(--white);
+  font-weight: 600;
+  transition: background 180ms ease, color 180ms ease, padding-left 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* Acento lateral discreto que desliza no hover/ativo */
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background: var(--orange);
+  border-radius: 0 2px 2px 0;
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.nav-item:hover::before,
+.nav-item.active::before { transform: scaleY(1); }
+.nav-item:hover,
+.nav-item.active {
+  background: var(--orange);
+  color: var(--white);
+}
+.nav-item.active { padding-left: 16px; }
+.nav-item:hover::before, .nav-item.active::before { background: rgba(255,255,255,0.85); }
+.nav-icon { width: 20px; text-align: center; }
+.sidebar.collapsed .nav-item { justify-content: center; padding: 0; font-size: 0; }
+.sidebar.collapsed .nav-icon,
+.sidebar.collapsed .badge-count { font-size: 15px; }
+.badge-count {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--error);
+  color: var(--white);
+  font-size: 12px;
+  text-align: center;
+  line-height: 20px;
+}
+
+.main-wrapper {
+  width: calc(100% - 240px);
+  margin-left: 240px;
+  transition: margin-left var(--transition), width var(--transition);
+}
+.sidebar.collapsed + .main-wrapper {
+  width: calc(100% - 76px);
+  margin-left: 76px;
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 64px;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.sidebar-toggle {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--white);
+  color: var(--blue);
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition);
+}
+.sidebar-toggle:hover { border-color: var(--orange); color: var(--orange); }
+.header-user { display: flex; align-items: center; gap: 12px; }
+.role-badge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #EAF2FA;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.content { padding: 28px; }
+.page-header { margin-bottom: 24px; }
+.page-header h1 { font-size: 28px; font-weight: 700; color: var(--text); }
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 28px 0 12px;
+}
+.section-header h2 { font-size: 18px; }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.stat-card {
+  min-height: 130px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: var(--shadow);
+}
+.stat-card.loading {
+  background: linear-gradient(90deg, #fff, #f1f5f9, #fff);
+  background-size: 200% 100%;
+  animation: shimmer 1.1s infinite;
+}
+.stat-icon { font-size: 22px; margin-bottom: 10px; }
+.stat-value { font-size: 32px; font-weight: 800; }
+.stat-label { color: var(--text-muted); font-size: 13px; font-weight: 600; }
+.stat-blue .stat-value { color: var(--info); }
+.stat-warning .stat-value { color: var(--warning); }
+.stat-error .stat-value { color: var(--error); }
+.stat-muted .stat-value { color: var(--text-muted); }

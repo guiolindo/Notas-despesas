@@ -1,0 +1,43 @@
+/* ─── Utilitarios dos templates novos ────────────────────────────────── */
+/* Substituem inline style="" repetidos no JS/template (limpeza pos-design). */
+
+/* Dashboard — tabela de notas recentes */
+.dashboard-recent-row { cursor: pointer; }
+.dashboard-recent-empty,
+.dashboard-alert-empty { text-align: center; padding: 22px; }
+.dashboard-alert-empty { cursor: default; }
+.cell-strong { font-weight: 600; }
+
+/* Admin users — celula com avatar + nome + badges */
+.user-name-cell { display: flex; gap: 10px; align-items: center; }
+.user-name-cell strong { font-weight: 600; }
+.btn-danger-text { color: var(--error); }
+.text-xs { font-size: 12px; }
+
+/* ─── Banner de acoes administrativas pendentes ─────────────────────── */
+.pending-banner {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-left: 4px solid var(--error);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+}
+.pending-banner-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.pending-banner-item + .pending-banner-item {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #FECACA;
+}
+.pending-banner-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.pending-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }

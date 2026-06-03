@@ -1,0 +1,237 @@
+/* ─── Invoice Drawer ─────────────────────────────────────────── */
+.drawer-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.42);
+  z-index: 190;
+  opacity: 0; pointer-events: none;
+  transition: opacity .22s;
+}
+.drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+
+.invoice-drawer {
+  position: fixed;
+  top: 0; right: 0;
+  width: min(960px, 100vw);
+  height: 100vh;
+  background: #fff;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -6px 0 36px rgba(0,0,0,.16);
+  transform: translateX(100%);
+  transition: transform .26s cubic-bezier(.4,0,.2,1);
+  overflow: hidden;
+}
+.invoice-drawer.open { transform: translateX(0); }
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .85rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+  flex-shrink: 0;
+}
+.drawer-header-info { flex: 1; min-width: 0; }
+.drawer-header-info h2 { margin: 0; font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drawer-header-info p  { margin: 0; font-size: .8rem; }
+.drawer-header-right { display: flex; align-items: center; gap: .6rem; flex-shrink: 0; }
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem 2rem;
+}
+.drawer-body .detail-layout { margin-top: 1rem; }
+.drawer-body .action-row    { margin-bottom: 1rem; }
+
+.btn-drawer-open {
+  background: none; border: none; padding: 0;
+  cursor: pointer;
+  color: var(--blue);
+  font-size: .875rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.btn-drawer-open:hover { color: var(--blue-dark, #143f6e); }
+/* ============================================================================
+   PATCH para app/static/css/main.css
+   ----------------------------------------------------------------------------
+   Tokens (--role-*, --focus-ring) e regras .role-chip / .role-* foram
+   mescladas nas secoes originais lá em cima. Aqui ficam só as classes
+   novas que o design-system trouxe (sem duplicacao).
+   ============================================================================ */
+
+/* ─── Sistema de ícones vendorizados ─────────────────────────────────── */
+/* SVGs em /static/img/icons/*.svg. Renderiza via CSS mask para herdar
+   currentColor (sem <style> inline, CSP-friendly). Wrapper define o tamanho. */
+.icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  background-color: currentColor;
+  -webkit-mask: var(--mask, none) center / contain no-repeat;
+          mask: var(--mask, none) center / contain no-repeat;
+  vertical-align: -0.125em;
+  flex-shrink: 0;
+}
+.ic-16 .icon, .icon.ic-16 { width: 16px; height: 16px; }
+.ic-20 .icon, .icon.ic-20 { width: 20px; height: 20px; }
+.ic-22 .icon, .icon.ic-22 { width: 22px; height: 22px; }
+.ic-28 .icon, .icon.ic-28 { width: 28px; height: 28px; }
+.ic-32 .icon, .icon.ic-32 { width: 32px; height: 32px; }
+
+/* declaração de cada ícone — UMA classe por arquivo (CSP: sem inline style) */
+.icon-activity         { --mask: url('/static/img/icons/activity.svg'); }
+.icon-archive          { --mask: url('/static/img/icons/archive.svg'); }
+.icon-building-2       { --mask: url('/static/img/icons/building-2.svg'); }
+.icon-calendar         { --mask: url('/static/img/icons/calendar.svg'); }
+.icon-camera           { --mask: url('/static/img/icons/camera.svg'); }
+.icon-check            { --mask: url('/static/img/icons/check.svg'); }
+.icon-chevron-down     { --mask: url('/static/img/icons/chevron-down.svg'); }
+.icon-circle-alert     { --mask: url('/static/img/icons/circle-alert.svg'); }
+.icon-circle-check     { --mask: url('/static/img/icons/circle-check.svg'); }
+.icon-circle-check-big { --mask: url('/static/img/icons/circle-check-big.svg'); }
+.icon-circle-dollar-sign { --mask: url('/static/img/icons/circle-dollar-sign.svg'); }
+.icon-circle-x         { --mask: url('/static/img/icons/circle-x.svg'); }
+.icon-circle           { --mask: url('/static/img/icons/circle.svg'); }
+.icon-clock            { --mask: url('/static/img/icons/clock.svg'); }
+.icon-external-link    { --mask: url('/static/img/icons/external-link.svg'); }
+.icon-eye-off          { --mask: url('/static/img/icons/eye-off.svg'); }
+.icon-eye              { --mask: url('/static/img/icons/eye.svg'); }
+.icon-file-search      { --mask: url('/static/img/icons/file-search.svg'); }
+.icon-file-text        { --mask: url('/static/img/icons/file-text.svg'); }
+.icon-inbox            { --mask: url('/static/img/icons/inbox.svg'); }
+.icon-keyboard         { --mask: url('/static/img/icons/keyboard.svg'); }
+.icon-layout-dashboard { --mask: url('/static/img/icons/layout-dashboard.svg'); }
+.icon-lock             { --mask: url('/static/img/icons/lock.svg'); }
+.icon-log-out          { --mask: url('/static/img/icons/log-out.svg'); }
+.icon-menu             { --mask: url('/static/img/icons/menu.svg'); }
+.icon-pencil           { --mask: url('/static/img/icons/pencil.svg'); }
+.icon-plus             { --mask: url('/static/img/icons/plus.svg'); }
+.icon-qr-code          { --mask: url('/static/img/icons/qr-code.svg'); }
+.icon-scan-line        { --mask: url('/static/img/icons/scan-line.svg'); }
+.icon-search           { --mask: url('/static/img/icons/search.svg'); }
+.icon-sliders-horizontal { --mask: url('/static/img/icons/sliders-horizontal.svg'); }
+.icon-triangle-alert   { --mask: url('/static/img/icons/triangle-alert.svg'); }
+.icon-upload           { --mask: url('/static/img/icons/upload.svg'); }
+.icon-user-plus        { --mask: url('/static/img/icons/user-plus.svg'); }
+.icon-user             { --mask: url('/static/img/icons/user.svg'); }
+.icon-x                { --mask: url('/static/img/icons/x.svg'); }
+
+/* ─── Quick actions (dashboard) ──────────────────────────────────────── */
+.qa-stack { display: grid; gap: 12px; }
+.qa {
+  display: grid; grid-template-columns: 40px 1fr auto;
+  align-items: center; gap: 12px; padding: 14px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: #fff; text-align: left; cursor: pointer; font: inherit;
+  color: var(--text); text-decoration: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.qa:hover { border-color: var(--orange); box-shadow: var(--shadow-sm); }
+.qa-ic {
+  width: 40px; height: 40px; border-radius: var(--radius);
+  background: #EAF2FA; color: var(--blue);
+  display: grid; place-items: center; font-size: 20px;
+}
+.qa-body strong { display: block; font-size: 14px; }
+.qa-body p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.qa-count {
+  min-width: 28px; height: 24px; padding: 0 8px; border-radius: 999px;
+  background: var(--error); color: #fff; font-size: 12px; font-weight: 800;
+  display: grid; place-items: center;
+}
+.qa-count-success { background: var(--success); }
+.qa-shortcut {
+  font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 999px;
+  background: #FEEAD9; color: var(--orange-dark); letter-spacing: .03em;
+}
+.qa-hero {
+  padding: 18px;
+  border-color: var(--orange);
+  background: linear-gradient(180deg, #fff 0%, #FFF7F0 100%);
+}
+.qa-hero .qa-ic { background: var(--orange); color: #fff; width: 48px; height: 48px; font-size: 24px; }
+.qa-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.qa-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* ─── Alert rows (lista no dashboard) ────────────────────────────────── */
+/* Coexiste com .alert-banner (banners em página de detalhe). */
+.alert-row {
+  display: grid; grid-template-columns: 36px 1fr auto;
+  align-items: center; gap: 12px; padding: 12px 14px;
+  border: 1px solid; border-left-width: 3px; border-radius: var(--radius);
+  font-size: 14px; background: #fff;
+  cursor: pointer; color: var(--text); text-decoration: none;
+  transition: box-shadow .15s ease;
+}
+.alert-row:hover { box-shadow: var(--shadow-sm); }
+.alert-row .ar-ic {
+  width: 28px; height: 28px; border-radius: 999px;
+  display: grid; place-items: center; color: #fff;
+}
+.alert-row strong { font-weight: 700; display: block; }
+.alert-row .ar-meta { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+.alert-row .ar-cta { font-size: 13px; font-weight: 700; color: var(--blue); white-space: nowrap; }
+.ar-err   { background: #FEF2F2; border-color: #FECACA; }
+.ar-err   .ar-ic { background: var(--error); }
+.ar-warn  { background: #FFF7ED; border-color: #FED7AA; }
+.ar-warn  .ar-ic { background: var(--warning); }
+.ar-info  { background: #EFF6FF; border-color: #BFDBFE; }
+.ar-info  .ar-ic { background: var(--info); }
+.ar-blue  { background: #EFF6FF; border-color: #93C5FD; border-left-color: var(--blue); }
+.ar-blue  .ar-ic { background: var(--blue); }
+
+/* ─── Avatar (admin/users) ───────────────────────────────────────────── */
+.avatar {
+  width: 28px; height: 28px; border-radius: 999px;
+  background: #DBEAFE; color: var(--blue);
+  font-size: 12px; font-weight: 800;
+  display: inline-grid; place-items: center; flex-shrink: 0;
+}
+
+/* ─── Scanner screen ─────────────────────────────────────────────────── */
+.scanner-layout {
+  display: grid; grid-template-columns: 1.4fr 1fr;
+  gap: 22px; align-items: start;
+}
+.scanner-card {
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; padding: 40px 30px; min-height: 380px;
+}
+.scanner-icon-big {
+  width: 72px; height: 72px; border-radius: 999px;
+  background: #EAF2FA; color: var(--blue);
+  display: grid; place-items: center; margin-bottom: 18px;
+}
+.scanner-input {
+  max-width: 320px; text-align: center;
+  font-family: var(--font-mono); font-size: 18px; letter-spacing: 0.06em;
+}
+.scanner-hint { margin-top: 12px; color: var(--text-subtle); font-size: 13px; }
+.scanner-cam {
+  width: 100%; max-width: 360px; aspect-ratio: 1 / 1;
+  background: #111; border-radius: var(--radius);
+  display: grid; place-items: center; overflow: hidden; position: relative;
+}
+.cam-frame {
+  width: 70%; height: 70%; border: 3px solid rgba(255,255,255,.5);
+  border-radius: var(--radius); position: relative; overflow: hidden;
+}
+.cam-frame::before, .cam-frame::after {
+  content: ''; position: absolute; width: 24px; height: 24px;
+  border: 4px solid var(--orange);
+}
+.cam-frame::before { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
+.cam-frame::after { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
+.cam-laser {
+  position: absolute; left: 8px; right: 8px; height: 2px;
+  background: var(--orange); box-shadow: 0 0 12px var(--orange);
+  animation: cam-laser 1.6s ease-in-out infinite alternate; top: 12%;
+}
+@keyframes cam-laser { from { top: 12%; } to { top: 88%; } }
+.scan-result { display: flex; flex-direction: column; gap: 6px; }
+.scan-code { font-size: 13px; word-break: break-all; padding: 6px 8px; background: var(--bg); border-radius: var(--radius-sm); font-family: var(--font-mono); }
