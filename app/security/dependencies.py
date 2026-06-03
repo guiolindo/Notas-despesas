@@ -29,6 +29,12 @@ def token_is_pre_password_change(user: User, token_iat: int | float | None) -> b
     (auth.refresh_token) e page guards (page_auth._get_user_from_cookie). Sem
     isso, reset/troca de senha invalida o access em uso mas o refresh em cookie
     continua emitindo access tokens novos por ate 7 dias. CVE classica.
+
+    Tolerancia de 2 segundos: `iat` no JWT e gravado em SEGUNDOS (inteiro),
+    enquanto `password_changed_at` no DB tem precisao de microsegundo. Sem a
+    margem, login imediato apos troca/reset de senha pode falhar com falso
+    positivo (iat truncado vira ~500ms menor que password_changed_at).
+    Tolerancia descoberta pelos testes pytest — antes era apenas `<`.
     """
     if not user.password_changed_at or token_iat is None:
         return False
@@ -39,7 +45,8 @@ def token_is_pre_password_change(user: User, token_iat: int | float | None) -> b
         token_emitted_at = datetime.fromtimestamp(float(token_iat), timezone.utc)
     except (TypeError, ValueError, OSError):
         return False
-    return token_emitted_at < pwd_changed
+    delta = (pwd_changed - token_emitted_at).total_seconds()
+    return delta > 2.0
 
 
 def get_current_user(

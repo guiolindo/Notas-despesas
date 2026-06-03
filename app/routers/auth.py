@@ -142,10 +142,38 @@ def login(
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    """Apaga o cookie de refresh. Usado em logout e quando o refresh fica invalido
-    (reset/troca de senha), evitando que o cliente fique tentando renovar com um
-    cookie que nao vai mais funcionar."""
+    """Apaga o cookie de refresh num Response normal (logout/200)."""
     response.delete_cookie(key="refresh_token")
+
+
+# Set-Cookie pra apagar o refresh quando estamos lancando HTTPException.
+# IMPORTANTE: `response.delete_cookie()` ANTES de `raise HTTPException()`
+# nao funciona — FastAPI descarta a Response da rota e gera nova a partir
+# da excecao. Por isso o cookie precisa entrar via `headers=...` da propria
+# excecao. Bug encontrado pelos testes pytest, nao em producao ainda.
+def _clear_refresh_cookie_header(secure: bool) -> dict:
+    parts = [
+        'refresh_token=""',
+        "Path=/",
+        "Max-Age=0",
+        "HttpOnly",
+        "SameSite=strict",
+    ]
+    if secure:
+        parts.append("Secure")
+    return {"set-cookie": "; ".join(parts)}
+
+
+def _refresh_unauthorized(detail: str) -> HTTPException:
+    """401 com Set-Cookie limpando o refresh — usado pelos 4 ramos de
+    falha do /refresh."""
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers=_clear_refresh_cookie_header(
+            secure=settings.ENVIRONMENT.upper() == "PROD",
+        ),
+    )
 
 
 @router.post("/refresh")
@@ -155,6 +183,7 @@ def refresh_token(
     db: Session = Depends(get_db),
 ):
     if not refresh_token_cookie:
+        # Sem cookie nao precisa apagar nada — 401 padrao.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sessao expirada. Faca login novamente.",
@@ -162,22 +191,20 @@ def refresh_token(
 
     try:
         payload = decode_token(refresh_token_cookie, expected_type="refresh")
-    except HTTPException:
+    except HTTPException as exc:
         # Refresh invalido (assinatura, expirou, type errado): limpa cookie
         # pra cliente parar de mandar e cair pra /login.
-        _clear_refresh_cookie(response)
-        raise
+        raise _refresh_unauthorized(exc.detail) from exc
+
     user_id = payload.get("sub")
     if not user_id:
-        _clear_refresh_cookie(response)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sessao invalida. Faca login novamente.")
+        raise _refresh_unauthorized("Sessao invalida. Faca login novamente.")
 
     # Revalida o usuario no DB. Sem isso, conta desativada/bloqueada/anonimizada
     # ou role rebaixado continuariam com access token novo por ate 7 dias.
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.is_active:
-        _clear_refresh_cookie(response)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario invalido")
+        raise _refresh_unauthorized("Usuario invalido")
 
     blocked_until = _as_utc(user.blocked_until)
     now = datetime.now(timezone.utc)
@@ -190,11 +217,7 @@ def refresh_token(
     # cliente comprometido continua renovando sessao por ate 7 dias mesmo apos
     # vitima trocar a senha (P0 da auditoria).
     if token_is_pre_password_change(user, payload.get("iat")):
-        _clear_refresh_cookie(response)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sessao expirada (senha foi alterada). Faca login novamente.",
-        )
+        raise _refresh_unauthorized("Sessao expirada (senha foi alterada). Faca login novamente.")
 
     # Le role do DB, nao do token (defesa contra rebaixamento ignorado)
     access_token = create_access_token({"sub": user.id, "role": user.role.value})
