@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,16 @@ from app.security.jwt import decode_token
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+# Endpoints que continuam acessiveis mesmo com must_change_password=True.
+# Tudo fora desta lista e bloqueado em get_current_user com HTTP 428 ate o
+# usuario trocar a senha. Sem isto, cliente customizado bypassa o redirect
+# do frontend e usa a conta com a senha provisoria (P1-8 da auditoria).
+_PASSWORD_CHANGE_ALLOWED_PATHS = frozenset({
+    "/auth/me",
+    "/auth/change-password",
+    "/auth/logout",
+})
 
 
 def token_is_pre_password_change(user: User, token_iat: int | float | None) -> bool:
@@ -33,6 +43,7 @@ def token_is_pre_password_change(user: User, token_iat: int | float | None) -> b
 
 
 def get_current_user(
+    request: Request,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
@@ -63,6 +74,19 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sessao expirada (senha foi alterada). Faca login novamente.",
         )
+
+    # P1-8: bloqueia uso da API enquanto usuario tem senha provisoria. Antes,
+    # a obrigacao so existia no frontend (redirect). Cliente direto via curl
+    # ou integracao customizada conseguia operar com senha temporaria.
+    if getattr(user, "must_change_password", False):
+        if request.url.path not in _PASSWORD_CHANGE_ALLOWED_PATHS:
+            raise HTTPException(
+                status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+                detail=(
+                    "Voce precisa trocar a senha antes de executar acoes. "
+                    "Acesse seu perfil e defina uma nova senha."
+                ),
+            )
     return user
 
 
@@ -76,3 +100,28 @@ def require_role(*roles: str):
         return current_user
 
     return checker
+
+
+def require_password_changed(current_user: User = Depends(get_current_user)) -> User:
+    """Bloqueia endpoints sensiveis enquanto a flag must_change_password do
+    usuario estiver True.
+
+    Antes (P1-8 da auditoria), a obrigacao de trocar senha era imposta
+    APENAS no frontend (redirect). Quem chamasse a API direta com curl ou
+    cliente customizado conseguia executar qualquer acao com a senha
+    provisoria. Esta dependency aplica a regra no backend.
+
+    Usar como Depends adicional em rotas que NAO sao /auth/me,
+    /auth/change-password, /auth/logout. O codigo 428 ('Precondition
+    Required') sinaliza pro frontend que a sessao precisa de uma etapa
+    extra antes de prosseguir.
+    """
+    if getattr(current_user, "must_change_password", False):
+        raise HTTPException(
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+            detail=(
+                "Voce precisa trocar a senha antes de executar acoes. "
+                "Acesse seu perfil e defina uma nova senha."
+            ),
+        )
+    return current_user

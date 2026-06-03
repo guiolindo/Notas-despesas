@@ -340,27 +340,64 @@ def _get_director(db: Session, director_id: str) -> User:
 
 
 def _get_manager_for_user(db: Session, user: User) -> User:
-    """Retorna o gestor do setor do funcionario.
+    """Retorna o gestor do setor do funcionario para receber uma nova nota.
 
     Exige que o gestor: (a) esteja ATIVO e (b) ainda tenha role MANAGER.
     Sem (b), funcionario com chefe promovido a DIRECTOR teria nota presa
     porque manager_review exige role MANAGER do aprovador.
+
+    Quando o gestor esta indisponivel (`unavailable_for_notes=True` — ex.
+    ferias), tenta delegar pro substitute_manager_id. Sem substituto valido,
+    a submissao falha com mensagem clara. P1-9 da auditoria: antes, a flag
+    de indisponibilidade era ignorada aqui e o funcionario seguia enviando
+    pra fila do gestor em ferias.
     """
-    if user.manager_id:
-        manager = (
+    if not user.manager_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nao foi possivel identificar seu gestor responsavel. Contate o administrador.",
+        )
+
+    manager = (
+        db.query(User)
+        .filter(
+            User.id == user.manager_id,
+            User.is_active.is_(True),
+            User.role == UserRole.MANAGER,
+        )
+        .first()
+    )
+    if not manager:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nao foi possivel identificar seu gestor responsavel. Contate o administrador.",
+        )
+
+    if not getattr(manager, "unavailable_for_notes", False):
+        return manager
+
+    # Gestor em ferias: tenta substituto designado por ele.
+    sub_id = getattr(manager, "substitute_manager_id", None)
+    if sub_id:
+        sub = (
             db.query(User)
             .filter(
-                User.id == user.manager_id,
+                User.id == sub_id,
                 User.is_active.is_(True),
                 User.role == UserRole.MANAGER,
             )
             .first()
         )
-        if manager:
-            return manager
+        # Substituto tambem em ferias = sem rota. Nao cascateia infinitamente.
+        if sub and not getattr(sub, "unavailable_for_notes", False):
+            return sub
+
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Nao foi possivel identificar seu gestor responsavel. Contate o administrador.",
+        detail=(
+            "Seu gestor esta temporariamente indisponivel e nao designou um "
+            "substituto ativo. Aguarde o retorno ou contate o administrador."
+        ),
     )
 
 

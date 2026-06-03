@@ -58,6 +58,12 @@ class User(Base):
     #    no substituto
     #  - notas ja na fila ganham um banner sugerindo repasse
     substitute_director_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    # Substituto MANAGER para o mesmo cenario de ferias/ausencia. Sem este
+    # campo, _get_manager_for_user ignorava unavailable_for_notes do gestor
+    # (P1 da auditoria): funcionario continuava conseguindo enviar nota pra
+    # gestor em ferias. Agora, com unavailable=True + substitute configurado,
+    # a submissao roteia automaticamente pro substituto.
+    substitute_manager_id = Column(String(36), ForeignKey("users.id"), nullable=True)
 
     manager = relationship(
         "User",
@@ -70,6 +76,11 @@ class User(Base):
         "User",
         remote_side=[id],
         foreign_keys=[substitute_director_id],
+    )
+    substitute_manager = relationship(
+        "User",
+        remote_side=[id],
+        foreign_keys=[substitute_manager_id],
     )
     created_invoices = relationship(
         "Invoice",

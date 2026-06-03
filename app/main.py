@@ -1,13 +1,16 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import select_autoescape
 from sqlalchemy import text
 
 from app import models
+from app.config import startup_security_failure
 from app.database import Base, engine
 from app.middleware.security import RateLimitMiddleware, SecurityHeadersMiddleware
 
@@ -23,7 +26,47 @@ templates.env.autoescape = select_autoescape(
 
 app = FastAPI(title="Economart - Aprovacao de Notas Fiscais", version="1.0.0")
 
-Base.metadata.create_all(bind=engine)
+# P1-2 da auditoria: PROD nao pode subir com SECRET_KEY default ou
+# MASTER_ENCRYPTION_KEY ausente. Em vez de stacktrace cru, qualquer rota
+# devolve 503 + tela estetica enquanto as chaves nao forem definidas.
+# Logamos um banner explicito no orquestrador pra alertar ops.
+_startup_failure = startup_security_failure()
+if _startup_failure is not None:
+    _logger = logging.getLogger("uvicorn.error")
+    _logger.critical("=" * 70)
+    _logger.critical("ECONOMART NAO PODE SUBIR EM PROD: configuracao incompleta.")
+    _logger.critical("Defina no ambiente: %s", ", ".join(_startup_failure.missing))
+    _logger.critical("Toda rota responde 503 ate as chaves serem configuradas.")
+    _logger.critical("=" * 70)
+
+
+@app.middleware("http")
+async def _intercept_startup_failure(request: Request, call_next):
+    """Quando o app subiu em PROD sem secrets criticos, intercepta TODAS as
+    requests e devolve a tela amigavel + 503. /static ainda funciona pra
+    nao quebrar a renderizacao da propria pagina."""
+    if _startup_failure is None or request.url.path.startswith("/static"):
+        return await call_next(request)
+    # API recebe JSON com pista pra ops; navegacao recebe HTML.
+    if request.url.path.startswith(("/api/", "/auth/")):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "Servico indisponivel. Configuracao incompleta.",
+                "missing": _startup_failure.missing,
+            },
+        )
+    html = templates.get_template("startup_error.html").render(
+        missing=_startup_failure.missing,
+    )
+    return HTMLResponse(html, status_code=503)
+
+
+# Se a config esta quebrada, evita rodar create_all e migrations contra um
+# banco que pode nem estar acessivel — sair cedo deixa o middleware acima
+# servir a tela mesmo sem DB up.
+if _startup_failure is None:
+    Base.metadata.create_all(bind=engine)
 
 
 def _ensure_admin_exists() -> None:
@@ -137,6 +180,8 @@ def _run_schema_migrations() -> None:
 
         # Substituto durante ferias (delegacao automatica de notas)
         pg("ALTER TABLE users ADD COLUMN IF NOT EXISTS substitute_director_id VARCHAR(36)"),
+        # Mesmo conceito para MANAGER — fechou o gap apontado pela auditoria P1-9
+        pg("ALTER TABLE users ADD COLUMN IF NOT EXISTS substitute_manager_id VARCHAR(36)"),
 
         # Extensao unaccent: busca acento-insensivel em descricao/fornecedor.
         # Sem isso 'escritorio' nao acha 'escritório'. SQLite ignora (cai
@@ -171,8 +216,12 @@ def _run_schema_migrations() -> None:
 
 # CRITICO: migrations PRIMEIRO, admin DEPOIS — invertido causa
 # UndefinedColumn em colunas novas adicionadas ao modelo.
-_run_schema_migrations()
-_ensure_admin_exists()
+# Pulamos quando startup_security_failure ja sinalizou config invalida em
+# PROD: middleware ja vai responder 503 em toda rota, nao queremos rodar
+# DDL nem inserir admin contra um banco talvez nao configurado.
+if _startup_failure is None:
+    _run_schema_migrations()
+    _ensure_admin_exists()
 
 
 def _purge_old_rejected_on_startup() -> None:

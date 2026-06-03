@@ -99,6 +99,16 @@ async function apiFetch(url, options = {}) {
     window.location.href = '/login';
     throw new Error('Sessao expirada');
   }
+  // 428 Precondition Required = backend exige troca de senha antes da acao.
+  // P1-8 da auditoria: a regra deixou de ser apenas redirect do frontend.
+  // Manda o usuario pra change-password se ele tentar bater em endpoint
+  // bloqueado (ex: integrator direto, ou usuario que abriu outra aba).
+  if (response.status === 428) {
+    if (window.location.pathname !== '/change-password') {
+      window.location.href = '/change-password';
+    }
+    throw new Error('Troca de senha obrigatoria antes de continuar.');
+  }
 
   const contentType = response.headers.get('content-type') || '';
   const data = contentType.includes('application/json') ? await response.json() : await response.text();

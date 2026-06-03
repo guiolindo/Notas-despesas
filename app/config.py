@@ -43,18 +43,60 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Validacao de segurança na inicializacao
-if settings.SECRET_KEY == _INSECURE_DEFAULT_KEY:
-    warnings.warn(
-        "\n[SEGURANCA] SECRET_KEY esta com o valor padrao inseguro!\n"
-        "Defina SECRET_KEY no arquivo .env com uma chave aleatoria de 64+ caracteres.\n"
-        "Exemplo: python -c \"import secrets; print(secrets.token_hex(64))\"",
-        stacklevel=2,
-    )
 
-if settings.ENVIRONMENT.upper() == "PROD" and not settings.MASTER_ENCRYPTION_KEY:
-    warnings.warn(
-        "\n[SEGURANCA] MASTER_ENCRYPTION_KEY nao definida em ambiente de producao!\n"
-        "PDFs nao poderao ser criptografados com AES-256.",
-        stacklevel=2,
-    )
+class InsecureSecretsError(RuntimeError):
+    """Subida do app interrompida porque secrets criticos nao foram
+    configurados em PROD. Capturada em app.main para apresentar uma tela
+    HTTP estetica em vez de stacktrace cru no log do orquestrador."""
+
+    def __init__(self, missing: list[str]):
+        self.missing = missing
+        super().__init__(
+            "Configuracao incompleta em PROD: " + ", ".join(missing)
+        )
+
+
+def _collect_insecure_secrets() -> list[str]:
+    """Retorna lista (rotulos) dos secrets que estao inseguros. Vazia se ok."""
+    missing: list[str] = []
+    if settings.SECRET_KEY == _INSECURE_DEFAULT_KEY or len(settings.SECRET_KEY) < 32:
+        missing.append("SECRET_KEY")
+    if not settings.MASTER_ENCRYPTION_KEY:
+        missing.append("MASTER_ENCRYPTION_KEY")
+    return missing
+
+
+# Validacao de seguranca na inicializacao.
+# P1-2 da auditoria: antes apenas warnings.warn em PROD; producao subia
+# insegura. Agora:
+#   - DEV: warning amigavel (continua subindo, util pra desenvolvedor).
+#   - PROD: NAO levanta excecao aqui (precisariamos quebrar import). Em vez
+#     disso, app.main consulta startup_security_failure() e monta uma
+#     resposta HTTP estetica em qualquer rota, alem de logar com banner.
+_IS_PROD = settings.ENVIRONMENT.upper() == "PROD"
+_missing_secrets = _collect_insecure_secrets()
+
+
+def startup_security_failure() -> InsecureSecretsError | None:
+    """None se tudo ok. Senao retorna a excecao que main.py usa pra
+    bloquear o app com tela amigavel."""
+    if _IS_PROD and _missing_secrets:
+        return InsecureSecretsError(_missing_secrets)
+    return None
+
+
+# Em DEV continua sendo warning informativo, nao bloqueia.
+if not _IS_PROD and _missing_secrets:
+    if "SECRET_KEY" in _missing_secrets:
+        warnings.warn(
+            "\n[SEGURANCA-DEV] SECRET_KEY esta com valor padrao ou curto demais.\n"
+            "Defina SECRET_KEY no .env com chave aleatoria de 64+ chars.\n"
+            "Exemplo: python -c \"import secrets; print(secrets.token_hex(64))\"",
+            stacklevel=2,
+        )
+    if "MASTER_ENCRYPTION_KEY" in _missing_secrets:
+        warnings.warn(
+            "\n[SEGURANCA-DEV] MASTER_ENCRYPTION_KEY nao definida — PDFs nao "
+            "serao criptografados nesta instancia local.",
+            stacklevel=2,
+        )
