@@ -2,6 +2,7 @@ from app.models.approval_history import ApprovalAction, ApprovalHistory
 from app.models.audit_logs import AuditLog
 from app.models.cnpj_cache import CnpjCache
 from app.models.departments import Department, director_departments
+from app.models.email_queue import EmailQueue, EmailStatus
 from app.models.invoice_attachments import InvoiceAttachment
 from app.models.invoice_comments import InvoiceComment
 from app.models.invoices import Invoice, InvoiceStatus
@@ -22,6 +23,8 @@ __all__ = [
     "CnpjCache",
     "Department",
     "director_departments",
+    "EmailQueue",
+    "EmailStatus",
     "GRACE_PERIOD_HOURS",
     "Invoice",
     "InvoiceAttachment",

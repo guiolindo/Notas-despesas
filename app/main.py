@@ -260,6 +260,21 @@ def _purge_old_rejected_on_startup() -> None:
 _purge_old_rejected_on_startup()
 
 
+# P2-8 da auditoria: worker assincrono que drena email_queue. Roda dentro
+# do proprio event loop do FastAPI/uvicorn. Em gunicorn -w N, cada worker
+# inicia seu loop; o claim usa FOR UPDATE SKIP LOCKED no PG pra coordenar.
+@app.on_event("startup")
+async def _start_email_worker() -> None:
+    if _startup_failure is not None:
+        return
+    try:
+        from app.services.email_queue_service import start_background_worker
+        start_background_worker(interval_seconds=15)
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).warning(f"[startup] email worker falhou ao subir: {exc}")
+
+
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 app.add_middleware(SecurityHeadersMiddleware)

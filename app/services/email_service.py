@@ -150,19 +150,38 @@ def send_email_async(
     subject: str,
     html: str,
     text: Optional[str] = None,
+    category: str | None = None,
 ) -> None:
-    """Envia email em thread daemon — request retorna sem esperar SMTP.
+    """Enfileira email pra envio assincrono via fila persistente.
 
-    Trade-off: se o worker do gunicorn reiniciar durante o envio, o email
-    se perde. Para notificacoes de transicao de nota isso e aceitavel
-    (proxima transicao ainda dispara um novo email). Para dados criticos
-    (recuperacao de senha), usar BackgroundTasks do FastAPI no endpoint.
+    P2-8 da auditoria: antes era thread daemon fire-and-forget — se o
+    worker do gunicorn reiniciava durante o envio, o email se perdia. Agora
+    a msg vira uma row em email_queue (Postgres/SQLite), e o worker assincrono
+    drena com retry exponencial. Sobrevive a restart porque o estado e
+    persistente.
+
+    Compatibilidade: assinatura igual. Falha de enfileiramento (ex: DB fora)
+    cai pro fallback antigo (thread daemon) — melhor perder em condicao
+    catastrofica do que travar o request.
     """
+    try:
+        from app.services.email_queue_service import enqueue_email
+        enqueue_email(
+            to_email=to_email,
+            subject=subject,
+            html_body=html,
+            text_body=text,
+            category=category,
+        )
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"[email-async] falha ao enfileirar, fallback thread: {exc}")
+
     def _worker():
         try:
             send_email(None, to_email, subject, html, text)
         except Exception as exc:  # noqa: BLE001
-            logger.error(f"[email-async] worker falhou para {to_email}: {exc}")
+            logger.error(f"[email-async] worker fallback falhou para {to_email}: {exc}")
 
     threading.Thread(target=_worker, daemon=True, name=f"email-{to_email[:20]}").start()
 
