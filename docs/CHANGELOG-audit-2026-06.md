@@ -162,14 +162,38 @@ Range coberto: `26d5574..HEAD` (todos os commits desta fase de auditoria).
 
 **Achados**: P2-7 (CSS split).
 
-**Arquivos**: `app/static/css/main.css` virou imports ordenados de partials.
+**Arquivos**: `app/static/css/main.css` virou aggregator com `@import` ordenado de 15 partials sob `base/`, `components/`, `pages/` + `responsive.css` e `utilities.css`. Conteúdo original (~1660 linhas) preservado em ordem para não quebrar cascade.
 
-**Risco**: médio. Ordem das partials precisa preservar cascade. Quebra visual = todo mundo nota.
+**Risco**: médio. Ordem das partials preserva cascade visual. CSP `style-src 'self'` cobre paths relativos. Cache do browser passa a ser por partial — mudança pontual não invalida tudo, bom para deploy.
+
+**Atenção operacional**:
+- `@import` cria download em cascata (browser baixa `main.css` → descobre imports → baixa cada um). Em rede 3G/mobile pode adicionar 100-300ms de TTFB. Se sentir lentidão no first-paint, **migrar para múltiplos `<link rel="stylesheet">` no `<head>`** preserva os mesmos arquivos sem o waterfall.
+- Cache busting precisa rodar por arquivo agora. Se o pipeline atual usa query string (`main.css?v=hash`), só o aggregator pega novo hash. Considerar cache busting por content-hash em cada partial.
 
 **Como testar**:
 1. Subir o app e abrir cada página principal: `/dashboard`, `/invoices`, `/invoices/{id}`, `/admin/users`, `/scanner`, `/verify/{id}`. Checar que nenhum elemento ficou sem estilo (visualmente igual ao antes).
-2. DevTools → Network → verificar que partials carregam todas com 200.
-3. Lighthouse audit → não regrediu performance/a11y.
+2. DevTools → Network → verificar que todas as partials carregam com 200.
+3. DevTools → Network throttling "Fast 3G" → comparar Largest Contentful Paint contra commit anterior. Se piorou >200ms, considerar migrar pra `<link>` direto.
+4. Lighthouse audit → não regrediu performance/a11y.
+
+---
+
+## c6e67aa — refactor(js): split password recovery handlers (Codex)
+
+**Achados**: P2-1 primeiro corte (forgot/reset password).
+
+**Arquivos**:
+- `app/static/js/password.js` — novo. Handlers `initForgotPasswordPage`, `initResetPasswordPage`.
+- `app/static/js/app.js` — dispatcher chama os handlers do password.js quando `data-page === 'forgot-password'` ou `'reset-password'`.
+- Templates `forgot_password.html` e `reset_password.html` — carregam `password.js` após `app.js`.
+
+**Risco**: baixo. Área isolada (só duas páginas, ambas anônimas). Não toca em Auth.
+
+**Como testar**:
+1. `/forgot-password` → enviar email → recebe mensagem genérica ("se o email existir...").
+2. Email chega (assumindo SMTP configurado) → link `/reset-password?code=...`.
+3. Página de reset valida código + força de senha → sucesso → redireciona pra `/login`.
+4. DevTools → Network → ambos `app.js` e `password.js` carregam na página.
 
 ---
 
