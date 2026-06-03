@@ -20,6 +20,7 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from app.models import User
+from app.security.dependencies import token_is_pre_password_change
 from app.security.jwt import decode_token
 
 
@@ -37,14 +38,34 @@ def _get_user_from_cookie(request: Request, db: Session) -> User | None:
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.is_active:
         return None
+    # Bloqueia page guard de aceitar refresh emitido antes da ultima troca de
+    # senha. Sem isso, navegar pelas paginas HTML continua funcionando ate o
+    # cookie expirar (7d), mesmo apos reset/troca. Mesmo bug do /refresh em P0.
+    if token_is_pre_password_change(user, payload.get("iat")):
+        return None
     return user
+
+
+def clear_invalid_refresh_cookie(response: Response) -> None:
+    """Limpa cookie de refresh em resposta HTML — usado quando page guard
+    detecta refresh invalido (senha trocou). Sem isso, navegador segue
+    mandando o cookie ate expirar."""
+    response.delete_cookie(key="refresh_token")
+
+
+def _redirect_login_clear_cookie() -> RedirectResponse:
+    """Helper: redirect pra /login e tambem apaga cookie de refresh (que pode
+    estar invalido por troca de senha)."""
+    redirect = RedirectResponse(url="/login", status_code=302)
+    clear_invalid_refresh_cookie(redirect)
+    return redirect
 
 
 def require_page_login(request: Request, db: Session) -> User | Response:
     """Garante que existe usuario logado. Retorna User ou RedirectResponse(/login)."""
     user = _get_user_from_cookie(request, db)
     if not user:
-        return RedirectResponse(url="/login", status_code=302)
+        return _redirect_login_clear_cookie()
     return user
 
 
@@ -53,7 +74,7 @@ def require_page_role(request: Request, db: Session, *roles: str) -> User | Resp
 
     Retorna:
     - User se autorizado
-    - RedirectResponse para /login se nao logado
+    - RedirectResponse para /login se nao logado (cookie e limpo, caso esteja invalido)
     - TemplateResponse 403 se logado mas sem permissao
     """
     # Import local para evitar ciclo (app.main importa pages que importaria isto na inicializacao)
@@ -61,7 +82,7 @@ def require_page_role(request: Request, db: Session, *roles: str) -> User | Resp
 
     user = _get_user_from_cookie(request, db)
     if not user:
-        return RedirectResponse(url="/login", status_code=302)
+        return _redirect_login_clear_cookie()
     if roles and user.role.value not in roles:
         return templates.TemplateResponse(
             request,

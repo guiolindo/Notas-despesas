@@ -1587,13 +1587,16 @@ function renderTimeline(history) {
 
 // ── PDF helpers ──────────────────────────────────────────────────────────────
 
-async function fetchAndOpenPdf(url) {
+async function fetchAndOpenPdf(url, options = {}) {
+  // POST /mark-paid foi separado de GET /print pra que abrir/recarregar o
+  // comprovante (idempotente) nao dispare lancamento financeiro. Quem chama
+  // este helper passa { method: 'POST' } quando a intencao e LANCAR a nota.
+  const method = (options.method || 'GET').toUpperCase();
   showLoading();
   try {
     const token = Auth.getToken();
-    const resp = await fetch(url, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
-    });
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const resp = await fetch(url, { method, headers });
     if (!resp.ok) {
       let detail = 'Erro ao gerar PDF';
       try { detail = (await resp.json()).detail || detail; } catch {}
@@ -1609,6 +1612,17 @@ async function fetchAndOpenPdf(url) {
   } finally {
     hideLoading();
   }
+}
+
+/** Retorna URL + method certo conforme status da nota:
+ *  - APROVADO -> POST /mark-paid (lanca + retorna PDF)
+ *  - PAGO     -> GET  /print     (reimpressao, sem efeito)
+ *  Usar nos 4 botoes do financeiro/drawer pra evitar duplicar a logica. */
+function _printOrMarkPaidEndpoint(invoice) {
+  if (invoice.status === 'APROVADO') {
+    return { url: `/api/invoices/${invoice.id}/mark-paid`, method: 'POST' };
+  }
+  return { url: `/api/invoices/${invoice.id}/print`, method: 'GET' };
 }
 
 // ── PDF inline + director selection helpers ─────────────────────────────────
@@ -1910,7 +1924,10 @@ function renderFinanceActions(invoice) {
     </div>`;
 
   document.getElementById('print-invoice-btn')?.addEventListener('click', async () => {
-    const ok = await fetchAndOpenPdf(`/api/invoices/${invoice.id}/print`);
+    // APROVADO -> POST /mark-paid: lanca a nota explicitamente e devolve o PDF.
+    // Antes era GET /print, mas leitura nao deveria mutar estado (P0 auditoria).
+    if (!(await confirmAction('Confirmar recebimento e lancar a nota? Esta acao sera registrada.'))) return;
+    const ok = await fetchAndOpenPdf(`/api/invoices/${invoice.id}/mark-paid`, { method: 'POST' });
     if (ok) {
       showToast('Comprovante gerado. Recebimento registrado no sistema.', 'success');
       setTimeout(() => window.location.reload(), 1800);
@@ -3010,7 +3027,11 @@ function _renderDrawerFinance(invoice) {
     </div>`;
 
   document.getElementById('drawer-finance-print').addEventListener('click', async () => {
-    const ok = await fetchAndOpenPdf(`/api/invoices/${invoice.id}/print`);
+    // Lancamento explicito (POST /mark-paid) so quando APROVADO. Reimpressao
+    // de nota ja PAGO usa GET /print (sem efeito). Helper escolhe.
+    if (!isReprint && !(await confirmAction('Confirmar recebimento e lancar a nota?'))) return;
+    const { url, method } = _printOrMarkPaidEndpoint(invoice);
+    const ok = await fetchAndOpenPdf(url, { method });
     if (ok) {
       showToast(isReprint ? 'Comprovante reimpresso.' : 'Comprovante gerado. Nota lancada.', 'success');
       setTimeout(async () => {

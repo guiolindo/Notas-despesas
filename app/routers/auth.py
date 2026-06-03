@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import engine, get_db
 from app.models import AuditLog, User
-from app.security.dependencies import get_current_user
+from app.security.dependencies import get_current_user, token_is_pre_password_change
 from app.security.hashing import hash_password, verify_password
 from app.security.jwt import create_access_token, create_refresh_token, decode_token
 
@@ -141,8 +141,16 @@ def login(
     }
 
 
+def _clear_refresh_cookie(response: Response) -> None:
+    """Apaga o cookie de refresh. Usado em logout e quando o refresh fica invalido
+    (reset/troca de senha), evitando que o cliente fique tentando renovar com um
+    cookie que nao vai mais funcionar."""
+    response.delete_cookie(key="refresh_token")
+
+
 @router.post("/refresh")
 def refresh_token(
+    response: Response,
     refresh_token_cookie: str | None = Cookie(default=None, alias="refresh_token"),
     db: Session = Depends(get_db),
 ):
@@ -152,21 +160,41 @@ def refresh_token(
             detail="Sessao expirada. Faca login novamente.",
         )
 
-    payload = decode_token(refresh_token_cookie, expected_type="refresh")
+    try:
+        payload = decode_token(refresh_token_cookie, expected_type="refresh")
+    except HTTPException:
+        # Refresh invalido (assinatura, expirou, type errado): limpa cookie
+        # pra cliente parar de mandar e cair pra /login.
+        _clear_refresh_cookie(response)
+        raise
     user_id = payload.get("sub")
     if not user_id:
+        _clear_refresh_cookie(response)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sessao invalida. Faca login novamente.")
 
     # Revalida o usuario no DB. Sem isso, conta desativada/bloqueada/anonimizada
     # ou role rebaixado continuariam com access token novo por ate 7 dias.
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.is_active:
+        _clear_refresh_cookie(response)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario invalido")
 
     blocked_until = _as_utc(user.blocked_until)
     now = datetime.now(timezone.utc)
     if blocked_until and blocked_until > now:
+        # Conta bloqueada: nao apaga cookie ainda (bloqueio e temporario),
+        # mas tambem nao emite token novo.
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Conta bloqueada")
+
+    # Invalida refresh emitido ANTES da ultima troca/reset de senha. Sem isso,
+    # cliente comprometido continua renovando sessao por ate 7 dias mesmo apos
+    # vitima trocar a senha (P0 da auditoria).
+    if token_is_pre_password_change(user, payload.get("iat")):
+        _clear_refresh_cookie(response)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessao expirada (senha foi alterada). Faca login novamente.",
+        )
 
     # Le role do DB, nao do token (defesa contra rebaixamento ignorado)
     access_token = create_access_token({"sub": user.id, "role": user.role.value})
@@ -175,7 +203,7 @@ def refresh_token(
 
 @router.post("/logout")
 def logout(response: Response):
-    response.delete_cookie(key="refresh_token")
+    _clear_refresh_cookie(response)
     return {"message": "Logout realizado"}
 
 
