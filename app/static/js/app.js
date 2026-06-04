@@ -174,7 +174,12 @@ const Auth = (() => {
 
 // Exposto pra scripts secundarios (verify.js, scanner.js etc.) consumirem
 // o mesmo helper sem duplicar logica e sem mexer em localStorage.
-if (typeof window !== 'undefined') window.Auth = Auth;
+if (typeof window !== 'undefined') {
+  window.Auth = Auth;
+  // Namespace de modulos. Sub-modulos (password.js, etc.) anexam aqui em
+  // vez de poluir o global com nomes soltos. P2-1 (auditoria).
+  window.Economart = window.Economart || {};
+}
 
 // Pre-aquece /auth/refresh assim que o script carrega — antes do DOM ficar
 // pronto. Em redes/instancias com cold start (Railway free tier), o /refresh
@@ -312,61 +317,10 @@ function hideLoading() {
   if (overlay) overlay.classList.add('hidden');
 }
 
-const TZ = 'America/Sao_Paulo';
-
-function formatDate(dateStr) {
-  if (!dateStr) return '-';
-  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${dateStr}T00:00:00Z`));
-}
-
-function formatDateTime(dateStr) {
-  if (!dateStr) return '-';
-  return new Intl.DateTimeFormat('pt-BR', {
-    timeZone: TZ,
-    dateStyle: 'short',
-    timeStyle: 'short'
-  }).format(new Date(dateStr));
-}
-
-/** Retorna a hora atual no fuso horário de Brasilia (0-23). */
-function hourInBR() {
-  return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', hour12: false }).format(new Date()), 10);
-}
-
-/** Retorna a string YYYY-MM-DD de hoje em Brasilia. */
-function todayInBR() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
-}
-
-function formatCurrency(value) {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL'
-  }).format(Number(value || 0));
-}
-
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;'
-  })[char]);
-}
-
-function statusBadge(status) {
-  const text = {
-    RASCUNHO: 'Rascunho',
-    AGUARDANDO_GESTOR: 'Aguardando gestor',
-    REPROVADO_GESTOR: 'Reprovado gestor',
-    AGUARDANDO_DIRETOR: 'Aguardando diretor',
-    REPROVADO_DIRETOR: 'Reprovado diretor',
-    APROVADO: 'Aprovado',
-    PAGO: 'Lancado'
-  }[status] || status;
-  return `<span class="status-badge status-${String(status).toLowerCase()}">${text}</span>`;
-}
+// Helpers de formatacao (TZ, formatDate, formatDateTime, hourInBR,
+// todayInBR, formatCurrency, escapeHtml, statusBadge) movidos para
+// app/static/js/format.js (P2-1 auditoria). Acesso via window.* (alias)
+// ou window.Economart.format.*. format.js carrega ANTES de app.js.
 
 function confirmAction(message) {
   return new Promise((resolve) => {
@@ -746,6 +700,17 @@ function validatePassword(password) {
   return password.length >= 8 && /[A-Za-z]/.test(password) && /\d/.test(password);
 }
 
+// Exposicao explicita dos helpers globais que app.js DEFINE e sub-modulos
+// (password.js, etc.) CONSOMEM. Helpers que sub-modulos definem
+// (formatDate, escapeHtml, validateCPF, etc.) ficam expostos pelos
+// respectivos arquivos (format.js, documents.js). P2-1 (auditoria).
+if (typeof window !== 'undefined') {
+  window.apiFetch = apiFetch;
+  window.showToast = showToast;
+  window.confirmAction = confirmAction;
+  window.validatePassword = validatePassword;
+}
+
 async function initConfiguracoes() {
   const user = Auth.getUser();
   if (!user) return;
@@ -834,67 +799,8 @@ function renderGlobalAvailabilityBanner() {
   }
 }
 
-function initChangePasswordPage() {
-  if (!Auth.getToken()) {
-    window.location.href = '/login';
-    return;
-  }
-  // Banner so se forcado. Bloqueio de navegacao tambem so se forcado —
-  // troca voluntaria nao deve prender o usuario na pagina.
-  const user = Auth.getUser();
-  const isForced = Boolean(user?.must_change_password);
-  if (isForced) {
-    document.getElementById('force-change-banner')?.classList.remove('hidden');
-  }
-  let changed = false;
-  // So bloqueia navegacao se a troca foi FORCADA (admin resetou ou e primeiro
-  // login). Troca voluntaria deve permitir cancelar.
-  if (isForced) {
-    document.querySelectorAll('a').forEach((link) => {
-      link.addEventListener('click', (event) => {
-        if (!changed) event.preventDefault();
-      });
-    });
-  }
-  window.addEventListener('beforeunload', (event) => {
-    if (!changed && isForced) {
-      event.preventDefault();
-      event.returnValue = '';
-    }
-  });
-  document.getElementById('change-password-form')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const errorEl = document.getElementById('change-password-error');
-    const currentPassword = document.getElementById('current-password').value;
-    const newPassword = document.getElementById('new-password').value;
-    const confirmPassword = document.getElementById('confirm-password').value;
-    errorEl.classList.add('hidden');
-    if (!validatePassword(newPassword)) {
-      errorEl.textContent = 'A nova senha deve ter minimo 8 caracteres, com letra e numero.';
-      errorEl.classList.remove('hidden');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      errorEl.textContent = 'A confirmacao nao confere.';
-      errorEl.classList.remove('hidden');
-      return;
-    }
-    try {
-      await apiFetch('/auth/change-password', {
-        method: 'POST',
-        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
-      });
-      const user = Auth.getUser();
-      user.must_change_password = false;
-      Auth.setUser(user);
-      changed = true;
-      window.location.href = '/dashboard';
-    } catch (error) {
-      errorEl.textContent = error.message;
-      errorEl.classList.remove('hidden');
-    }
-  });
-}
+// initChangePasswordPage movida para app/static/js/password.js (P2-1
+// auditoria). Acesso via window.Economart.password.initChange().
 
 let invoiceListState = {
   page: 1,
@@ -1189,52 +1095,10 @@ async function handleInvoiceAction(action, invoiceId) {
 
 // ─── CPF/CNPJ helpers (espelho dos do backend) ──────────────────────────────
 
-function stripDocDigits(value) {
-  return (value || '').replace(/\D/g, '');
-}
-
-function validateCPF(cpf) {
-  cpf = stripDocDigits(cpf);
-  if (cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false;
-  let s = 0;
-  for (let i = 0; i < 9; i++) s += parseInt(cpf[i]) * (10 - i);
-  let r = s % 11;
-  const dv1 = r < 2 ? 0 : 11 - r;
-  if (dv1 !== parseInt(cpf[9])) return false;
-  s = 0;
-  for (let i = 0; i < 10; i++) s += parseInt(cpf[i]) * (11 - i);
-  r = s % 11;
-  const dv2 = r < 2 ? 0 : 11 - r;
-  return dv2 === parseInt(cpf[10]);
-}
-
-function validateCNPJ(cnpj) {
-  cnpj = stripDocDigits(cnpj);
-  if (cnpj.length !== 14 || /^(\d)\1+$/.test(cnpj)) return false;
-  const w1 = [5,4,3,2,9,8,7,6,5,4,3,2];
-  const w2 = [6, ...w1];
-  let s = 0;
-  for (let i = 0; i < 12; i++) s += parseInt(cnpj[i]) * w1[i];
-  let r = s % 11;
-  const dv1 = r < 2 ? 0 : 11 - r;
-  if (dv1 !== parseInt(cnpj[12])) return false;
-  s = 0;
-  for (let i = 0; i < 13; i++) s += parseInt(cnpj[i]) * w2[i];
-  r = s % 11;
-  const dv2 = r < 2 ? 0 : 11 - r;
-  return dv2 === parseInt(cnpj[13]);
-}
-
-function formatDocument(digits) {
-  digits = stripDocDigits(digits);
-  if (digits.length === 11) {
-    return `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6,9)}-${digits.slice(9)}`;
-  }
-  if (digits.length === 14) {
-    return `${digits.slice(0,2)}.${digits.slice(2,5)}.${digits.slice(5,8)}/${digits.slice(8,12)}-${digits.slice(12)}`;
-  }
-  return digits;
-}
+// Helpers de CPF/CNPJ (stripDocDigits, validateCPF, validateCNPJ,
+// formatDocument) movidos para app/static/js/documents.js (P2-1 auditoria).
+// Acesso via window.* (alias) ou window.Economart.documents.*.
+// documents.js carrega ANTES de app.js.
 
 function setupSupplierDocField() {
   const input = document.getElementById('supplier-document');
@@ -1523,96 +1387,10 @@ async function initInvoiceDetail() {
 }
 
 // ─── Comentarios na nota ──────────────────────────────────────────────
-function _commentInitials(name) {
-  if (!name) return '?';
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const a = parts[0]?.[0] || '';
-  const b = parts.length > 1 ? parts[parts.length - 1][0] : '';
-  return (a + b).toUpperCase();
-}
-
-function _commentDateLabel(iso) {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
-    return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-  } catch { return iso; }
-}
-
-function renderComments(items) {
-  const thread = document.getElementById('comments-thread');
-  const countEl = document.getElementById('comments-count');
-  if (!thread) return;
-  const me = Auth.getUser();
-  if (countEl) countEl.textContent = items.length ? `(${items.length})` : '';
-  if (!items.length) {
-    thread.innerHTML = '<p class="text-muted text-xs">Ainda nao ha comentarios. Use o campo abaixo pra perguntar ou esclarecer algo sem precisar reprovar a nota.</p>';
-    return;
-  }
-  thread.innerHTML = items.map((c) => {
-    const isMine = c.user && me && c.user.id === me.id;
-    const author = c.user ? escapeHtml(c.user.name) : '(usuario removido)';
-    return `<div class="comment-item${isMine ? ' is-mine' : ''}">
-      <span class="comment-avatar" title="${author}">${escapeHtml(_commentInitials(c.user?.name))}</span>
-      <div class="comment-body">
-        <div class="comment-meta">
-          <strong>${author}</strong>
-          <span>${escapeHtml(_commentDateLabel(c.created_at))}</span>
-        </div>
-        <div class="comment-text">${escapeHtml(c.body)}</div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-// Backend agora pagina: GET /comments retorna { items, page, per_page, total, has_next }.
-// Normalizamos pra { items, total } pra UI nao se importar com a paginacao
-// agora (a carga inicial pega ate per_page=50 — suficiente pra maioria).
-function _normalizeCommentsResponse(payload) {
-  if (Array.isArray(payload)) return { items: payload, total: payload.length };
-  return { items: payload?.items ?? [], total: payload?.total ?? 0 };
-}
-
-async function setupComments(invoiceId) {
-  const thread = document.getElementById('comments-thread');
-  if (!thread) return;
-  try {
-    const data = _normalizeCommentsResponse(await apiFetch(`/api/invoices/${invoiceId}/comments`));
-    renderComments(data.items);
-  } catch (e) {
-    thread.innerHTML = `<p class="text-muted text-xs">Erro ao carregar comentarios: ${escapeHtml(e.message || '')}</p>`;
-  }
-
-  const input = document.getElementById('comments-input');
-  const submit = document.getElementById('comments-submit');
-  const form = document.getElementById('comments-form');
-  if (!input || !submit || !form) return;
-  input.addEventListener('input', () => {
-    submit.disabled = input.value.trim().length === 0;
-  });
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const body = input.value.trim();
-    if (!body) return;
-    submit.disabled = true;
-    submit.textContent = 'Enviando...';
-    try {
-      await apiFetch(`/api/invoices/${invoiceId}/comments`, {
-        method: 'POST',
-        body: JSON.stringify({ body }),
-      });
-      input.value = '';
-      // Recarrega thread
-      const data = _normalizeCommentsResponse(await apiFetch(`/api/invoices/${invoiceId}/comments`));
-      renderComments(data.items);
-    } catch (err) {
-      showToast(err.message || 'Erro ao comentar.', 'error');
-    } finally {
-      submit.disabled = true;
-      submit.textContent = 'Comentar';
-    }
-  });
-}
+// Funcoes (_commentInitials, _commentDateLabel, renderComments,
+// _normalizeCommentsResponse, setupComments) movidas para
+// app/static/js/comments.js (P2-1 auditoria). Acesso via window.* (alias)
+// ou window.Economart.comments.*. comments.js carrega DEPOIS de app.js.
 
 function renderInvoiceAlerts(invoice, containerId) {
   // Banners contextuais (emissao antiga, vencimento curto).
@@ -3441,7 +3219,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     try { await Auth.ensureToken(); } catch (e) {}
   }
   if (page === 'change-password') {
-    initChangePasswordPage();
+    if (window.Economart?.password?.initChange) {
+      window.Economart.password.initChange();
+    } else {
+      console.error('[dispatch] password.js nao carregado — verifique <script> do template change_password.html');
+    }
     return;
   }
   document.getElementById('sidebar-toggle')?.addEventListener('click', toggleSidebar);
@@ -3492,69 +3274,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else if (page === 'configuracoes') {
     initShell().then(() => initConfiguracoes());
   } else if (page === 'forgot-password') {
-    initForgotPasswordPage();
+    if (window.Economart?.password?.initForgot) {
+      window.Economart.password.initForgot();
+    } else {
+      console.error('[dispatch] password.js nao carregado em forgot_password.html');
+    }
   } else if (page === 'reset-password') {
-    initResetPasswordPage();
+    if (window.Economart?.password?.initReset) {
+      window.Economart.password.initReset();
+    } else {
+      console.error('[dispatch] password.js nao carregado em reset_password.html');
+    }
   } else if (document.querySelector('.layout')) {
     initShell();
   }
 });
 
 
-// ─── Esqueci minha senha ──────────────────────────────────────────────────
-
-function initForgotPasswordPage() {
-  document.getElementById('forgot-password-form')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const email = document.getElementById('forgot-email').value.trim();
-    if (!email) return;
-    const msgEl = document.getElementById('forgot-message');
-    try {
-      await fetch('/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      msgEl.textContent = 'Se este email estiver cadastrado, voce recebera um codigo em alguns segundos. Verifique sua caixa de entrada e spam.';
-      msgEl.classList.remove('hidden');
-      setTimeout(() => { window.location.href = `/reset-password?email=${encodeURIComponent(email)}`; }, 2500);
-    } catch (e) {
-      showToast('Erro ao processar pedido. Tente novamente.', 'error');
-    }
-  });
-}
-
-function initResetPasswordPage() {
-  // Pre-preenche email se veio via querystring
-  const params = new URLSearchParams(window.location.search);
-  const emailParam = params.get('email');
-  if (emailParam) document.getElementById('reset-email').value = emailParam;
-
-  document.getElementById('reset-password-form')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const errorEl = document.getElementById('reset-error');
-    errorEl.classList.add('hidden');
-    const payload = {
-      email: document.getElementById('reset-email').value.trim(),
-      code: document.getElementById('reset-code').value.trim(),
-      new_password: document.getElementById('reset-new-password').value
-    };
-    try {
-      const resp = await fetch('/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.detail || 'Erro');
-      showToast('Senha redefinida! Faca login com a nova senha.', 'success');
-      setTimeout(() => { window.location.href = '/login'; }, 1500);
-    } catch (e) {
-      errorEl.textContent = e.message;
-      errorEl.classList.remove('hidden');
-    }
-  });
-}
+// initForgotPasswordPage e initResetPasswordPage movidas para
+// app/static/js/password.js (P2-1 auditoria). Acesso via
+// window.Economart.password.initForgot() e .initReset().
 
 
 // SMTP config foi removido da UI — agora vive em .env (so quem opera
