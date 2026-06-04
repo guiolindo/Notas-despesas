@@ -193,7 +193,11 @@ a:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  /* Drawer (.invoice-drawer) usa z-index 200, drawer-backdrop usa 190.
+   * Modal precisa ficar ACIMA deles — senao confirm de "Imprimir e
+   * Lancar" disparado de dentro do drawer fica oculto atras dele e o
+   * usuario nao consegue confirmar (bug reportado). */
+  z-index: 300;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -206,6 +210,10 @@ a:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-
   background: var(--white);
   box-shadow: var(--shadow-md);
   animation: scale-in 0.2s ease;
+  /* Garante que o card do modal renderize acima do backdrop e de qualquer
+   * conteudo do drawer/sidebar que ainda esteja no document flow. */
+  position: relative;
+  z-index: 310;
 }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 
