@@ -147,14 +147,50 @@ def _history_response(entry: ApprovalHistory) -> ApprovalHistoryResponse:
     )
 
 
-def _count_comments(invoice: Invoice) -> int:
-    """Conta comentarios da nota via session pendurada no objeto.
+# Cache de comments_count por request. Listagem com 20 notas faria 20
+# queries (N+1) — usuario reportou lag perceptivel de ~5s. Solucao: o
+# endpoint de listagem chama _prefetch_comment_counts ANTES do loop com
+# uma unica query agrupada; cada invoice_response consulta este dict.
+# Quando _COMMENT_COUNT_CACHE esta None (rota de detail individual),
+# _count_comments cai pra query pontual — 1 query em vez de 20.
+import contextvars as _ctxvars
 
-    Tradeoff: em listagens grandes (50+ notas) gera N+1 queries. Acceptable
-    porque count e barato (indice em invoice_id existe) e a maioria das
-    listagens usa per_page <= 20. Se virar gargalo, batch-load com
-    func.count agrupado por invoice_id e passar dict pra invoice_response.
-    """
+_COMMENT_COUNT_CACHE: "_ctxvars.ContextVar[dict[str, int] | None]" = _ctxvars.ContextVar(
+    "comment_count_cache", default=None,
+)
+
+
+def _prefetch_comment_counts(db, invoice_ids: list[str]) -> None:
+    """Roda 1 SELECT invoice_id, COUNT(*) GROUP BY invoice_id pra todos os
+    invoices da pagina. Resultado fica num dict consultado por
+    _count_comments dentro do mesmo request."""
+    if not invoice_ids:
+        _COMMENT_COUNT_CACHE.set({})
+        return
+    from sqlalchemy import func
+
+    from app.models import InvoiceComment
+
+    rows = (
+        db.query(InvoiceComment.invoice_id, func.count(InvoiceComment.id))
+        .filter(InvoiceComment.invoice_id.in_(invoice_ids))
+        .group_by(InvoiceComment.invoice_id)
+        .all()
+    )
+    cache = {inv_id: int(count) for inv_id, count in rows}
+    # Preenche zeros pras notas sem comentario — evita fallback pra query
+    # individual em invoice_response.
+    for inv_id in invoice_ids:
+        cache.setdefault(inv_id, 0)
+    _COMMENT_COUNT_CACHE.set(cache)
+
+
+def _count_comments(invoice: Invoice) -> int:
+    """Conta comentarios da nota. Usa cache do request quando disponivel
+    (listagem pre-fetched), senao cai pra query individual (detail)."""
+    cache = _COMMENT_COUNT_CACHE.get()
+    if cache is not None and invoice.id in cache:
+        return cache[invoice.id]
     from sqlalchemy import func
     from sqlalchemy.orm import object_session
 
@@ -480,7 +516,7 @@ def list_invoices(
             except ValueError:
                 raise HTTPException(status_code=400, detail=f"Data invalida em '{label}'. Use o formato dd/mm/aaaa.")
 
-    items, total, total_amount = invoice_service.get_invoices_for_user(
+    items, total, total_amount = invoice_service.get_invoices_for_user(  # noqa: E501
         db,
         current_user,
         status_filter=status,
@@ -498,6 +534,8 @@ def list_invoices(
         department_id=department_id,
         light=light,
     )
+    # Pre-carrega comments_count com 1 query GROUP BY (em vez de N+1).
+    _prefetch_comment_counts(db, [inv.id for inv in items])
     return PaginatedInvoices(
         items=[invoice_response(invoice) for invoice in items],
         total=total,
