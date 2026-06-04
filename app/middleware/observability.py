@@ -87,6 +87,13 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         # reportado pelo usuario (5s percebidos em acoes). Loga apenas
         # rotas autenticadas/operacionais (filtra /static e /health/live
         # pra nao poluir). Codex sugeriu no chat de coordenacao.
+        #
+        # IMPORTANTE: o reset do contextvar precisa acontecer DEPOIS do
+        # logger.info, senao o _RequestIdFilter le current_request_id()
+        # como None e o log sai com req=- — perde justamente a correlacao
+        # que a instrumentacao quer prover. Bug sutil apontado por Codex
+        # no review de c095b3f. Estrutura agora: try logica + finally
+        # do reset garantido mesmo em excecao.
         import time as _time
         from logging import getLogger as _getLogger
 
@@ -98,19 +105,20 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         )
         try:
             response = await call_next(request)
+            elapsed_ms = (_time.perf_counter_ns() - start_ns) / 1_000_000.0
+            # Adiciona Server-Timing header — DevTools mostra no waterfall.
+            try:
+                response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
+            except Exception:  # noqa: BLE001
+                pass
+            response.headers[_REQUEST_ID_HEADER] = rid
+            # Loga apenas requests "interessantes" (>= 200ms, ou nao-OK).
+            # AQUI o contextvar ainda esta setado — req=<rid> aparece no log.
+            if not is_noisy and (elapsed_ms >= 200 or response.status_code >= 400):
+                _getLogger("app").info(
+                    "%s %s -> %d in %.0fms",
+                    request.method, path, response.status_code, elapsed_ms,
+                )
+            return response
         finally:
             _request_id_var.reset(token)
-        elapsed_ms = (_time.perf_counter_ns() - start_ns) / 1_000_000.0
-        # Adiciona Server-Timing header — DevTools mostra no waterfall.
-        try:
-            response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
-        except Exception:  # noqa: BLE001
-            pass
-        # Loga apenas requests "interessantes" (>= 200ms, ou nao-OK).
-        if not is_noisy and (elapsed_ms >= 200 or response.status_code >= 400):
-            _getLogger("app").info(
-                "%s %s -> %d in %.0fms",
-                request.method, path, response.status_code, elapsed_ms,
-            )
-        response.headers[_REQUEST_ID_HEADER] = rid
-        return response
