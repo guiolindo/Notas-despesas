@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -275,7 +276,32 @@ async def _start_email_worker() -> None:
         logging.getLogger(__name__).warning(f"[startup] email worker falhou ao subir: {exc}")
 
 
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+# Subclasse do StaticFiles que adiciona Cache-Control para reduzir
+# revalidacao em cada request. Sem isso, usuario reportou app.js de 147KB
+# carregando em ~1s a cada navegacao porque o browser tinha que validar
+# 304 toda vez. Com Cache-Control:public, max-age=86400 o browser usa o
+# cache local por 24h sem ida ao server.
+#
+# 24h e conservador — quando atualizarmos JS/CSS, usuarios em sessao ativa
+# pegam o novo na proxima visita. Em deploy critico podemos disparar
+# Ctrl+F5 no time. Cache mais agressivo (max-age=31536000 immutable) so
+# faria sentido com hash no nome do arquivo (build pipeline), que ainda
+# nao temos.
+class _CachedStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers.setdefault("Cache-Control", "public, max-age=86400")
+        return response
+
+
+app.mount("/static", _CachedStaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+# GZipMiddleware: comprime respostas >= 500 bytes. JS/HTML/JSON tipicamente
+# reduzem 70% (147KB de app.js -> ~35KB transmitidos). Causa principal do
+# lag percebido em cold start do Railway sem CDN. Adiciona Vary:
+# Accept-Encoding automaticamente.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RateLimitMiddleware)
