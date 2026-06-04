@@ -274,7 +274,7 @@ O que **não está coberto técnicamente** (exige controle humano):
 - Mesma pessoa controlando app + infra — depende de separação física de funções.
 - Logs replicados fora do controle do operador da infra — recomendação futura.
 
-Detalhes completos do modelo, esquema das tabelas, fluxos e código em `DOCUMENTACAO.md` § 36–41.
+Detalhes completos em [`docs/security.md`](docs/security.md#defesa-contra-admin-malicioso) e [`docs/domain-model.md`](docs/domain-model.md#defesa-contra-admin-malicioso-insider-threat).
 
 ## Setup local
 
