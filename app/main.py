@@ -33,6 +33,41 @@ templates.env.autoescape = select_autoescape(
     default_for_string=True,
 )
 
+
+def _compute_static_version() -> str:
+    """Hash dos arquivos JS/CSS principais para cache-busting via ?v=...
+    No deploy, qualquer mudanca neles muda a versao e força browsers a
+    rebaixar. Antes deste mecanismo, Cache-Control:max-age=86400 segurava
+    usuarios em versoes antigas por 24h apos deploy — causou bug reportado
+    onde fix do login nao chegava ate o browser por estar em cache."""
+    import hashlib
+
+    static_dir = BASE_DIR / "static"
+    # Arquivos que importam pra invalidacao: JS de modulo + CSS principal.
+    files = [
+        static_dir / "js" / "app.js",
+        static_dir / "js" / "format.js",
+        static_dir / "js" / "documents.js",
+        static_dir / "js" / "comments.js",
+        static_dir / "js" / "password.js",
+        static_dir / "css" / "main.css",
+    ]
+    h = hashlib.sha256()
+    for f in files:
+        try:
+            stat = f.stat()
+            h.update(f.name.encode())
+            h.update(str(stat.st_mtime_ns).encode())
+            h.update(str(stat.st_size).encode())
+        except OSError:
+            continue
+    return h.hexdigest()[:10]
+
+
+STATIC_VERSION = _compute_static_version()
+# Disponivel em todos os templates como {{ STATIC_VERSION }}.
+templates.env.globals["STATIC_VERSION"] = STATIC_VERSION
+
 app = FastAPI(title="Economart - Aprovacao de Notas Fiscais", version="1.0.0")
 
 # P1-2 da auditoria: PROD nao pode subir com SECRET_KEY default ou
