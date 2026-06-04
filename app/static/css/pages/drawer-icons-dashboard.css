@@ -235,3 +235,46 @@
 @keyframes cam-laser { from { top: 12%; } to { top: 88%; } }
 .scan-result { display: flex; flex-direction: column; gap: 6px; }
 .scan-code { font-size: 13px; word-break: break-all; padding: 6px 8px; background: var(--bg); border-radius: var(--radius-sm); font-family: var(--font-mono); }
+
+/* ─── Drawer mobile (Codex review) ───────────────────────────────
+ * No mobile o drawer ocupa a tela toda. O header precisa ficar
+ * STICKY mesmo com scroll longo (timeline + comentarios + PDF
+ * empilhados), senao o usuario perde o botao Fechar. drawer-body
+ * ja tem overflow-y:auto, mas browsers mobile precisam de
+ * -webkit-overflow-scrolling pra inertial scroll.
+ *
+ * responsive.css tinha regra .drawer (classe errada — o real e
+ * .invoice-drawer). Corrigido aqui via cascata. */
+@media (max-width: 768px) {
+  .invoice-drawer {
+    width: 100% !important;
+    max-width: 100%;
+  }
+  .drawer-header {
+    /* Header ja e flex-shrink:0 dentro do flex column do drawer,
+     * entao naturalmente fica fixo no topo do drawer enquanto o
+     * body rola. Garante visibilidade do botao fechar. */
+    padding: .85rem 1rem;
+    gap: .5rem;
+  }
+  .drawer-header-info h2 {
+    font-size: 1rem;
+  }
+  .drawer-body {
+    padding: 1rem 1rem 2rem;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Botoes de acao empilham e ocupam largura toda — fica obvio
+   * onde clicar e o dedo nao erra alvo pequeno. */
+  .drawer-body .action-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .5rem;
+  }
+  .drawer-body .action-row .btn {
+    width: 100%;
+  }
+  /* PDF e iframe nativo do browser — em mobile reduz altura pra
+   * nao ocupar tela toda e nao competir com timeline/comentarios. */
+  .drawer-body .pdf-iframe { height: 40vh; }
+}

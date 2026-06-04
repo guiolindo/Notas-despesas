@@ -82,9 +82,35 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         incoming = request.headers.get(_REQUEST_ID_HEADER)
         rid = incoming if incoming and _VALID_REQUEST_ID.match(incoming) else uuid.uuid4().hex[:12]
         token = _request_id_var.set(rid)
+
+        # Instrumentacao leve de timing: util pra investigar lag
+        # reportado pelo usuario (5s percebidos em acoes). Loga apenas
+        # rotas autenticadas/operacionais (filtra /static e /health/live
+        # pra nao poluir). Codex sugeriu no chat de coordenacao.
+        import time as _time
+        from logging import getLogger as _getLogger
+
+        start_ns = _time.perf_counter_ns()
+        path = request.url.path
+        is_noisy = (
+            path.startswith("/static")
+            or path == "/health/live"
+        )
         try:
             response = await call_next(request)
         finally:
             _request_id_var.reset(token)
+        elapsed_ms = (_time.perf_counter_ns() - start_ns) / 1_000_000.0
+        # Adiciona Server-Timing header — DevTools mostra no waterfall.
+        try:
+            response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
+        except Exception:  # noqa: BLE001
+            pass
+        # Loga apenas requests "interessantes" (>= 200ms, ou nao-OK).
+        if not is_noisy and (elapsed_ms >= 200 or response.status_code >= 400):
+            _getLogger("app").info(
+                "%s %s -> %d in %.0fms",
+                request.method, path, response.status_code, elapsed_ms,
+            )
         response.headers[_REQUEST_ID_HEADER] = rid
         return response

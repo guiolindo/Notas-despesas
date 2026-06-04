@@ -320,21 +320,36 @@ function hideLoading() {
 /** Desabilita o botao + troca texto enquanto a acao roda, restaura depois.
  *  Codex sugeriu este padrao no chat de coordenacao: usuario reportou
  *  sensacao de app travado em acoes lentas (5s de lag); botao sem
- *  feedback visual parece morto. Restaura sempre via finally — mesmo
- *  quando a acao recarrega a pagina depois. */
-async function withButtonLoading(button, loadingText, fn) {
+ *  feedback visual parece morto.
+ *
+ *  Por padrao restaura via finally. Quando `opts.keepDisabledOnSuccess` e
+ *  true, o botao FICA desabilitado se a fn retornou truthy — util pra
+ *  acoes que disparam setTimeout->reload (mark-paid), evitando que o
+ *  usuario clique de novo nos 1-2s entre sucesso e reload. */
+async function withButtonLoading(button, loadingText, fn, opts) {
   if (!button) return fn();
+  opts = opts || {};
   const prevText = button.textContent;
   const prevDisabled = button.disabled;
   button.disabled = true;
   button.textContent = loadingText || 'Aguarde...';
   button.classList.add('is-loading');
+  let result;
+  let ok = false;
   try {
-    return await fn();
+    result = await fn();
+    ok = true;
+    return result;
   } finally {
-    button.disabled = prevDisabled;
-    button.textContent = prevText;
-    button.classList.remove('is-loading');
+    if (opts.keepDisabledOnSuccess && ok && result) {
+      // Mantem disabled. Texto volta pra "...feito" pra dar feedback final.
+      if (opts.successText) button.textContent = opts.successText;
+      button.classList.remove('is-loading');
+    } else {
+      button.disabled = prevDisabled;
+      button.textContent = prevText;
+      button.classList.remove('is-loading');
+    }
   }
 }
 
@@ -656,7 +671,7 @@ async function initShell() {
   // Alerts em FIRE-AND-FORGET: nao bloqueia initShell.then(initPage).
   // Antes, /alerts/ era await sequencial — o usuario sentia 5s de lag em
   // pagina autenticada porque a init da pagina (initInvoicesList, etc.)
-  // s? rodava apos esse round-trip terminar. Como a contagem so popula um
+  // so rodava apos esse round-trip terminar. Como a contagem so popula um
   // badge no menu, nao tem motivo de segurar a UI principal. Codex
   // sugeriu este desacoplamento no chat de coordenacao.
   apiFetch('/alerts/').then((data) => {
@@ -1934,13 +1949,21 @@ function renderFinanceActions(invoice) {
     // APROVADO -> POST /mark-paid: lanca a nota explicitamente e devolve o PDF.
     // Antes era GET /print, mas leitura nao deveria mutar estado (P0 auditoria).
     if (!(await confirmAction(`Confirmar lancamento da nota ${invoice.invoice_number}? Esta acao sera registrada e nao pode ser desfeita.`))) return;
-    await withButtonLoading(ev.currentTarget, 'Lancando...', async () => {
-      const ok = await fetchAndOpenPdf(`/api/invoices/${invoice.id}/mark-paid`, { method: 'POST' });
-      if (ok) {
-        showToast('Comprovante gerado. Recebimento registrado no sistema.', 'success');
-        setTimeout(() => window.location.reload(), 1800);
-      }
-    });
+    await withButtonLoading(
+      ev.currentTarget,
+      'Lancando...',
+      async () => {
+        const ok = await fetchAndOpenPdf(`/api/invoices/${invoice.id}/mark-paid`, { method: 'POST' });
+        if (ok) {
+          showToast('Comprovante gerado. Recebimento registrado no sistema.', 'success');
+          setTimeout(() => window.location.reload(), 1800);
+        }
+        return ok;
+      },
+      // Mantem disabled apos sucesso pra usuario nao reclicar nos ~1.8s
+      // ate o reload. Codex sugeriu no review de 86fa0e3.
+      { keepDisabledOnSuccess: true, successText: 'Lancado' }
+    );
   });
 }
 
