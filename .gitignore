@@ -62,3 +62,8 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 test_pdfs/
+
+# Docs internos de processo (auditoria, planos, checklists). Ficam apenas
+# no filesystem local pra consulta — GitHub mostra so docs do sistema.
+_audit-internal/
+.chat-msg.json
