@@ -317,6 +317,27 @@ function hideLoading() {
   if (overlay) overlay.classList.add('hidden');
 }
 
+/** Desabilita o botao + troca texto enquanto a acao roda, restaura depois.
+ *  Codex sugeriu este padrao no chat de coordenacao: usuario reportou
+ *  sensacao de app travado em acoes lentas (5s de lag); botao sem
+ *  feedback visual parece morto. Restaura sempre via finally — mesmo
+ *  quando a acao recarrega a pagina depois. */
+async function withButtonLoading(button, loadingText, fn) {
+  if (!button) return fn();
+  const prevText = button.textContent;
+  const prevDisabled = button.disabled;
+  button.disabled = true;
+  button.textContent = loadingText || 'Aguarde...';
+  button.classList.add('is-loading');
+  try {
+    return await fn();
+  } finally {
+    button.disabled = prevDisabled;
+    button.textContent = prevText;
+    button.classList.remove('is-loading');
+  }
+}
+
 // Helpers de formatacao (TZ, formatDate, formatDateTime, hourInBR,
 // todayInBR, formatCurrency, escapeHtml, statusBadge) movidos para
 // app/static/js/format.js (P2-1 auditoria). Acesso via window.* (alias)
@@ -632,15 +653,22 @@ async function initShell() {
   document.getElementById('header-user-role').textContent = ROLE_LABELS[user.role] || user.role;
   addApprovalQueueLink(user.role);
   renderGlobalAvailabilityBanner();
-  try {
-    const data = await apiFetch('/alerts/');
-    const count = data.summary.total_alerts;
+  // Alerts em FIRE-AND-FORGET: nao bloqueia initShell.then(initPage).
+  // Antes, /alerts/ era await sequencial — o usuario sentia 5s de lag em
+  // pagina autenticada porque a init da pagina (initInvoicesList, etc.)
+  // s? rodava apos esse round-trip terminar. Como a contagem so popula um
+  // badge no menu, nao tem motivo de segurar a UI principal. Codex
+  // sugeriu este desacoplamento no chat de coordenacao.
+  apiFetch('/alerts/').then((data) => {
+    const count = (data && data.summary && data.summary.total_alerts) || 0;
     if (count > 0) {
       const el = document.getElementById('alert-count');
-      el.textContent = count;
-      el.classList.remove('hidden');
+      if (el) {
+        el.textContent = count;
+        el.classList.remove('hidden');
+      }
     }
-  } catch {}
+  }).catch(() => { /* badge silencioso em falha — nao critico */ });
 }
 
 function addApprovalQueueLink(role) {
@@ -1902,15 +1930,17 @@ function renderFinanceActions(invoice) {
       </div>
     </div>`;
 
-  document.getElementById('print-invoice-btn')?.addEventListener('click', async () => {
+  document.getElementById('print-invoice-btn')?.addEventListener('click', async (ev) => {
     // APROVADO -> POST /mark-paid: lanca a nota explicitamente e devolve o PDF.
     // Antes era GET /print, mas leitura nao deveria mutar estado (P0 auditoria).
-    if (!(await confirmAction('Confirmar recebimento e lancar a nota? Esta acao sera registrada.'))) return;
-    const ok = await fetchAndOpenPdf(`/api/invoices/${invoice.id}/mark-paid`, { method: 'POST' });
-    if (ok) {
-      showToast('Comprovante gerado. Recebimento registrado no sistema.', 'success');
-      setTimeout(() => window.location.reload(), 1800);
-    }
+    if (!(await confirmAction(`Confirmar lancamento da nota ${invoice.invoice_number}? Esta acao sera registrada e nao pode ser desfeita.`))) return;
+    await withButtonLoading(ev.currentTarget, 'Lancando...', async () => {
+      const ok = await fetchAndOpenPdf(`/api/invoices/${invoice.id}/mark-paid`, { method: 'POST' });
+      if (ok) {
+        showToast('Comprovante gerado. Recebimento registrado no sistema.', 'success');
+        setTimeout(() => window.location.reload(), 1800);
+      }
+    });
   });
 }
 
@@ -3049,20 +3079,23 @@ function _renderDrawerFinance(invoice) {
       </div>
     </div>`;
 
-  document.getElementById('drawer-finance-print').addEventListener('click', async () => {
+  document.getElementById('drawer-finance-print').addEventListener('click', async (ev) => {
     // Lancamento explicito (POST /mark-paid) so quando APROVADO. Reimpressao
     // de nota ja PAGO usa GET /print (sem efeito). Helper escolhe.
-    if (!isReprint && !(await confirmAction('Confirmar recebimento e lancar a nota?'))) return;
-    const { url, method } = _printOrMarkPaidEndpoint(invoice);
-    const ok = await fetchAndOpenPdf(url, { method });
-    if (ok) {
-      showToast(isReprint ? 'Comprovante reimpresso.' : 'Comprovante gerado. Nota lancada.', 'success');
-      setTimeout(async () => {
-        const updated = await apiFetch(`/api/invoices/${invoice.id}`);
-        _renderDrawerContent(updated);
-        if (updated.has_attachment) _loadDrawerPdf(invoice.id);
-      }, 1200);
-    }
+    if (!isReprint && !(await confirmAction(`Confirmar lancamento da nota ${invoice.invoice_number}? Esta acao sera registrada e nao pode ser desfeita.`))) return;
+    const loadingTxt = isReprint ? 'Gerando comprovante...' : 'Lancando...';
+    await withButtonLoading(ev.currentTarget, loadingTxt, async () => {
+      const { url, method } = _printOrMarkPaidEndpoint(invoice);
+      const ok = await fetchAndOpenPdf(url, { method });
+      if (ok) {
+        showToast(isReprint ? 'Comprovante reimpresso.' : 'Comprovante gerado. Nota lancada.', 'success');
+        setTimeout(async () => {
+          const updated = await apiFetch(`/api/invoices/${invoice.id}`);
+          _renderDrawerContent(updated);
+          if (updated.has_attachment) _loadDrawerPdf(invoice.id);
+        }, 1200);
+      }
+    });
   });
 }
 
