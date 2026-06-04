@@ -1587,13 +1587,18 @@ function _printOrMarkPaidEndpoint(invoice) {
 
 // ── PDF inline + director selection helpers ─────────────────────────────────
 
-// Estado do viewer PDF (zoom + rotacao)
-let _pdfViewerState = { zoom: 1, rotate: 0 };
+// Estado do viewer PDF (zoom). Rotacao foi removida — o iframe nativo do
+// browser ja oferece rotate proprio no viewer interno, e nosso transform
+// CSS no iframe inteiro causava bug visual: ao rodar 90 graus o aspect
+// ratio mudava (vertical -> horizontal) e o iframe saia pra fora do
+// container por causa do overflow:hidden, "sumindo" da tela. A cada 4
+// cliques (360 graus) voltava ao normal. Reportado pelo usuario.
+let _pdfViewerState = { zoom: 1 };
 
 function _applyPdfTransform() {
   const iframe = document.getElementById('pdf-iframe');
   if (!iframe) return;
-  iframe.style.transform = `rotate(${_pdfViewerState.rotate}deg) scale(${_pdfViewerState.zoom})`;
+  iframe.style.transform = `scale(${_pdfViewerState.zoom})`;
   const label = document.getElementById('pdf-zoom-label');
   if (label) label.textContent = `${Math.round(_pdfViewerState.zoom * 100)}%`;
 }
@@ -1608,10 +1613,6 @@ function _setupPdfToolbar() {
   });
   document.getElementById('pdf-zoom-out')?.addEventListener('click', () => {
     _pdfViewerState.zoom = Math.max(_pdfViewerState.zoom - 0.1, 0.4);
-    _applyPdfTransform();
-  });
-  document.getElementById('pdf-rotate')?.addEventListener('click', () => {
-    _pdfViewerState.rotate = (_pdfViewerState.rotate + 90) % 360;
     _applyPdfTransform();
   });
   document.getElementById('pdf-fullscreen')?.addEventListener('click', () => {
@@ -1635,7 +1636,7 @@ async function loadPdfInline(invoiceId) {
     if (iframe) iframe.src = url;
     if (link) link.href = url;
     panel.style.display = 'block';
-    _pdfViewerState = { zoom: 1, rotate: 0 };
+    _pdfViewerState = { zoom: 1 };
     _applyPdfTransform();
     _setupPdfToolbar();
   } catch {}
