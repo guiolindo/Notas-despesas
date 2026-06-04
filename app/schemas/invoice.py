@@ -141,6 +141,9 @@ class InvoiceResponse(BaseModel):
     can_cancel: bool = False
     # Alertas contextuais (emissao antiga, vencimento curto) — banner no detalhe
     alerts: list[str] = []
+    # Contagem de comentarios na thread. Frontend usa pra mostrar badge na
+    # lista/drawer sem precisar carregar a thread inteira.
+    comments_count: int = 0
     model_config = {"from_attributes": True}
 
 

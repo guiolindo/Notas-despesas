@@ -147,6 +147,28 @@ def _history_response(entry: ApprovalHistory) -> ApprovalHistoryResponse:
     )
 
 
+def _count_comments(invoice: Invoice) -> int:
+    """Conta comentarios da nota via session pendurada no objeto.
+
+    Tradeoff: em listagens grandes (50+ notas) gera N+1 queries. Acceptable
+    porque count e barato (indice em invoice_id existe) e a maioria das
+    listagens usa per_page <= 20. Se virar gargalo, batch-load com
+    func.count agrupado por invoice_id e passar dict pra invoice_response.
+    """
+    from sqlalchemy import func
+    from sqlalchemy.orm import object_session
+
+    from app.models import InvoiceComment
+
+    session = object_session(invoice)
+    if session is None:
+        return 0
+    count = session.query(func.count(InvoiceComment.id)).filter(
+        InvoiceComment.invoice_id == invoice.id
+    ).scalar()
+    return int(count or 0)
+
+
 def invoice_response(invoice: Invoice) -> InvoiceResponse:
     from app.schemas.invoice import AttachmentBrief
     history = sorted(invoice.approval_history, key=lambda item: item.timestamp)
@@ -187,6 +209,7 @@ def invoice_response(invoice: Invoice) -> InvoiceResponse:
         department_name=dept.name if dept else None,
         can_cancel=_can_cancel(invoice),
         alerts=_compute_invoice_alerts(invoice),
+        comments_count=_count_comments(invoice),
     )
 
 

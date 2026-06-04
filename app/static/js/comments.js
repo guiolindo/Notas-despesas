@@ -33,9 +33,28 @@
     }
   }
 
-  function render(items) {
-    const thread = document.getElementById('comments-thread');
-    const countEl = document.getElementById('comments-count');
+  /** Conjuntos de IDs alternativos pra mesma thread em contextos diferentes.
+   *  Permite que o detail FULL e o DRAWER reusem a mesma logica sem colisao
+   *  de DOM. Default = pagina de detail (IDs sem prefixo). */
+  const DEFAULT_IDS = {
+    thread: 'comments-thread',
+    count: 'comments-count',
+    input: 'comments-input',
+    submit: 'comments-submit',
+    form: 'comments-form'
+  };
+  const DRAWER_IDS = {
+    thread: 'drawer-comments-thread',
+    count: 'drawer-comments-count',
+    input: 'drawer-comments-input',
+    submit: 'drawer-comments-submit',
+    form: 'drawer-comments-form'
+  };
+
+  function render(items, ids) {
+    ids = ids || DEFAULT_IDS;
+    const thread = document.getElementById(ids.thread);
+    const countEl = document.getElementById(ids.count);
     if (!thread) return;
     const Auth = window.Auth;
     const escapeHtml = window.escapeHtml || ((s) => String(s == null ? '' : s));
@@ -73,8 +92,9 @@
     };
   }
 
-  async function setup(invoiceId) {
-    const thread = document.getElementById('comments-thread');
+  async function _setup(invoiceId, ids) {
+    ids = ids || DEFAULT_IDS;
+    const thread = document.getElementById(ids.thread);
     if (!thread) return;
     const apiFetch = window.apiFetch;
     const escapeHtml = window.escapeHtml || ((s) => String(s == null ? '' : s));
@@ -85,15 +105,18 @@
     }
     try {
       const data = _normalize(await apiFetch(`/api/invoices/${invoiceId}/comments`));
-      render(data.items);
+      render(data.items, ids);
     } catch (e) {
       thread.innerHTML = `<p class="text-muted text-xs">Erro ao carregar comentarios: ${escapeHtml(e.message || '')}</p>`;
     }
 
-    const input = document.getElementById('comments-input');
-    const submit = document.getElementById('comments-submit');
-    const form = document.getElementById('comments-form');
+    const input = document.getElementById(ids.input);
+    const submit = document.getElementById(ids.submit);
+    const form = document.getElementById(ids.form);
     if (!input || !submit || !form) return;
+    // Defesa contra setup duplicado quando reabrem o drawer com mesma nota.
+    if (form.dataset.commentsBound === '1') return;
+    form.dataset.commentsBound = '1';
     input.addEventListener('input', () => {
       submit.disabled = input.value.trim().length === 0;
     });
@@ -110,7 +133,7 @@
         });
         input.value = '';
         const data = _normalize(await apiFetch(`/api/invoices/${invoiceId}/comments`));
-        render(data.items);
+        render(data.items, ids);
       } catch (err) {
         showToast((err && err.message) || 'Erro ao comentar.', 'error');
       } finally {
@@ -120,13 +143,18 @@
     });
   }
 
+  function setup(invoiceId) { return _setup(invoiceId, DEFAULT_IDS); }
+  function setupDrawer(invoiceId) { return _setup(invoiceId, DRAWER_IDS); }
+
   // Namespace canonico.
   window.Economart.comments.setup = setup;
+  window.Economart.comments.setupDrawer = setupDrawer;
   window.Economart.comments.render = render;
   window.Economart.comments._normalize = _normalize;
 
   // Aliases globais para compat com callers em app.js.
   window.setupComments = setup;
+  window.setupDrawerComments = setupDrawer;
   window.renderComments = render;
   window._normalizeCommentsResponse = _normalize;
 })();

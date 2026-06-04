@@ -324,6 +324,23 @@ function hideLoading() {
 
 function confirmAction(message) {
   return new Promise((resolve) => {
+    // Iframes nativos de PDF (Chrome/Edge) renderizam fora do contexto
+    // HTML normal e IGNORAM z-index — ficam sempre por cima de qualquer
+    // overlay do site. Bug reportado pelo usuario: pop-up de confirmacao
+    // de "Imprimir e Lancar" ficava por tras do PDF. Solucao padrao:
+    // esconder iframes enquanto o modal estiver aberto, restaurar quando
+    // fecha.
+    const hiddenFrames = [];
+    document.querySelectorAll('iframe').forEach((el) => {
+      if (el.style.visibility !== 'hidden') {
+        hiddenFrames.push(el);
+        el.style.visibility = 'hidden';
+      }
+    });
+    function restoreFrames() {
+      hiddenFrames.forEach((el) => { el.style.visibility = ''; });
+    }
+
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
     backdrop.innerHTML = `
@@ -340,6 +357,7 @@ function confirmAction(message) {
       const action = event.target.dataset.action;
       if (!action) return;
       backdrop.remove();
+      restoreFrames();
       resolve(action === 'confirm');
     });
   });
@@ -1071,7 +1089,7 @@ function renderInvoicesTable(items) {
         <td>${formatCurrency(item.amount)}</td>
         <td>${formatDate(item.issue_date)}</td>
         <td>${formatDate(item.due_date)}</td>
-        <td>${statusBadge(item.status)}</td>
+        <td>${statusBadge(item.status)}${(item.comments_count || 0) > 0 ? ` <span class="status-badge" style="background:#fff3cd;color:#856404;margin-left:4px" title="${item.comments_count} comentario${item.comments_count === 1 ? '' : 's'}">💬 ${item.comments_count}</span>` : ''}</td>
         <td class="table-actions">
           <button class="btn btn-ghost btn-sm" data-drawer="${escapeHtml(item.id)}">Ver</button>
           ${canEdit ? `<a class="btn btn-ghost btn-sm" href="/invoices/${item.id}/edit">Editar</a>` : ''}
@@ -2644,6 +2662,18 @@ function _ensureDrawer() {
           <div class="detail-grid" id="drawer-grid"></div>
           <div class="section-header"><h2>Timeline</h2></div>
           <div class="timeline" id="drawer-timeline"></div>
+
+          <div class="section-header">
+            <h2>Comentarios <span id="drawer-comments-count" class="text-muted text-xs"></span></h2>
+          </div>
+          <div id="drawer-comments-thread" class="comments-thread"></div>
+          <form id="drawer-comments-form" class="comments-form" aria-label="Adicionar comentario">
+            <textarea id="drawer-comments-input" rows="2" maxlength="2000" placeholder="Adicione um comentario..." aria-describedby="drawer-comments-help"></textarea>
+            <div class="comments-form-footer">
+              <small id="drawer-comments-help" class="text-muted text-xs">Maximo 2000 caracteres. Comentarios sao permanentes.</small>
+              <button type="submit" id="drawer-comments-submit" class="btn btn-primary btn-sm" disabled>Comentar</button>
+            </div>
+          </form>
         </div>
         <div class="detail-right" id="drawer-pdf-panel" style="display:none">
           <div class="pdf-panel-header">
@@ -2677,6 +2707,17 @@ async function openInvoiceDrawer(invoiceId) {
   document.getElementById('drawer-review-panel').classList.add('hidden');
   document.getElementById('drawer-pdf-panel').style.display = 'none';
   document.getElementById('drawer-pdf-iframe').src = '';
+  // Reset da thread de comentarios — evita mostrar comentarios da nota
+  // anterior enquanto a nova carrega.
+  const _dct = document.getElementById('drawer-comments-thread');
+  if (_dct) _dct.innerHTML = '';
+  const _dcc = document.getElementById('drawer-comments-count');
+  if (_dcc) _dcc.textContent = '';
+  const _dci = document.getElementById('drawer-comments-input');
+  if (_dci) _dci.value = '';
+  // Limpa o flag de bound pra permitir re-bind no novo invoiceId
+  const _dcf = document.getElementById('drawer-comments-form');
+  if (_dcf) delete _dcf.dataset.commentsBound;
 
   const pageLink = document.getElementById('drawer-open-page');
   pageLink.style.display = 'none';
@@ -2688,6 +2729,11 @@ async function openInvoiceDrawer(invoiceId) {
     const invoice = await apiFetch(`/api/invoices/${invoiceId}`);
     _renderDrawerContent(invoice);
     if (invoice.has_attachment) _loadDrawerPdf(invoiceId);
+    // Carrega thread de comentarios direto no drawer (sem precisar abrir
+    // a pagina completa de detail). Pedido do usuario.
+    if (window.setupDrawerComments) {
+      window.setupDrawerComments(invoiceId);
+    }
   } catch (e) {
     document.getElementById('drawer-title').textContent = 'Erro ao carregar';
     document.getElementById('drawer-grid').innerHTML = `<p class="text-muted">${escapeHtml(e.message)}</p>`;
@@ -2702,7 +2748,13 @@ function _renderDrawerContent(invoice) {
     `${escapeHtml(invoice.created_by.name)} · ${formatDateTime(invoice.created_at)}`;
   renderInvoiceAlerts(invoice, 'drawer-grid');
   renderAttachmentsBlock(invoice, '#drawer-pdf-panel');
-  document.getElementById('drawer-status').innerHTML = statusBadge(invoice.status);
+  // Status + indicador de comentarios. Pedido do usuario: ver na hora se
+  // a nota tem conversa antes de abrir.
+  const _cc = invoice.comments_count || 0;
+  const _commentsChip = _cc > 0
+    ? ` <span class="status-badge" style="background:#fff3cd;color:#856404" title="${_cc} comentario${_cc === 1 ? '' : 's'} nesta nota">💬 ${_cc}</span>`
+    : '';
+  document.getElementById('drawer-status').innerHTML = statusBadge(invoice.status) + _commentsChip;
 
   // Link para página completa (edição, etc.)
   const pageLink = document.getElementById('drawer-open-page');
