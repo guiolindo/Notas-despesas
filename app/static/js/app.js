@@ -3305,16 +3305,30 @@ document.addEventListener('click', (event) => {
 document.addEventListener('DOMContentLoaded', async () => {
   const page = document.body.dataset.page;
   if (page === 'login') {
-    // Token vive em memoria desde P1-1; reload chega sem token. Se temos
-    // hint de sessao, tenta renovar antes — usuario que ja estava logado
-    // em outra aba nao deve ver o /login.
-    if (!Auth.getToken() && Auth.hasSessionHint()) {
-      try { await Auth.ensureToken(); } catch (e) {}
-    }
-    if (Auth.getToken()) {
-      // Se chegou aqui com ?next=, manda direto pra la (caso usuario clique
-      // 'Entrar' no /verify mas ja tem sessao ativa em outra aba).
-      window.location.href = getSafeNextParam() || '/dashboard';
+    const nextParam = getSafeNextParam();
+
+    // Bug reportado pelo usuario: ao clicar "Entrar" em /verify, era
+    // jogado de volta pra /verify sem dar tempo de digitar a senha. O
+    // motivo: se o cookie HttpOnly de refresh ainda valia ou o
+    // sessionStorage hint estava marcado, este bloco auto-hidratava o
+    // token e redirecionava na hora — sem o usuario ver o form.
+    //
+    // Regra nova:
+    //  - SEM ?next=: comportamento antigo (auto-redirect pra /dashboard
+    //    se ja ha sessao ativa). Util quando o usuario digita /login
+    //    direto mas ja estava logado em outra aba.
+    //  - COM ?next=: presumimos que o usuario chegou aqui com intencao
+    //    EXPLICITA de logar (provavelmente pra trocar de conta no
+    //    /verify). Mostra o form, deixa ele decidir. Se ele for o
+    //    proprio dono da sessao ativa, basta fechar e re-clicar no link.
+    if (!nextParam) {
+      if (!Auth.getToken() && Auth.hasSessionHint()) {
+        try { await Auth.ensureToken(); } catch (e) {}
+      }
+      if (Auth.getToken()) {
+        window.location.href = '/dashboard';
+        return;
+      }
     }
     document.getElementById('login-form')?.addEventListener('submit', handleLogin);
     document.getElementById('toggle-password')?.addEventListener('click', togglePasswordVisibility);
