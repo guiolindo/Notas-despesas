@@ -1,0 +1,293 @@
+# Release Notes — 2026-06-03
+
+Resumo executivo do dia. Para detalhes técnicos por commit ver
+`docs/CHANGELOG-audit-2026-06.md`. Para o relatório original da auditoria
+ver `AUDITORIA_COMPLETA_ECONOMART.md`.
+
+---
+
+## Contexto
+
+O usuário (Guilherme) solicitou uma auditoria completa do sistema Economart,
+executada em cooperação entre dois agentes (Claude Opus e ChatGPT Codex)
+coordenados por chat global. Após auditar, o usuário curou um HTML com 26
+achados aprovados para implementação. Este release cobre essa fase de
+implementação, mais bugs reais descobertos pelos testes e dois hotfixes
+de regressão em produção.
+
+---
+
+## O que foi feito
+
+### Segurança crítica (P0)
+
+- **Refresh token agora invalida sessão após troca/reset de senha.**
+  Antes, atacante que comprometeu uma senha mantinha acesso por até 7 dias
+  via cookie de refresh, mesmo depois da vítima trocar a senha. Helper
+  `token_is_pre_password_change` validado em access tokens, refresh tokens
+  e page guards. Cookie do refresh é apagado quando inválido.
+
+- **Separação de `GET /print` (preview) de `POST /mark-paid` (lançamento).**
+  Antes, abrir o link de comprovante por engano lançava pagamento
+  automaticamente. Crawler, preview de link no WhatsApp ou reload da página
+  acidental viravam transição APROVADO → PAGO. Agora `GET` só gera PDF
+  (idempotente) e `POST` faz o lançamento com confirmação explícita do
+  usuário na UI.
+
+### Segurança de alto impacto (P1)
+
+- **Access token saiu do localStorage e vive em memória.** XSS bem sucedido
+  não consegue mais ler o token via `localStorage.access_token`. Persistência
+  entre reloads continua funcionando porque o cookie HttpOnly de refresh
+  ainda existe — `Auth.ensureToken()` busca novo token sob demanda.
+
+- **Fail-fast em PROD quando `SECRET_KEY` ou `MASTER_ENCRYPTION_KEY` estão
+  inseguras.** Antes era só warning; produção subia degradada. Agora qualquer
+  rota retorna HTTP 503 com uma tela amigável (`templates/startup_error.html`)
+  até o admin configurar as chaves. DEV continua com warning para não
+  atrapalhar desenvolvimento local.
+
+- **Detecção de duplicidade de `invoice_number` com soft-check.** Não usamos
+  UNIQUE no schema porque fornecedores diferentes legitimamente reutilizam
+  numeração no Brasil. O backend detecta no submit (match por criador OU
+  supplier_document + invoice_number + status ativo) e devolve 409 com
+  código `DUPLICATE_INVOICE_NUMBER`. O frontend mostra dialog "enviar mesmo
+  assim" e reenvia com `confirm_duplicate=true`.
+
+- **Rate-limit estendido e proxy-aware.** Antes cobria só `/auth/login` e
+  ignorava `X-Forwarded-For` (em Railway, todos os IPs apareciam como o
+  gateway). Agora cobre 5 endpoints (login, forgot-password, reset-password,
+  lookup-cnpj, comments) com janelas e limites apropriados. `X-Forwarded-For`
+  é honrado em PROD. Resposta 429 traz `Retry-After` e cabeçalhos
+  `X-RateLimit-*`.
+
+- **`/verify-full` retorna 404 indistinguível para usuário sem permissão.**
+  Antes, 404 quando não existia + 403 quando existia sem permissão criavam
+  um oráculo de existência de UUID. Agora ambos os ramos retornam o mesmo
+  404 genérico.
+
+- **`must_change_password` aplicado no backend.** Antes era só redirect do
+  frontend; cliente que chamasse a API direta via curl operava normalmente
+  com senha provisória. Agora `get_current_user` devolve HTTP 428
+  Precondition Required em qualquer rota fora da whitelist (apenas `/auth/me`,
+  `/auth/change-password` e `/auth/logout` passam). O frontend intercepta
+  428 e redireciona automaticamente.
+
+- **Manager indisponível finalmente respeitado.** Antes, gestor em férias
+  continuava recebendo notas. Agora `_get_manager_for_user` checa
+  `unavailable_for_notes`. Adicionado campo `User.substitute_manager_id`
+  paralelo ao `substitute_director_id` que já existia. Quando o gestor
+  titular está em férias e tem substituto designado, a submissão roteia
+  direto pro substituto. Sem substituto, a submissão falha com mensagem
+  clara.
+
+### Observabilidade
+
+- **Request ID em todo log e cabeçalho.** Middleware atribui um UUID curto
+  por request e exporta via context var. Header `X-Request-ID` ecoado na
+  resposta (cliente pode mandar de volta no suporte). Logs estruturados com
+  o campo `[req=...]` automaticamente.
+
+- **Health checks reais.** Antes `/health` só ecoava `{"status": "ok"}`.
+  Agora `/health/live` (liveness, processo respira), `/health/ready` (checa
+  DB com SELECT 1, devolve 503 se falhar) e `/health/dependencies` (status
+  detalhado de R2 e email para dashboard manual).
+
+### Performance e dados
+
+- **Loader light em listagens de invoices.** Endpoint `GET /api/invoices/?fields=light`
+  evita disparar N+1 sub-queries de `attachments` e `approval_history` quando
+  o cliente só precisa da linha da tabela. Detail completo continua disponível
+  em `GET /api/invoices/{id}`.
+
+- **FKs com `ON DELETE SET NULL` em auditoria.** `manager_id`, `director_id`,
+  `finance_id`, `printed_by_id` em `Invoice` + `user_id` em `AuditLog` agora
+  preservam o histórico se um usuário for deletado fisicamente no futuro.
+  Hoje o sistema usa anonimização em vez de delete, mas o constraint protege.
+
+- **Comments paginados.** `GET /api/invoices/{id}/comments?page=&per_page=`
+  com default 50 e máximo 200. Resposta `{items, total, has_next}`. Antes
+  retornava tudo num único shot — nota com 200 comentários pesava cliente
+  e servidor.
+
+- **Fila persistente de email com retry exponencial.** Antes,
+  `send_email_async` usava thread daemon — se o worker do gunicorn
+  reiniciava no meio do envio (deploy, OOM, restart), o email se perdia
+  silenciosamente. Agora todos os emails entram na tabela `email_queue` e
+  um worker assíncrono drena com backoff exponencial (1, 4, 16, 64 minutos)
+  até máximo de 4 tentativas. Em multi-worker o claim usa
+  `SELECT FOR UPDATE SKIP LOCKED` no Postgres. Lock stale (>5min sem
+  progresso) é liberado automaticamente.
+
+### Frontend e acessibilidade
+
+- **Acessibilidade básica.** Botões-ícone com aria-label, captions e scope
+  em tabelas, role-chip com sigla além de cor (cobre daltônicos), focus-visible
+  consistente, aria-describedby no form de comentários.
+
+- **CSS split em partials ordenadas.** `main.css` virou aggregator com
+  `@import` de 15 partials organizadas em `base/`, `components/`, `pages/`.
+  Cache do browser passa a ser por partial.
+
+### Testes automatizados
+
+- **Suite pytest com 21 testes** cobrindo regressão dos achados P0/P1
+  implementados (auth, refresh, must_change_password, verify-full 404,
+  rate-limit, health, email queue, duplicate detection, manager
+  substitute). Rodar com `python -m pytest tests/ -q`.
+
+### Documentação
+
+- `AUDITORIA_COMPLETA_ECONOMART.md` — relatório original com sumário
+  executivo, matriz de prioridades, achados detalhados e tabela de
+  implementação atualizada.
+- `docs/CHANGELOG-audit-2026-06.md` — cada commit do dia mapeado com
+  risco, arquivos afetados e como testar.
+- `docs/README.md` — índice da pasta `docs/`.
+- `docs/architecture.md` — diagrama da arquitetura.
+- `docs/runbook.md` — procedimentos operacionais (deploy, troubleshooting).
+- `docs/qa-audit-p0-p1-checklist.md` — checklist manual para revisão pré-deploy.
+- `docs/templates/postmortem.md` — template para registrar incidentes.
+
+---
+
+## Bugs reais descobertos durante a implementação
+
+Estes não estavam na auditoria original. Apareceram durante os testes ou
+em produção, e foram corrigidos no mesmo dia.
+
+1. **`/auth/refresh` não apagava o cookie em falhas.** A correção do P0-1
+   chamava `response.delete_cookie()` antes de `raise HTTPException`, mas
+   FastAPI descarta a Response e gera nova a partir da exceção — o cookie
+   ficava no browser do atacante e continuava batendo no /refresh. Corrigido
+   injetando o `Set-Cookie` direto no header da própria HTTPException via
+   helper `_refresh_unauthorized()`. Cobre os quatro ramos de falha do
+   `/refresh`.
+
+2. **`token_is_pre_password_change` com falso positivo de até 1 segundo.**
+   O `iat` do JWT é gravado em segundos inteiros, mas `password_changed_at`
+   no DB tem precisão de microsegundo. Quando o usuário trocava a senha e
+   logava imediatamente, o `iat` truncado podia ficar ~500ms menor que o
+   timestamp do DB e disparar logout em loop. Corrigido com tolerância de
+   2 segundos no helper. Comportamento ainda seguro porque na prática a
+   janela entre troca de senha e novo login é de minutos.
+
+3. **Botões "morrendo" para usuários já logados antes do P1-1.** Quando
+   o token saiu do localStorage e foi pra memória, sessões já existentes
+   não tinham o `sessionStorage.auth_has_session` setado. O `apiFetch`
+   mandava sem Authorization, recebia 401, e o fallback funcionava — mas
+   gerava flicker e percepção de "botão travado". Corrigido com migração
+   defensiva no Auth (limpa `localStorage.access_token` legacy, marca o
+   hint quando `localStorage.user` existe) + `ensureToken` sempre quando
+   sem token, sem depender do hint.
+
+4. **Delay perceptível de até 10s em ações.** Após o hotfix anterior, o
+   `apiFetch` chamava `Auth.ensureToken()` sequencialmente antes do
+   primeiro fetch — em cold start do Railway, isso somava 3-8 segundos
+   visíveis ao usuário ("clico no botão, não faz nada por 10s, depois
+   funciona"). Corrigido com pre-warm do `/refresh` no top-level do
+   `app.js`, antes do DOMContentLoaded. Em redes normais o token chega
+   antes do primeiro clique do usuário.
+
+---
+
+## Reverts
+
+Dois commits foram revertidos por causarem regressão real percebida pelo
+usuário ("botões não clicam, virou mockup"):
+
+- **Split de `password.js` e `format.js`** (parte do P2-1, app.js modular)
+  foi revertido pelo Codex em `d6f0e33` + `d86308b`. O split em si não
+  tinha bug óbvio no código (sintaxe validada, ordem dos `<script>` certa),
+  mas em runtime a combinação com o P1-1 (token-in-memory) gerava uma
+  janela de race condition no boot que aparecia como UI morta. A decisão
+  foi reverter primeiro, investigar com calma depois — sistema funcional
+  é prioridade. O plano técnico do split fica salvo em
+  `docs/implementation-plans/plan-appjs-split.md` para retomada futura
+  com smoke test runtime obrigatório.
+
+---
+
+## O que ficou de fora (e por quê)
+
+### Itens do HTML curado não implementados
+
+| Item | Por que ficou de fora |
+|---|---|
+| **P1-4 Alembic** | Migrations manuais no startup foi marcado como adiável. Adotar Alembic é trabalho de uma fase própria (criar baseline, configurar autogenerate, testar idempotência). Sem comment seu aprovando, classificamos como overkill agora. Recomendado revisitar quando o time crescer ou quando uma migration complexa for necessária. |
+| **P2-1 app.js split** | Revertido por regressão. Fica como roadmap com requisito: smoke test runtime obrigatório antes de retomar. Plano técnico salvo. |
+
+### Itens do relatório original (não no HTML curado)
+
+Você curou 26 itens dos 89 da auditoria. Os outros 63 (sobretudo P3 e parte
+dos P2) ficam como roadmap de produto e evolução incremental:
+
+- Webhooks para integração com ERP
+- API tokens long-lived (cancela login JWT a cada hora pra integrator)
+- OCR de PDF (extrair CNPJ/valor/vencimento automaticamente)
+- Export CSV/Excel das listagens
+- Multi-currency
+- Dashboard agregado por fornecedor
+- Backup off-site automatizado
+- R2 com versioning
+- Sentry/Loki
+- CDN para estáticos
+- Remoção do admin default hardcoded
+
+### Decisões de negócio aguardando sua entrada
+
+Estas não são bugs — são definições de produto que precisam de você:
+
+1. Política de retenção para notas PAGO após 5 anos (CTN exige mínimo, não máximo).
+2. CPF/CNPJ completo no PDF impresso continua aparecendo — intencional?
+3. Roteamento entre setores: diretor de outro setor pode receber nota?
+4. Quota total de armazenamento R2 por empresa.
+5. Estratégia futura de auth: manter access em memória ou migrar para
+   cookie HttpOnly puro?
+
+---
+
+## Métricas do dia
+
+- **15 commits novos** no `main` do GitHub
+- **2 reverts** por regressão (parte do P2-1)
+- **21 testes pytest** verdes
+- **4 bugs reais** corrigidos (não estavam na auditoria original)
+- **2 agentes** coordenando por chat global (Claude + ChatGPT Codex)
+- **17 mensagens** trocadas no chat de coordenação
+
+### Distribuição dos achados implementados
+
+- **P0**: 2/2 (100%)
+- **P1**: 8/9 (89% — só Alembic não)
+- **P2**: 9/15 dos curados, com P2-1 revertido por regressão
+
+---
+
+## Avaliação geral
+
+O sistema saiu desta sessão **funcionalmente mais seguro, mais
+observável e melhor testado** sem mudar o fluxo de uso para o usuário
+final. As decisões pragmáticas (não forçar UNIQUE no `invoice_number`,
+manter o token em memória em vez de cookie HttpOnly puro, soft-check de
+duplicidade em vez de hard constraint) foram tomadas considerando os
+seus comentários explícitos no HTML curado e a realidade operacional do
+sistema atual.
+
+Dois reverts em vez de um deploy quebrado é um sinal saudável: regressão
+em produção é cara, e voltar atrás rápido é mais barato que insistir.
+O plano técnico do split de `app.js` continua válido — vai ser retomado
+com mais cuidado.
+
+Os 4 bugs descobertos pelos testes confirmam o valor de adicionar uma
+suite mínima: três deles estavam em código que tinha passado revisão
+visual e estavam em produção. Sem `pytest`, escapariam.
+
+Próxima fase sugerida (quando você decidir retomar): definir as 5
+decisões de negócio pendentes, atacar o backup off-site e os webhooks
+de integração.
+
+---
+
+*Gerado em 2026-06-03 ao final da sessão de implementação da auditoria.*
+*Autores: Claude Opus + ChatGPT Codex (coautoria nos commits que aplica).*
