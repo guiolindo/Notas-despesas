@@ -181,6 +181,89 @@ if (typeof window !== 'undefined') {
   window.Economart = window.Economart || {};
 }
 
+// ── Detector de conexao ─────────────────────────────────────────────────
+// Quando o usuario perde internet, mostra um banner fixo no topo avisando.
+// Cobre 2 caminhos:
+//   1. Eventos nativos `online`/`offline` do browser (detecta troca de
+//      estado de rede do sistema operacional).
+//   2. Falhas de rede no apiFetch (TypeError do fetch quando nao consegue
+//      bater no servidor) — apiFetch dispara um evento custom 'app:network-error'
+//      que tambem mostra o banner.
+//
+// O banner some sozinho ao detectar 'online' OU quando uma requisicao
+// volta a ter sucesso. Implementado sem framework — pure DOM + listeners.
+(function setupOfflineBanner() {
+  if (typeof window === 'undefined') return;
+  let bannerEl = null;
+  let isShown = false;
+
+  function ensureBanner() {
+    if (bannerEl) return bannerEl;
+    bannerEl = document.createElement('div');
+    bannerEl.id = 'offline-banner';
+    bannerEl.setAttribute('role', 'status');
+    bannerEl.setAttribute('aria-live', 'polite');
+    bannerEl.style.cssText = [
+      'position:fixed', 'top:0', 'left:0', 'right:0',
+      'background:#fef3c7', 'color:#92400e',
+      'border-bottom:1px solid #fbbf24',
+      'padding:10px 16px',
+      'font-size:14px', 'font-weight:500',
+      'text-align:center',
+      'z-index:9999',
+      'box-shadow:0 1px 3px rgba(0,0,0,0.1)',
+      'transform:translateY(-100%)',
+      'transition:transform .25s ease',
+    ].join(';');
+    bannerEl.innerHTML = (
+      '<span style="margin-right:8px">📡</span>' +
+      '<strong>Sem conexao com a internet.</strong> ' +
+      'Verifique seu Wi-Fi ou dados moveis. ' +
+      '<span id="offline-banner-status" style="opacity:.7;margin-left:8px"></span>'
+    );
+    document.body.appendChild(bannerEl);
+    return bannerEl;
+  }
+
+  function show(reason) {
+    const el = ensureBanner();
+    if (!isShown) {
+      isShown = true;
+      // Forca reflow pra animacao funcionar
+      void el.offsetHeight;
+      el.style.transform = 'translateY(0)';
+    }
+    const statusEl = document.getElementById('offline-banner-status');
+    if (statusEl && reason) statusEl.textContent = `(${reason})`;
+  }
+
+  function hide() {
+    if (!isShown || !bannerEl) return;
+    isShown = false;
+    bannerEl.style.transform = 'translateY(-100%)';
+  }
+
+  // Eventos nativos do navegador
+  window.addEventListener('offline', () => show('navegador desconectado'));
+  window.addEventListener('online', () => hide());
+
+  // Estado inicial — se ja carregou offline, mostra logo
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    // Espera o DOM existir pra anexar o banner
+    if (document.body) {
+      show('navegador desconectado');
+    } else {
+      document.addEventListener('DOMContentLoaded', () => show('navegador desconectado'));
+    }
+  }
+
+  // Evento custom disparado pelo apiFetch quando o fetch falha por rede.
+  // Cobre o caso de navigator.onLine ser true mas o servidor inacessivel
+  // (ex: VPN caiu, DNS quebrou, Railway fora).
+  window.addEventListener('app:network-error', () => show('servidor inacessivel'));
+  window.addEventListener('app:network-ok', () => hide());
+})();
+
 // Pre-aquece /auth/refresh assim que o script carrega — antes do DOM ficar
 // pronto. Em redes/instancias com cold start (Railway free tier), o /refresh
 // pode demorar 3-8s. Disparando aqui no topo do parsing, ate o
@@ -215,7 +298,21 @@ async function apiFetch(url, options = {}) {
   }
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  let response = await fetch(url, { ...options, headers, credentials: 'include' });
+  let response;
+  try {
+    response = await fetch(url, { ...options, headers, credentials: 'include' });
+    // Resposta voltou — rede ok, garante que o banner offline esta escondido.
+    window.dispatchEvent(new CustomEvent('app:network-ok'));
+  } catch (netErr) {
+    // Erro de rede (TypeError do fetch): servidor inacessivel, DNS,
+    // CORS extremo, etc. Dispara banner amigavel e propaga erro tipado
+    // pra quem chamou poder tratar diferente de erro HTTP.
+    window.dispatchEvent(new CustomEvent('app:network-error'));
+    const err = new Error('Sem conexao com o servidor. Verifique sua internet.');
+    err.networkError = true;
+    err.cause = netErr;
+    throw err;
+  }
 
   // 401: tenta UMA renovacao via cookie de refresh antes de mandar pro
   // /login. Cobre access expirado naturalmente (1h) sem virar tela branca
