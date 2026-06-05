@@ -245,7 +245,18 @@ if (typeof window !== 'undefined') {
 
   // Eventos nativos do navegador
   window.addEventListener('offline', () => show('navegador desconectado'));
-  window.addEventListener('online', () => hide());
+  window.addEventListener('online', () => {
+    hide();
+    // Se a pagina veio do cache do SW (estavamos offline antes), recarrega
+    // pra puxar versao fresca. Detectamos via marcador no sessionStorage
+    // setado quando o SW serviu offline.html.
+    try {
+      if (sessionStorage.getItem('was_offline') === '1') {
+        sessionStorage.removeItem('was_offline');
+        setTimeout(() => window.location.reload(), 300);
+      }
+    } catch (e) {}
+  });
 
   // Estado inicial — se ja carregou offline, mostra logo
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -262,6 +273,48 @@ if (typeof window !== 'undefined') {
   // (ex: VPN caiu, DNS quebrou, Railway fora).
   window.addEventListener('app:network-error', () => show('servidor inacessivel'));
   window.addEventListener('app:network-ok', () => hide());
+})();
+
+// ── Service Worker (PWA / offline) ────────────────────────────────────
+// Registra o SW que da:
+//  - cache de shell (JS/CSS/imagens) servido na primeira visita.
+//  - pagina /offline.html quando navega sem internet pra pagina nao
+//    cacheada.
+//  - reload automatico quando rede volta.
+// Cuidado: SW so funciona em HTTPS (ou localhost). Skip em http: pra
+// nao logar erro em dev local sem TLS.
+(function registerServiceWorker() {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return;
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then((reg) => {
+        // Quando o SW novo termina de instalar, ja troca pra ativo
+        // (sw.js chama skipWaiting no install). Aqui so logamos.
+        reg.addEventListener('updatefound', () => {
+          const sw = reg.installing;
+          if (!sw) return;
+          sw.addEventListener('statechange', () => {
+            if (sw.state === 'activated' && navigator.serviceWorker.controller) {
+              // SW novo ativo — proxima navegacao ja usa o novo cache.
+              console.log('[sw] atualizado pra nova versao');
+            }
+          });
+        });
+      })
+      .catch((err) => console.warn('[sw] falha ao registrar:', err));
+  });
+
+  // Quando o controller muda (SW novo virou ativo enquanto a aba estava
+  // aberta), recarrega a aba pra usar o codigo novo. Sem isso, a aba
+  // antiga continua executando JS velho ate o usuario fechar/abrir.
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
 })();
 
 // Pre-aquece /auth/refresh assim que o script carrega — antes do DOM ficar

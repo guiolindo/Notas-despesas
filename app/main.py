@@ -381,6 +381,42 @@ app.include_router(contas_a_pagar.router, tags=["Contas a Pagar"])
 app.include_router(pending_actions.router, tags=["Acoes Pendentes"])
 
 
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    """Serve o Service Worker. Precisa de 2 cuidados especiais:
+
+    1. Cache-Control: no-cache — sem isso, deploy novo nao atualiza o SW
+       no browser do usuario por ate 24h. O conteudo do SW e que dispara
+       a deteccao de "novo SW disponivel"; precisa ser sempre fresco.
+    2. Service-Worker-Allowed: / — escopo padrao do SW e o diretorio
+       de onde ele e servido. Como servimos de '/', podemos cobrir tudo.
+    3. Placeholder __SW_VERSION__ substituido pelo STATIC_VERSION pra
+       que mudancas em JS/CSS provoquem rotacao de cache no SW.
+    """
+    from fastapi.responses import Response
+    sw_path = BASE_DIR / "static" / "sw.js"
+    try:
+        body = sw_path.read_text(encoding="utf-8")
+    except OSError:
+        return Response("// SW indisponivel", status_code=500, media_type="application/javascript")
+    body = body.replace("__SW_VERSION__", STATIC_VERSION)
+    return Response(
+        content=body,
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache",
+            "Service-Worker-Allowed": "/",
+        },
+    )
+
+
+@app.get("/offline.html", include_in_schema=False)
+def offline_page(request: Request):
+    """Pagina mostrada pelo SW quando o usuario tenta navegar sem
+    internet e nao tem a pagina alvo em cache."""
+    return templates.TemplateResponse(request, "offline.html")
+
+
 @app.get("/health")
 def health():
     """Alias historico — equivalente a /health/live. Mantido pra orquestradores
