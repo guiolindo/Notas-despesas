@@ -116,43 +116,15 @@
     <span class="dot"></span>
     <span id="conn-text">Aguardando conexao...</span>
   </div>
-  <button id="retry-btn" onclick="location.reload()">Tentar de novo</button>
+  <button id="retry-btn" type="button">Tentar de novo</button>
   <small>O Economart vai recarregar automaticamente quando a conexao voltar.</small>
 </main>
 
-<script>
-  // Atualiza o badge visual conforme estado da rede.
-  function refreshStatus() {
-    const status = document.getElementById('conn-status');
-    const text = document.getElementById('conn-text');
-    if (navigator.onLine) {
-      status.classList.add('online');
-      text.textContent = 'Conexao detectada — recarregando...';
-      // Pequeno delay pra animacao ser visivel + dar chance do
-      // servidor aceitar requests novamente.
-      setTimeout(() => location.reload(), 800);
-    } else {
-      status.classList.remove('online');
-      text.textContent = 'Aguardando conexao...';
-    }
-  }
-
-  // Eventos nativos do browser.
-  window.addEventListener('online', refreshStatus);
-  window.addEventListener('offline', refreshStatus);
-
-  // Estado inicial.
-  refreshStatus();
-
-  // Backup: se navigator.onLine for true mas servidor ainda fora
-  // (raro), tenta um ping pra /health/live a cada 5s. Quando voltar,
-  // recarrega.
-  setInterval(() => {
-    if (!navigator.onLine) return;
-    fetch('/health/live', { cache: 'no-store' })
-      .then((r) => { if (r.ok) location.reload(); })
-      .catch(() => { /* ainda offline — segue esperando */ });
-  }, 5000);
-</script>
+<!--
+  Logica em arquivo externo porque a CSP do site nao permite script
+  inline (script-src 'self' sem unsafe-inline — protecao XSS critica).
+  Arquivo cacheado pelo Service Worker pra que execute offline.
+-->
+<script src="/static/js/offline.js"></script>
 </body>
 </html>

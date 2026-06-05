@@ -25,6 +25,7 @@ const OFFLINE_URL = '/offline.html';
 // como PWA, por exemplo) — o shell ja esta la.
 const PRECACHE = [
   OFFLINE_URL,
+  '/static/js/offline.js',
   '/static/img/logo.png',
   '/static/img/favicon.png',
 ];

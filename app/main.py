@@ -50,6 +50,8 @@ def _compute_static_version() -> str:
         static_dir / "js" / "documents.js",
         static_dir / "js" / "comments.js",
         static_dir / "js" / "password.js",
+        static_dir / "js" / "offline.js",
+        static_dir / "sw.js",
         static_dir / "css" / "main.css",
     ]
     h = hashlib.sha256()
