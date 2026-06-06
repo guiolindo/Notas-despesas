@@ -181,6 +181,24 @@ if (typeof window !== 'undefined') {
   window.Economart = window.Economart || {};
 }
 
+// ── Listener global: marca intencao de editar usuario admin ──────────
+// Quando o admin clica em "Editar" na lista (/admin/users), grava
+// sessionStorage com o ID alvo. A pagina de edit consulta esse flag pra
+// confirmar que o usuario veio via UI (e nao via historico/URL colada).
+// Sem o flag, redireciona pra lista. Implementacao pediada pelo usuario
+// em vez de algo mais pesado (audit log etc).
+document.addEventListener('click', (event) => {
+  const a = event.target.closest && event.target.closest('a[href]');
+  if (!a) return;
+  const href = a.getAttribute('href') || '';
+  // Match /admin/users/<id>/edit pra setar o alvo. Outras paginas admin
+  // podem ser adicionadas aqui no mesmo padrao se quiser estender.
+  const m = href.match(/^\/admin\/users\/([^/?#]+)\/edit\b/);
+  if (m) {
+    try { sessionStorage.setItem('admin_edit_target_id', m[1]); } catch (e) {}
+  }
+});
+
 // ── Detector de conexao ─────────────────────────────────────────────────
 // Quando o usuario perde internet, mostra um banner fixo no topo avisando.
 // Cobre 2 caminhos:
@@ -2648,6 +2666,30 @@ async function initAdminUserForm() {
   const page = document.getElementById('admin-user-form-page');
   const mode = page.dataset.mode;
   const userId = page.dataset.userId;
+
+  // Anti-acesso-direto via historico/URL colada: a pagina de edit so
+  // pode ser aberta clicando em "Editar" na lista. O click la seta o
+  // flag em sessionStorage; se chegou aqui sem o flag, devolve pra
+  // /admin/users com toast explicando.
+  // Acesso direto nao e vulnerabilidade (page guard ja exige ADMIN),
+  // mas reduz erro operacional de editar usuario errado por engano
+  // quando o link foi parar no historico do browser.
+  if (mode === 'edit') {
+    let allowed = false;
+    try {
+      const expected = sessionStorage.getItem('admin_edit_target_id');
+      if (expected === userId) {
+        allowed = true;
+        sessionStorage.removeItem('admin_edit_target_id');
+      }
+    } catch (e) { /* sessionStorage indisponivel — ignora */ }
+    if (!allowed) {
+      showToast('Selecione o usuario na lista antes de editar.', 'info');
+      setTimeout(() => { window.location.href = '/admin/users'; }, 1500);
+      return;
+    }
+  }
+
   document.getElementById('admin-user-role')?.addEventListener('change', () => {
     adminToggleManagerField('admin-user-role', 'admin-manager-field');
   });
