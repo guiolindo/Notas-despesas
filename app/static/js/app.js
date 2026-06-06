@@ -2673,6 +2673,42 @@ async function loadAdminUserFormData(userId) {
     await adminLoadDepartments('admin-user-dept-id', user.department_id || '');
     await adminLoadManagers('admin-user-manager', user.manager_id || '');
     adminToggleManagerField('admin-user-role', 'admin-manager-field');
+
+    // Popular cartao de contexto. Mostra claramente QUEM esta sendo
+    // editado (proteje contra abrir URL errada do historico) e QUEM
+    // esta editando (proteje contra confundir conta logada).
+    // Guardamos o snapshot original para detectar mudancas criticas
+    // no save (role, ativo, must_change_password).
+    const card = document.getElementById('edit-context-card');
+    if (card) {
+      card.classList.remove('hidden');
+      const setText = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val || '—';
+      };
+      setText('edit-target-name', user.name);
+      setText('edit-target-email', user.email);
+      setText('edit-target-role', user.role);
+      const me = Auth.getUser();
+      setText('edit-acting-user', me ? (me.name || me.email || '') : '');
+      const isSelf = me && me.id === user.id;
+      const selfWarn = document.getElementById('edit-self-warning');
+      const otherInfo = document.getElementById('edit-other-info');
+      if (selfWarn) selfWarn.style.display = isSelf ? 'block' : 'none';
+      if (otherInfo) otherInfo.style.display = isSelf ? 'none' : 'block';
+      // Cor diferente quando editando outro user (laranja sticky vs amarelo no self)
+      card.style.borderLeftColor = isSelf ? '#fbbf24' : '#FF6B00';
+      card.style.background = isSelf ? '#fef9c3' : '#fff7ed';
+    }
+    // Snapshot pro saveAdminUserForm comparar.
+    window._adminEditSnapshot = {
+      role: user.role,
+      is_active: user.is_active !== false,
+      must_change_password: Boolean(user.must_change_password),
+      name: user.name,
+      email: user.email,
+      id: user.id,
+    };
   } catch (error) {
     showToast(error.message, 'error');
   }
@@ -2714,6 +2750,38 @@ async function saveAdminUserForm(event) {
       return;
     }
   }
+
+  // Confirmacao extra pra mudancas CRITICAS em edicao. Reduz risco de
+  // promocao acidental a ADMIN ou bloqueio de alguem por engano quando
+  // o admin abriu a URL direto do historico do browser.
+  if (mode === 'edit' && window._adminEditSnapshot) {
+    const snap = window._adminEditSnapshot;
+    const changes = [];
+    if (snap.role !== role) {
+      const elevatedRoles = ['ADMIN', 'DIRECTOR', 'FINANCE'];
+      const isElevation = elevatedRoles.includes(role) && !elevatedRoles.includes(snap.role);
+      changes.push(
+        (isElevation ? '⚠ ELEVAR perfil' : 'Mudar perfil') +
+        `: ${snap.role} → ${role}`
+      );
+    }
+    if (snap.must_change_password !== payload.must_change_password) {
+      changes.push(
+        payload.must_change_password
+          ? 'Forcar troca de senha no proximo login'
+          : 'Remover obrigacao de trocar senha'
+      );
+    }
+    if (changes.length > 0) {
+      const targetName = snap.name || snap.email || 'usuario';
+      const lines = changes.map((c) => `  • ${c}`).join('\n');
+      const ok = await confirmAction(
+        `Voce esta prestes a alterar ${targetName}:\n\n${lines}\n\nConfirma?`
+      );
+      if (!ok) return;
+    }
+  }
+
   try {
     const url = mode === 'create' ? '/api/admin/users' : `/api/admin/users/${userId}`;
     const method = mode === 'create' ? 'POST' : 'PUT';

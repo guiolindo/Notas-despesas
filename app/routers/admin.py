@@ -342,12 +342,35 @@ def create_user(
 @router.get("/users/{user_id}")
 def get_user(
     user_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("ADMIN")),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario nao encontrado")
+    # Audit: registra quem viu o detalhe de qual user. Util pra investigar
+    # acesso indevido (admin curioso vendo dados pessoais de funcionarios)
+    # e da trilha quando admin acessa via URL direto do historico.
+    try:
+        db.add(
+            AuditLog(
+                id=str(uuid.uuid4()),
+                user_id=current_user.id,
+                action="ADMIN_VIEW_USER",
+                resource_type="USER",
+                resource_id=user_id,
+                ip_address=pseudonymize_ip(request.client.host if request.client else None),
+                source_port=request.client.port if request.client else None,
+                http_method=request.method,
+                user_agent=request.headers.get("user-agent"),
+                timestamp=datetime.now(timezone.utc),
+                success=True,
+            )
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
     return _user_payload(user)
 
 
