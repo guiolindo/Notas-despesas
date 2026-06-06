@@ -196,6 +196,14 @@ if (typeof window !== 'undefined') {
   if (typeof window === 'undefined') return;
   let bannerEl = null;
   let isShown = false;
+  // Marca se estamos vendo "servidor inacessivel" — diferente de "browser
+  // offline". Sem essa flag, um fetch que falha por rede (servidor fora)
+  // poderia ser apagado depois por outro fetch que volta. Mantemos sticky
+  // ate evidencia explicita de OK.
+  let serverDown = false;
+  // Timer pra debounce: se varios fetches falham em sequencia, agrupamos
+  // num so banner em vez de piscar.
+  let _hideTimer = null;
 
   function ensureBanner() {
     if (bannerEl) return bannerEl;
@@ -214,6 +222,7 @@ if (typeof window !== 'undefined') {
       'box-shadow:0 1px 3px rgba(0,0,0,0.1)',
       'transform:translateY(-100%)',
       'transition:transform .25s ease',
+      'pointer-events:none',
     ].join(';');
     bannerEl.innerHTML = (
       '<span style="margin-right:8px">📡</span>' +
@@ -226,10 +235,10 @@ if (typeof window !== 'undefined') {
   }
 
   function show(reason) {
+    if (_hideTimer) { clearTimeout(_hideTimer); _hideTimer = null; }
     const el = ensureBanner();
     if (!isShown) {
       isShown = true;
-      // Forca reflow pra animacao funcionar
       void el.offsetHeight;
       el.style.transform = 'translateY(0)';
     }
@@ -237,19 +246,31 @@ if (typeof window !== 'undefined') {
     if (statusEl && reason) statusEl.textContent = `(${reason})`;
   }
 
-  function hide() {
+  function hide(force) {
+    // Nao esconde se ainda estamos browser-offline OU se ja confirmamos
+    // que o servidor esta fora. So um sinal de boa-fe limpa: 'force'
+    // (evento online) ou 'app:network-ok' quando navigator.onLine=true.
     if (!isShown || !bannerEl) return;
-    isShown = false;
-    bannerEl.style.transform = 'translateY(-100%)';
+    if (!force && typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    if (!force && serverDown) return;
+    // Debounce de 600ms — evita piscar quando varias chamadas alternam
+    // erro/ok em sequencia.
+    if (_hideTimer) clearTimeout(_hideTimer);
+    _hideTimer = setTimeout(() => {
+      _hideTimer = null;
+      isShown = false;
+      if (bannerEl) bannerEl.style.transform = 'translateY(-100%)';
+    }, 600);
   }
 
   // Eventos nativos do navegador
-  window.addEventListener('offline', () => show('navegador desconectado'));
+  window.addEventListener('offline', () => {
+    serverDown = false; // se browser caiu, problema e local, nao do server
+    show('sem internet');
+  });
   window.addEventListener('online', () => {
-    hide();
-    // Se a pagina veio do cache do SW (estavamos offline antes), recarrega
-    // pra puxar versao fresca. Detectamos via marcador no sessionStorage
-    // setado quando o SW serviu offline.html.
+    serverDown = false;
+    hide(true);
     try {
       if (sessionStorage.getItem('was_offline') === '1') {
         sessionStorage.removeItem('was_offline');
@@ -260,19 +281,26 @@ if (typeof window !== 'undefined') {
 
   // Estado inicial — se ja carregou offline, mostra logo
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    // Espera o DOM existir pra anexar o banner
     if (document.body) {
-      show('navegador desconectado');
+      show('sem internet');
     } else {
-      document.addEventListener('DOMContentLoaded', () => show('navegador desconectado'));
+      document.addEventListener('DOMContentLoaded', () => show('sem internet'));
     }
   }
 
-  // Evento custom disparado pelo apiFetch quando o fetch falha por rede.
-  // Cobre o caso de navigator.onLine ser true mas o servidor inacessivel
-  // (ex: VPN caiu, DNS quebrou, Railway fora).
-  window.addEventListener('app:network-error', () => show('servidor inacessivel'));
-  window.addEventListener('app:network-ok', () => hide());
+  // Evento custom do apiFetch quando o fetch falha por rede.
+  // Marca server-down sticky. So sai com network-ok confirmado.
+  window.addEventListener('app:network-error', () => {
+    serverDown = true;
+    show('servidor inacessivel');
+  });
+  // Sucesso de fetch limpa server-down. Mas so esconde se browser tambem
+  // estiver online — proteje contra navigator.onLine=false mas alguma
+  // request servida do cache do SW respondendo OK.
+  window.addEventListener('app:network-ok', () => {
+    serverDown = false;
+    hide(false);
+  });
 })();
 
 // ── Service Worker (PWA / offline) ────────────────────────────────────
