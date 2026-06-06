@@ -72,8 +72,12 @@ function isStaticAsset(url) {
   return url.pathname.startsWith('/static/');
 }
 
-async function networkFirstWithTimeout(request, timeoutMs) {
-  // Race entre fetch e timeout. Se timeout vencer, tenta o cache.
+async function networkOnlyWithTimeout(request, timeoutMs) {
+  // Race entre fetch e timeout. Diferente de "network-first": NAO salva
+  // resposta HTML no cache. Usuario explicitou: paginas HTML nao devem
+  // ser servidas do cache quando offline — ele quer ver a tela offline
+  // pra deixar claro que esta sem internet, em vez de navegar versoes
+  // velhas como se tudo estivesse ok.
   return new Promise((resolve, reject) => {
     let settled = false;
     const t = setTimeout(() => {
@@ -88,11 +92,6 @@ async function networkFirstWithTimeout(request, timeoutMs) {
         if (settled) return;
         settled = true;
         clearTimeout(t);
-        // Salva copia no cache pra proximo carregamento offline.
-        if (resp && resp.ok && resp.status === 200) {
-          const clone = resp.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)).catch(() => {});
-        }
         resolve(resp);
       })
       .catch((err) => {
@@ -118,7 +117,15 @@ self.addEventListener('fetch', (event) => {
   // Skip API/auth/health — sempre rede.
   if (isApiPath(url)) return;
 
-  // Navegacao HTML: network first, fallback cache, fallback offline.
+  // Navegacao HTML: NETWORK ONLY com timeout curto, fallback offline.html.
+  //
+  // Decisao explicita do usuario: nao quer servir versoes cacheadas
+  // quando offline porque dao a falsa impressao de que tudo esta normal.
+  // Sem internet -> tela offline clara. Sempre.
+  //
+  // Timeout 2s e agressivo de proposito: em cold start do Railway pode
+  // gerar offline.html falso, mas isso e um reload pro usuario. Ja na
+  // pratica de uso, conexao boa responde em <500ms — 2s da folga.
   const isNavigate = (
     req.mode === 'navigate'
     || (req.destination === '' && req.headers.get('Accept') && req.headers.get('Accept').includes('text/html'))
@@ -126,16 +133,14 @@ self.addEventListener('fetch', (event) => {
   if (isNavigate) {
     event.respondWith((async () => {
       try {
-        const resp = await networkFirstWithTimeout(req, 4000);
-        return resp;
+        return await networkOnlyWithTimeout(req, 2000);
       } catch (_) {
-        const cached = await caches.match(req);
-        if (cached) return cached;
         const offline = await caches.match(OFFLINE_URL);
         if (offline) return offline;
-        // Ultimo recurso — resposta minima inline.
+        // Fallback de ultimo recurso (offline.html nao foi pre-cacheado
+        // por algum motivo). Resposta minima inline.
         return new Response(
-          '<h1>Sem conexao</h1><p>Sua conexao caiu. Tente novamente.</p>',
+          '<h1>Sem conexao</h1><p>Sem internet. Verifique sua conexao e tente novamente.</p>',
           { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
         );
       }
