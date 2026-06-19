@@ -330,66 +330,75 @@ def forgot_password(
     """Gera codigo de 6 digitos e envia por email.
 
     Protecoes:
-    - Resposta SEMPRE 200 (anti-enumeracao de emails)
-    - Throttle: 1 pedido por 60 segundos por email (evita spam)
-    - Envio via BackgroundTasks (request retorna rapido)
+    - Resposta SEMPRE 200 com mensagem fixa (anti-enumeracao por conteudo)
+    - **Tempo de resposta constante**: TODO o trabalho pesado (lookup,
+      bcrypt do codigo, INSERT, envio SMTP) acontece em BackgroundTasks
+      depois da resposta. Pentest jun/2026 mediu 6s vs 10ms entre email
+      existente e nao-existente — o caso "existe" pagava bcrypt + DB
+      writes na resposta sincrona, vazando a existencia por timing.
+    - Throttle: 1 pedido por 60 segundos por email (evita spam SMTP)
     """
-    import secrets as _secrets
-    import uuid as _uuid
-    from app.models import PasswordResetCode
-    from app.services import email_service
+    _email_raw = body.email
 
-    email = sanitize_email(body.email)
-    user = db.query(User).filter(User.email == email, User.is_active.is_(True)).first()
-    if user:
-        now = datetime.now(timezone.utc)
-        # Throttle: bloqueia se ja gerou codigo nos ultimos 60 segundos
-        recent = (
-            db.query(PasswordResetCode)
-            .filter(
-                PasswordResetCode.user_id == user.id,
-                PasswordResetCode.created_at > now - timedelta(seconds=60),
+    def _process_request_async() -> None:
+        # Roda depois da resposta — todo o caminho "user existe" + bcrypt
+        # + DB writes + send_email fica fora do tempo de resposta visto
+        # pelo atacante. Sessao DB propria pra nao depender do scope da
+        # request original.
+        import secrets as _secrets
+        import uuid as _uuid
+        from app.database import SessionLocal
+        from app.models import PasswordResetCode
+        from app.services import email_service
+
+        try:
+            email = sanitize_email(_email_raw)
+        except Exception:  # noqa: BLE001
+            return
+
+        with SessionLocal() as session:
+            user = (
+                session.query(User)
+                .filter(User.email == email, User.is_active.is_(True))
+                .first()
             )
-            .order_by(PasswordResetCode.created_at.desc())
-            .first()
-        )
-        if recent:
-            # Resposta generica — atacante nao sabe se foi rate-limited ou nao
-            return {"message": "Se o email estiver cadastrado, voce recebera um codigo em alguns segundos."}
-
-        # Gera codigo 6 digitos. Armazena bcrypt do codigo, nao plain.
-        code = f"{_secrets.randbelow(10**6):06d}"
-        expires = now + timedelta(minutes=15)
-        # Invalida codigos anteriores deste usuario
-        db.query(PasswordResetCode).filter(
-            PasswordResetCode.user_id == user.id,
-            PasswordResetCode.used_at.is_(None),
-        ).update({"used_at": now})
-
-        db.add(PasswordResetCode(
-            id=str(_uuid.uuid4()),
-            user_id=user.id,
-            code_hash=hash_password(code),
-            expires_at=expires,
-            attempts=0,
-        ))
-        db.commit()
-
-        # Envia email em background — request retorna sem esperar SMTP
-        _user_name = user.name
-        _user_email = user.email
-        def _send_in_bg():
+            if not user:
+                return
+            now = datetime.now(timezone.utc)
+            recent = (
+                session.query(PasswordResetCode)
+                .filter(
+                    PasswordResetCode.user_id == user.id,
+                    PasswordResetCode.created_at > now - timedelta(seconds=60),
+                )
+                .order_by(PasswordResetCode.created_at.desc())
+                .first()
+            )
+            if recent:
+                return  # throttle silencioso
+            code = f"{_secrets.randbelow(10**6):06d}"
+            expires = now + timedelta(minutes=15)
+            session.query(PasswordResetCode).filter(
+                PasswordResetCode.user_id == user.id,
+                PasswordResetCode.used_at.is_(None),
+            ).update({"used_at": now})
+            session.add(PasswordResetCode(
+                id=str(_uuid.uuid4()),
+                user_id=user.id,
+                code_hash=hash_password(code),
+                expires_at=expires,
+                attempts=0,
+            ))
+            session.commit()
             try:
-                from app.database import SessionLocal
-                with SessionLocal() as session:
-                    subject, html, text = email_service.template_password_reset_code(
-                        _user_name, code, minutes_valid=15,
-                    )
-                    email_service.send_email(session, _user_email, subject, html, text)
+                subject, html, text = email_service.template_password_reset_code(
+                    user.name, code, minutes_valid=15,
+                )
+                email_service.send_email(session, user.email, subject, html, text)
             except Exception:  # noqa: BLE001
                 pass
-        background_tasks.add_task(_send_in_bg)
 
+    background_tasks.add_task(_process_request_async)
     return {"message": "Se o email estiver cadastrado, voce recebera um codigo em alguns segundos."}
 
 

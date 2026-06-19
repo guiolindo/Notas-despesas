@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -70,7 +71,19 @@ STATIC_VERSION = _compute_static_version()
 # Disponivel em todos os templates como {{ STATIC_VERSION }}.
 templates.env.globals["STATIC_VERSION"] = STATIC_VERSION
 
-app = FastAPI(title="Economart - Aprovacao de Notas Fiscais", version="1.0.0")
+# Pentest jun/2026 (issue #SEC-1): /docs, /redoc, /openapi.json publicos em
+# PROD vazam o mapa completo da API (73 endpoints, schemas, parametros) pra
+# qualquer atacante. So devs locais precisam disso — em PROD desligamos. DEV
+# continua com tudo pra documentacao do FastAPI funcionar.
+_PROD = os.environ.get("ENVIRONMENT", "DEV").upper() == "PROD"
+
+app = FastAPI(
+    title="Economart - Aprovacao de Notas Fiscais",
+    version="1.0.0",
+    docs_url=None if _PROD else "/docs",
+    redoc_url=None if _PROD else "/redoc",
+    openapi_url=None if _PROD else "/openapi.json",
+)
 
 # P1-2 da auditoria: PROD nao pode subir com SECRET_KEY default ou
 # MASTER_ENCRYPTION_KEY ausente. Em vez de stacktrace cru, qualquer rota
@@ -348,11 +361,10 @@ app.add_middleware(RequestIdMiddleware)
 
 # CORS — em PROD restringe ao dominio publico; em DEV aceita qualquer origem
 # para facilitar testes locais (Vite, ngrok, etc.)
-import os
-_is_prod = (os.environ.get("ENVIRONMENT", "DEV").upper() == "PROD")
+# _PROD ja definido no topo do arquivo.
 _railway_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
 _cors_origins = (
-    [f"https://{_railway_url}"] if _is_prod and _railway_url else ["*"]
+    [f"https://{_railway_url}"] if _PROD and _railway_url else ["*"]
 )
 app.add_middleware(
     CORSMiddleware,
@@ -460,14 +472,46 @@ def health_ready():
     )
 
 
+def _require_admin_or_dev(request: Request) -> None:
+    """Gate de endpoints sensiveis de observabilidade: em PROD exige
+    Bearer de ADMIN; em DEV libera. Pentest jun/2026 (issue #SEC-3):
+    /health/dependencies expunha publicamente quais providers de email/R2
+    estavam configurados — info util pra atacante mapear superficie.
+    """
+    if not _PROD:
+        return
+    from app.security.dependencies import get_current_user
+    from app.models import UserRole
+    from app.database import SessionLocal
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Auth requerido")
+    token = auth_header[7:].strip()
+    with SessionLocal() as session:
+        try:
+            user = get_current_user(token=token, db=session)
+        except Exception:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=401, detail="Token invalido")
+        if user.role != UserRole.ADMIN:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=403, detail="Permissao insuficiente")
+
+
 @app.get("/health/dependencies")
-def health_dependencies():
+def health_dependencies(request: Request):
     """Best-effort: status detalhado de dependencias externas (DB, R2, email).
 
     Nao usar pra readiness — uma falha do R2 nao deveria tirar o app do
     trafego se a maior parte das rotas continua respondendo. Util pra
     dashboard de status manual.
+
+    Em PROD exige Bearer de ADMIN (evita leak de qual provider de email
+    esta configurado pra atacante externo). Em DEV liberado.
     """
+    _require_admin_or_dev(request)
     from app.config import settings
     from app.database import SessionLocal
 
