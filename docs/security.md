@@ -30,7 +30,7 @@ sucedido podia ler `localStorage.access_token` e exfiltrar via
 fetch externo, assumindo a sessão por até 1 hora.
 
 Agora o token vive em uma variável dentro de uma closure JavaScript
-(no Auth helper em `app/static/js/app.js`). Não é acessível via
+(no Auth helper em `app/static/js/core.js`). Não é acessível via
 `window`, `localStorage`, nem `sessionStorage`. Um XSS ainda pode
 fazer requests usando o token enquanto a aba está aberta, mas:
 

@@ -414,12 +414,23 @@ economart_notas/
 │   │   └── alert_service.py
 │   ├── static/
 │   │   ├── css/main.css             # Design system unificado + tokens --role-*
-│   │   ├── js/
-│   │   │   ├── app.js               # Vanilla JS principal, helpers globais
-│   │   │   ├── dashboard-v2.js      # Lógica do dashboard novo (por perfil)
-│   │   │   ├── scanner.js           # Bipador + câmera (jsQR)
-│   │   │   ├── verify.js            # Lógica do /verify público
-│   │   │   └── not-found.js         # Countdown + redirect da página 404
+│   │   ├── js/                      # vanilla, sem build (19 módulos)
+│   │   │   ├── format.js, documents.js     # helpers puros
+│   │   │   ├── core.js                     # Auth, apiFetch, UI helpers
+│   │   │   ├── shell.js                    # login, initShell, configuracoes
+│   │   │   ├── pdf-viewer.js, comments.js, password.js
+│   │   │   ├── invoices-list.js, invoice-form.js, invoice-detail.js
+│   │   │   ├── alerts.js, finance.js, review.js
+│   │   │   ├── admin-users.js, admin-departments.js, admin-audit.js
+│   │   │   ├── drawer.js                   # drawer lateral compartilhado
+│   │   │   ├── dispatcher.js               # roteador DOMContentLoaded
+│   │   │   ├── app.js                      # stub pós-refactor P2-1 v3
+│   │   │   ├── dashboard-v2.js             # dashboard novo (só /dashboard)
+│   │   │   ├── scanner.js                  # bipador + câmera (jsQR)
+│   │   │   ├── verify.js                   # /verify público
+│   │   │   ├── not-found.js                # countdown + redirect 404
+│   │   │   └── offline.js                  # tela offline (PWA)
+│   │   └── sw.js                    # Service Worker
 │   │   └── img/
 │   │       ├── logo.png
 │   │       └── icons/               # 36 SVGs Lucide vendorizados (MIT)

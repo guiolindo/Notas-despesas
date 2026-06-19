@@ -18,7 +18,7 @@ O Economart e uma aplicacao FastAPI com templates Jinja2 e JavaScript vanilla. O
 ```mermaid
 flowchart LR
     U["Usuario no navegador"] --> P["Paginas Jinja2"]
-    P --> JS["app/static/js/app.js"]
+    P --> JS["app/static/js/* (19 modulos)"]
     JS --> API["FastAPI routers"]
     API --> SVC["Services"]
     SVC --> DB[("PostgreSQL / SQLite")]
@@ -34,7 +34,8 @@ flowchart LR
 
 - Templates em `app/templates/`.
 - Estilos em `app/static/css/main.css`.
-- Logica cliente em `app/static/js/app.js`.
+- Logica cliente em `app/static/js/` (19 modulos vanilla, sem build).
+  Ver [frontend.md](frontend.md#módulos-js) para mapa completo.
 
 Responsabilidades:
 
@@ -134,9 +135,6 @@ flowchart TD
 
 ## Riscos Arquiteturais Conhecidos
 
-- `app/static/js/app.js` tem ~3300 linhas em arquivo único. Tentativa
-  de split causou regressão e foi revertida — está no roadmap com
-  requisito de smoke test runtime obrigatório
 - Migrações manuais no startup misturam bootstrap de aplicação com
   evolução de schema. Adotar Alembic está no roadmap
 - Rate-limit é em memória por processo — multi-worker do gunicorn
@@ -161,7 +159,10 @@ flowchart TD
 - **Hash chain em audit_logs**: defesa contra tampering retroativo
   no banco. Detalhes em [database.md](database.md#audit_logs)
 - **Server-side rendering sem build**: deploy direto, sem
-  `node_modules`, sem etapa de bundle. Custo: app.js monolítico
+  `node_modules`, sem etapa de bundle. O JS é dividido em 19
+  módulos pequenos servidos diretamente pelo FastAPI; cada um é
+  uma IIFE que expõe namespaces em `window.Economart.<modulo>`
+  (P2-1 v3, jun/2026)
 - **Fail-fast em PROD para secrets**: app não sobe se
   `SECRET_KEY` ou `MASTER_ENCRYPTION_KEY` estão vazias/padrão.
   Tela 503 amigável até config ser corrigida

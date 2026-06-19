@@ -427,9 +427,16 @@ incidentes que pedem correlação centralizada.
 Postgres do Railway tem backup automático no plano. Off-site
 adicional implica orçamento + procedimento de rotação. Roadmap.
 
-### Por que app.js tem 3300 linhas?
+### O `app.js` ainda tem 3300 linhas?
 
-Tentamos splitar uma vez e causou regressão (botões "morrendo").
-Revertemos. Plano de split está em `_audit-internal/` (cache local
-da auditoria), e refazer com smoke test runtime obrigatório está
-no roadmap.
+Não. Em junho/2026 (commit `822bf3d`, P2-1 v3) foi dividido em
+14 módulos pequenos (`core.js`, `shell.js`, `drawer.js`,
+`invoices-list.js`, etc.). O `app.js` virou um stub vazio, mantido
+só pra compatibilidade com bookmark/cache antigo. Mapa completo
+em [frontend.md](frontend.md#módulos-js) e plano de execução em
+[plan-appjs-split-v3.md](plan-appjs-split-v3.md).
+
+A primeira tentativa (`2b3c105` + `c6e67aa`) tinha sido revertida
+por regressão. A v3 sobreviveu por causa de smoke runtime
+obrigatório (uvicorn + 13 páginas autenticadas + concat VM)
+antes do commit.

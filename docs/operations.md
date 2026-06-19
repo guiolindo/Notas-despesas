@@ -202,12 +202,12 @@ Já aconteceu uma vez por race condition entre o `Auth.ensureToken()`
 e o primeiro fetch. Hotfixes aplicados:
 
 - `Auth` faz migração defensiva de sessões antigas
-- Pre-warm de `/refresh` no topo do app.js (antes do DOMContentLoaded)
+- Pre-warm de `/refresh` no topo do `core.js` (antes do DOMContentLoaded)
 - `apiFetch` sempre tenta `ensureToken` se sem token
 
 Se voltar a acontecer:
 
-1. Ctrl+F5 (hard reload) para garantir que pegou o app.js novo
+1. Ctrl+F5 (hard reload) para garantir que pegou os módulos JS novos
 2. F12 → Console → ver primeiro erro vermelho
 3. F12 → Application → Storage → Clear all → relogar
 4. Se persistir, abrir issue com o erro do console
@@ -350,7 +350,8 @@ Se o admin esqueceu a senha **e** não tem outro admin para resetar:
 Antes de cada deploy não-trivial:
 
 - [ ] `python -m pytest tests/ -q` passa (21 testes verdes)
-- [ ] `node --check app/static/js/app.js` sem erro
+- [ ] `for f in app/static/js/*.js; do node --check "$f"; done` sem erro
+      (valida sintaxe dos 19 módulos vanilla)
 - [ ] Diff revisado por outra pessoa (PR review)
 - [ ] Variáveis de ambiente novas adicionadas ao painel
 - [ ] Migrações backward-compatíveis (não removem coluna que
