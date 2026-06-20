@@ -23,6 +23,7 @@ Financeiro.
 - [Setup local](#setup-local)
 - [Deploy no Railway](#deploy-no-railway)
 - [Configurações](#configurações)
+- [Endpoints HTTP](#endpoints-http)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Convenções de código](#convenções-de-código)
 - [Mudanças recentes](#mudanças-recentes)
@@ -354,8 +355,6 @@ R2_BUCKET_NAME=
 python -m uvicorn app.main:app --reload --port 7145
 ```
 
-Ou no Windows: dois cliques no `start.bat`.
-
 Acesse [http://localhost:7145](http://localhost:7145).
 
 **Login inicial**: `admin@economart.com` / `Admin@2024!`
@@ -397,19 +396,150 @@ Acesse [http://localhost:7145](http://localhost:7145).
 - R2 Object Storage → Create bucket
 - Manage R2 API Tokens → Create Account API Token com Object Read & Write
 
-### 5. Email SMTP (opcional, configurado depois pelo admin)
+### 5. Email (SMTP ou Resend) — configurado via variável de ambiente
+
+Configuração de email **vive só no `.env`/painel do Railway**, não na UI do
+admin (defesa contra admin malicioso interceptar reset de senha). Veja
+[Defesa contra admin malicioso](#defesa-contra-admin-malicioso-insider-threat).
+
+**Opção A — Resend** (recomendado em Railway, funciona sem desbloqueio):
+- Conta grátis em [resend.com](https://resend.com)
+- Crie uma API Key
+- Adicione `EMAIL_PROVIDER=RESEND`, `RESEND_API_KEY=re_...`, `SMTP_FROM_EMAIL=...`
+
+**Opção B — SMTP** (Gmail, Outlook, SendGrid):
 - Crie conta Gmail dedicada
 - Ative 2FA → gere App Password em [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
-- Acesse `/admin/smtp` no sistema e preencha
+- Adicione `EMAIL_PROVIDER=SMTP`, `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`,
+  `SMTP_USE_TLS=true`, `SMTP_USER=...`, `SMTP_PASSWORD=...`, `SMTP_FROM_EMAIL=...`
+
+**Opção C — Desabilitar** (dev local sem email real):
+- `EMAIL_PROVIDER=DISABLED` (sistema pula os envios silenciosamente)
 
 ## Configurações
 
+Definidas em `app/config.py` (`pydantic-settings`), lidas de variáveis de
+ambiente ou `.env`.
+
+### Autenticação
 | Setting | Default | Descrição |
 |---|---|---|
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | 60 | Validade do access token |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | 7 | Validade do refresh token |
-| `MAX_LOGIN_ATTEMPTS` | 5 | Tentativas antes de bloquear |
-| `LOGIN_BLOCK_MINUTES` | 10 | Tempo de bloqueio após exceder |
+| `SECRET_KEY` | (default inseguro) | Chave HMAC pra assinar JWT. **Obrigatória em PROD** (app não sobe). Gere com `python -c "import secrets; print(secrets.token_hex(64))"` |
+| `ALGORITHM` | `HS256` | Algoritmo de assinatura do JWT |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Validade do access token |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Validade do refresh token (cookie HttpOnly) |
+| `MAX_LOGIN_ATTEMPTS` | `5` | Tentativas antes de bloquear conta |
+| `LOGIN_BLOCK_MINUTES` | `10` | Duração do bloqueio |
+
+### Ambiente e dados
+| Setting | Default | Descrição |
+|---|---|---|
+| `ENVIRONMENT` | `DEV` | `DEV` ou `PROD`. Em `PROD`: `/docs`/`/redoc`/`/openapi.json` desligam, cookies viram `Secure`, CORS restringe, `/health/dependencies` exige admin |
+| `DATABASE_URL` | `sqlite:///./economart.db` | URL SQLAlchemy. Use Postgres em prod |
+| `MASTER_ENCRYPTION_KEY` | (vazio) | Chave Fernet pra criptografar PDFs antes do upload. **Obrigatória em PROD**. Gere com `python generate_keys.py` |
+
+### Storage (Cloudflare R2)
+| Setting | Default | Descrição |
+|---|---|---|
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | (vazio) | Credenciais R2 |
+| `R2_ENDPOINT_URL` | (vazio) | `https://<account_id>.r2.cloudflarestorage.com` |
+| `R2_BUCKET_NAME` | (vazio) | Nome do bucket. Vazio → fallback `uploads/` local (DEV) |
+
+### Email
+| Setting | Default | Descrição |
+|---|---|---|
+| `EMAIL_PROVIDER` | `SMTP` | `SMTP` \| `RESEND` \| `DISABLED` |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USE_TLS`, `SMTP_USER`, `SMTP_PASSWORD` | — | Credenciais SMTP. `SMTP_USE_TLS=true` usa STARTTLS na porta 587; `false` usa SSL direto na 465 |
+| `RESEND_API_KEY` | (vazio) | Chave da API Resend (alternativa HTTP) |
+| `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME` | — | Remetente que aparece nos emails |
+
+## Endpoints HTTP
+
+Referência completa em [`docs/api-reference.md`](docs/api-reference.md).
+Resumo:
+
+### Públicos (sem auth)
+| Método | Rota | O que faz |
+|---|---|---|
+| GET | `/` | Redireciona para `/dashboard` (ou `/login` se anônimo) |
+| GET | `/login`, `/forgot-password`, `/reset-password`, `/change-password` | Páginas HTML de auth |
+| GET | `/privacidade`, `/faq`, `/offline.html` | Páginas estáticas |
+| GET | `/verify/{invoice_id}` | Versão pública da nota com nome mascarado (LGPD) |
+| GET | `/health/live` | Liveness probe (sempre 200 se processo respira) |
+| GET | `/health/ready` | Readiness probe (checa DB com `SELECT 1`) |
+| GET | `/health/dependencies` | Status de R2/email — **PROD exige Bearer ADMIN** |
+| POST | `/auth/login` | Devolve access token + cookie refresh HttpOnly |
+| POST | `/auth/refresh` | Renova access via cookie refresh |
+| POST | `/auth/forgot-password` | Envia código de 6 dígitos (resposta constante anti-enumeração) |
+| POST | `/auth/reset-password` | Confirma código + senha nova |
+
+### Autenticados (Bearer ou cookie)
+**Sessão e perfil:**
+| Método | Rota | Quem |
+|---|---|---|
+| GET | `/auth/me` | Qualquer usuário |
+| POST | `/auth/logout` | Qualquer usuário (revoga access via `session_invalidated_at`) |
+| POST | `/auth/change-password` | Qualquer usuário (rejeita senha igual à atual) |
+| PUT | `/auth/me/availability` | MANAGER, DIRECTOR (modo férias) |
+
+**Páginas HTML autenticadas** (role-gated):
+- `/dashboard`, `/configuracoes`, `/alerts` — todos os perfis
+- `/invoices`, `/invoices/new`, `/invoices/{id}`, `/invoices/{id}/edit` — EMPLOYEE+
+- `/manager/queue`, `/manager/invoices/{id}` — MANAGER
+- `/director/queue`, `/director/invoices/{id}` — DIRECTOR
+- `/finance/queue`, `/finance/invoices/{id}` — FINANCE
+- `/admin/users`, `/admin/users/new`, `/admin/users/{id}/edit`, `/admin/audit-logs`, `/admin/departments` — ADMIN
+- `/contas-a-pagar/scanner` — CONTAS_A_PAGAR
+
+**Notas fiscais** (`/api/invoices`):
+| Método | Rota | Quem |
+|---|---|---|
+| GET | `/api/invoices/` | Qualquer perfil (filtros + paginação + `total_amount`) |
+| POST | `/api/invoices/` | EMPLOYEE, MANAGER, DIRECTOR |
+| GET | `/api/invoices/{id}` | Stakeholder da nota |
+| PATCH | `/api/invoices/{id}` | Criador (só em RASCUNHO/REPROVADO) |
+| DELETE | `/api/invoices/{id}` | Criador (só em RASCUNHO/REPROVADO) |
+| POST | `/api/invoices/{id}/submit` | Criador (transição → AGUARDANDO_GESTOR ou _DIRETOR) |
+| POST | `/api/invoices/{id}/cancel` | Criador (volta a RASCUNHO) |
+| POST | `/api/invoices/{id}/review` | MANAGER (aprovar → diretor, ou reprovar) |
+| POST | `/api/invoices/{id}/director-review` | DIRECTOR (aprovar → finance, ou reprovar) |
+| POST | `/api/invoices/{id}/transfer-director` | DIRECTOR (repassa pra outro diretor) |
+| POST | `/api/invoices/{id}/mark-paid` | FINANCE (gera PDF + grava status PAGO) |
+| GET | `/api/invoices/{id}/print` | FINANCE, CONTAS_A_PAGAR, ADMIN (reimprime) |
+| GET | `/api/invoices/{id}/attachment` | Stakeholder (legado, primeiro anexo) |
+| GET | `/api/invoices/{id}/attachments/{att_id}` | Stakeholder |
+| DELETE | `/api/invoices/{id}/attachments/{att_id}` | Criador |
+| GET | `/api/invoices/{id}/comments` | Stakeholder (paginado) |
+| POST | `/api/invoices/{id}/comments` | Stakeholder |
+| GET | `/api/invoices/{id}/verify-full` | Stakeholder (versão completa do `/verify`) |
+| GET | `/api/invoices/directors` | EMPLOYEE+ (lista pra seleção no submit) |
+| GET | `/api/invoices/lookup-cnpj/{cnpj}` | Qualquer perfil (cache 180 dias) |
+
+**Admin** (`/api/admin/*` — todos exigem ADMIN):
+| Método | Rota | O que faz |
+|---|---|---|
+| GET, POST | `/users`, `/users/{id}` (GET/PUT) | CRUD de usuário |
+| POST | `/users/{id}/reset-password` | Reset forçado (notifica titular) |
+| POST | `/users/{id}/unlock` | Limpa lockout |
+| POST | `/users/{id}/anonymize` | Pseudonimização irreversível (LGPD) |
+| GET, POST, PUT, DELETE | `/departments`, `/departments/{id}` | CRUD de setor |
+| GET | `/managers`, `/directors` | Listas pra selects do form de user |
+| GET | `/audit-logs` | Lista paginada de auditoria |
+| GET | `/audit-logs/verify-chain` | Valida hash chain (detecta tampering no DB) |
+| POST | `/maintenance/purge-rejected` | Limpa reprovadas > 90 dias |
+
+**Outros:**
+| Método | Rota | Quem |
+|---|---|---|
+| GET | `/alerts/` | Qualquer perfil (5 buckets agregados) |
+| GET | `/api/contas-a-pagar/stats` | CONTAS_A_PAGAR (badge "Conferidas hoje") |
+| GET | `/api/pending-actions/me` | Qualquer perfil (ações administrativas pendentes contra mim) |
+| GET | `/api/pending-actions/visible` | Quem pode revisar como peer (DIRECTOR/ADMIN) |
+| POST | `/api/pending-actions/{id}/cancel` | Target ou peer |
+| POST | `/api/pending-actions/{id}/confirm` | Peer (executa antes das 24h) |
+
+### Desligados em PROD
+- `/docs`, `/redoc`, `/openapi.json` — 404 quando `ENVIRONMENT=PROD` (pentest jun/2026 #SEC-1). DEV continua aberto pro Swagger.
 
 ## Estrutura do projeto
 
@@ -423,20 +553,26 @@ economart_notas/
 │   │   ├── observability.py         # Request ID + timing log
 │   │   └── security.py              # CSP, HSTS, rate limit, body size limit
 │   ├── models/                      # SQLAlchemy models
-│   │   ├── users.py
+│   │   ├── users.py                 # User + UserRole + session_invalidated_at
 │   │   ├── invoices.py              # FSM com 7 status
+│   │   ├── invoice_attachments.py   # Anexos PDF (até 5/nota, criptografados)
+│   │   ├── invoice_comments.py      # Thread de comentários
 │   │   ├── approval_history.py      # Trilha imutável
-│   │   ├── audit_logs.py
+│   │   ├── audit_logs.py            # Hash chain anti-tampering
 │   │   ├── departments.py
-│   │   └── smtp_settings.py         # Config SMTP + PasswordResetCode
+│   │   ├── cnpj_cache.py            # Cache 180 dias do opencnpj.org
+│   │   ├── email_queue.py           # Fila SMTP com retry exponencial
+│   │   ├── pending_admin_actions.py # Janela 24h pra acoes peer
+│   │   └── smtp_settings.py         # PasswordResetCode (SMTP virou env-only)
 │   ├── routers/                     # Endpoints
-│   │   ├── auth.py                  # Login, refresh, forgot/reset password
-│   │   ├── admin.py                 # /api/admin/* (users, depts, SMTP, audit)
-│   │   ├── invoices.py              # /api/invoices/* (CRUD + transições FSM + lookup-cnpj)
-│   │   ├── pages.py                 # Páginas HTML com role guard
-│   │   ├── alerts.py                # Alertas (vencendo, atrasadas)
-│   │   ├── contas_a_pagar.py        # /api/contas-a-pagar/stats (badge "conferidas hoje")
-│   │   └── print_routes.py          # Comprovante PDF + /verify público + /verify-full API
+│   │   ├── auth.py                  # /auth/* — login, refresh, logout, forgot/reset/change-password, me, availability
+│   │   ├── admin.py                 # /api/admin/* — users, departments, audit-logs (+ verify-chain), managers, directors, maintenance/purge-rejected, anonymize
+│   │   ├── invoices.py              # /api/invoices/* — CRUD, FSM (submit/cancel/review/director-review/transfer-director), mark-paid, attachments, comments, lookup-cnpj, directors
+│   │   ├── pages.py                 # Páginas HTML com role guard (cookie + role check)
+│   │   ├── alerts.py                # /alerts/ — agregado por bucket (vencidas, 72h, rejected, etc.)
+│   │   ├── contas_a_pagar.py        # /api/contas-a-pagar/stats — badge "Conferidas hoje" no dashboard
+│   │   ├── pending_actions.py       # /api/pending-actions/* — janela 24h pra acoes peer
+│   │   └── print_routes.py          # /api/invoices/{id}/print + /verify/{id} público + /verify-full API
 │   ├── schemas/                     # Pydantic
 │   ├── security/
 │   │   ├── dependencies.py          # get_current_user, require_role
@@ -448,7 +584,8 @@ economart_notas/
 │   │   ├── drive_service.py         # R2 storage (criptografia Fernet)
 │   │   ├── document_service.py      # Mod 11 CPF/CNPJ + lookup opencnpj + masks LGPD
 │   │   ├── email_service.py         # SMTP + Resend HTTP API + templates
-│   │   ├── pdf_service.py           # Geração de comprovante
+│   │   ├── email_queue_service.py   # Fila com retry exponencial + worker async
+│   │   ├── pdf_service.py           # Geração de comprovante (capa + QR + anexos)
 │   │   └── alert_service.py
 │   ├── static/
 │   │   ├── css/main.css             # Design system unificado + tokens --role-*
