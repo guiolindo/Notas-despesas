@@ -43,6 +43,11 @@ class User(Base):
     # Marca o instante da ultima troca de senha. Tokens emitidos ANTES desse
     # timestamp sao considerados invalidos (forca relogin apos reset).
     password_changed_at = Column(DateTime, default=utc_now, nullable=True)
+    # Marca o ultimo logout explicito. Tokens emitidos ANTES desse timestamp
+    # sao rejeitados em get_current_user — logout passa a invalidar de
+    # verdade o access token, nao so o refresh cookie. Pentest jun/2026
+    # (issue #SEC-5).
+    session_invalidated_at = Column(DateTime, nullable=True)
 
     # Setor ao qual o usuário pertence
     department_id = Column(String(36), ForeignKey("departments.id"), nullable=True)

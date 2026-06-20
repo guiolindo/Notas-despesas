@@ -99,6 +99,58 @@ def _sweep_expired(now: datetime) -> None:
         del rate_limit_buckets[key]
 
 
+# Limites de body por classe de rota. Pentest jun/2026 (#SEC-6) confirmou
+# que uvicorn/starlette nao impoem teto nativo: atacante mandando 12 PDFs de
+# 9MB (~110MB) gastava ~34s de CPU/memoria do servidor antes do limite
+# "Maximo 5 arquivos" do router rejeitar, abrindo vetor de DoS por flooding.
+# Estes limites cortam o request ANTES do parse de multipart.
+#  - upload de invoice: 5 arquivos x 10MB + overhead = 55MB de teto
+#  - JSON/forms simples: 1MB e generoso pra qualquer payload legitimo
+MAX_UPLOAD_BODY_BYTES = 55 * 1024 * 1024
+MAX_JSON_BODY_BYTES = 1 * 1024 * 1024
+
+# Rotas que aceitam upload de arquivo (multipart) e portanto podem subir
+# ate o teto generoso. Casa por prefixo + verbo.
+_UPLOAD_ROUTES: tuple[tuple[str, str], ...] = (
+    ("POST", "/api/invoices/"),
+    ("PATCH", "/api/invoices/"),
+    ("PUT", "/api/invoices/"),
+)
+
+
+def _is_upload_route(request: Request) -> bool:
+    if request.method.upper() not in {"POST", "PATCH", "PUT"}:
+        return False
+    path = request.url.path
+    return path.startswith("/api/invoices/") and "comments" not in path
+
+
+class BodySizeLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Le Content-Length declarado. Se ausente (chunked), o
+        # parsing posterior do FastAPI ainda limita por arquivo
+        # individualmente — DoS via streaming infinito e mitigado
+        # pelo timeout do uvicorn.
+        cl = request.headers.get("content-length")
+        if cl is not None:
+            try:
+                size = int(cl)
+            except ValueError:
+                size = 0
+            limit = MAX_UPLOAD_BODY_BYTES if _is_upload_route(request) else MAX_JSON_BODY_BYTES
+            if size > limit:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "detail": (
+                            f"Corpo da requisicao excede o limite de "
+                            f"{limit // (1024 * 1024)}MB."
+                        )
+                    },
+                )
+        return await call_next(request)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)

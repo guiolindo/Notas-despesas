@@ -18,7 +18,11 @@ from app.middleware.observability import (
     RequestIdMiddleware,
     install_request_id_logging,
 )
-from app.middleware.security import RateLimitMiddleware, SecurityHeadersMiddleware
+from app.middleware.security import (
+    BodySizeLimitMiddleware,
+    RateLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
 
 
 # Instala logger com request_id antes de qualquer log de startup — P1-7.
@@ -261,6 +265,11 @@ def _run_schema_migrations() -> None:
         # No Postgres role e um TYPE ENUM — precisa ALTER TYPE ADD VALUE.
         # No SQLite o Enum vira VARCHAR e aceita qualquer string.
         pg("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'CONTAS_A_PAGAR'"),
+
+        # Pentest jun/2026 (#SEC-5): logout passa a invalidar access tokens
+        # emitidos antes do logout — sem isso, /auth/logout so apagava o
+        # cookie refresh, deixando o access valido por ate 1h.
+        pg("ALTER TABLE users ADD COLUMN IF NOT EXISTS session_invalidated_at TIMESTAMP"),
     ]
     import logging as _logging
     _log = _logging.getLogger(__name__)
@@ -354,7 +363,11 @@ app.mount("/static", _CachedStaticFiles(directory=str(BASE_DIR / "static")), nam
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.add_middleware(SecurityHeadersMiddleware)
+# BodySizeLimitMiddleware roda ANTES do rate limit (ordem invertida:
+# o ultimo add_middleware fica mais perto da rota). Rejeita Content-Length
+# absurdo antes de gastar CPU pra parsing/rate-limit lookup.
 app.add_middleware(RateLimitMiddleware)
+app.add_middleware(BodySizeLimitMiddleware)
 # RequestIdMiddleware vem por ultimo (= executa por primeiro), pra que o id
 # ja esteja disponivel quando os outros middlewares logarem.
 app.add_middleware(RequestIdMiddleware)

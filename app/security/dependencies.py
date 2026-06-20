@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -22,6 +22,15 @@ _PASSWORD_CHANGE_ALLOWED_PATHS = frozenset({
 })
 
 
+def _token_iat_to_dt(token_iat: int | float | None) -> datetime | None:
+    if token_iat is None:
+        return None
+    try:
+        return datetime.fromtimestamp(float(token_iat), timezone.utc)
+    except (TypeError, ValueError, OSError):
+        return None
+
+
 def token_is_pre_password_change(user: User, token_iat: int | float | None) -> bool:
     """True se o token foi emitido ANTES da ultima troca de senha do usuario.
 
@@ -36,17 +45,45 @@ def token_is_pre_password_change(user: User, token_iat: int | float | None) -> b
     positivo (iat truncado vira ~500ms menor que password_changed_at).
     Tolerancia descoberta pelos testes pytest — antes era apenas `<`.
     """
-    if not user.password_changed_at or token_iat is None:
+    if not user.password_changed_at:
+        return False
+    token_dt = _token_iat_to_dt(token_iat)
+    if token_dt is None:
         return False
     pwd_changed = user.password_changed_at
     if pwd_changed.tzinfo is None:
         pwd_changed = pwd_changed.replace(tzinfo=timezone.utc)
-    try:
-        token_emitted_at = datetime.fromtimestamp(float(token_iat), timezone.utc)
-    except (TypeError, ValueError, OSError):
-        return False
-    delta = (pwd_changed - token_emitted_at).total_seconds()
+    delta = (pwd_changed - token_dt).total_seconds()
     return delta > 2.0
+
+
+def token_is_pre_logout(user: User, token_iat: int | float | None) -> bool:
+    """True se o token foi emitido ANTES do ultimo logout explicito.
+
+    Pentest jun/2026 (issue #SEC-5): logout apagava o cookie refresh mas o
+    access continuava valido ate expirar. Agora /auth/logout grava
+    session_invalidated_at no User; tokens com iat anterior sao rejeitados.
+
+    SEM tolerancia (diferente do password_changed_at): qualquer token cujo
+    iat seja anterior ao timestamp de logout e suspeito e tem que cair.
+    Considera o iat como o COMECO do segundo gravado no JWT (truncagem)
+    — pra ser conservador na revogacao, adicionamos 1s ao token_dt antes
+    de comparar (assim, token cujo segundo == segundo do logout ainda e
+    revogado).
+    """
+    invalidated_at = getattr(user, "session_invalidated_at", None)
+    if not invalidated_at:
+        return False
+    token_dt = _token_iat_to_dt(token_iat)
+    if token_dt is None:
+        return False
+    if invalidated_at.tzinfo is None:
+        invalidated_at = invalidated_at.replace(tzinfo=timezone.utc)
+    # Comparacao estrita. Sem tolerancia: qualquer token emitido antes do
+    # logout (mesmo no mesmo segundo, ja que iat e arredondado pra baixo)
+    # deve cair. False positives so afetam quem fizer login + logout na
+    # mesma fracao de segundo, cenario sem interesse pratico.
+    return invalidated_at > token_dt
 
 
 def get_current_user(
@@ -80,6 +117,14 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sessao expirada (senha foi alterada). Faca login novamente.",
+        )
+    # Invalida tokens emitidos ANTES do ultimo logout. Pentest jun/2026
+    # (#SEC-5): sem isso, logout deixava access valido ate expirar (~1h),
+    # mantendo atacante com token roubado na sessao.
+    if token_is_pre_logout(user, payload.get("iat")):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessao encerrada. Faca login novamente.",
         )
 
     # P1-8: bloqueia uso da API enquanto usuario tem senha provisoria. Antes,

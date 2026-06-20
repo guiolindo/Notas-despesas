@@ -34,6 +34,15 @@ def sanitize_email(email: str) -> str:
     return email.strip().lower()[:255]
 
 
+# Hash bcrypt fixo de "decoy_password_for_timing_attack_defense". Usado
+# em /login quando o email nao existe — paga o custo do bcrypt pra
+# tempo de resposta nao revelar se a conta existe. Gerado uma vez no
+# import; nao e segredo (nenhuma senha real bate com ele).
+_LOGIN_TIMING_DUMMY_HASH = (
+    "$2b$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+)
+
+
 def _as_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
@@ -71,6 +80,12 @@ def login(
     )
 
     if not user:
+        # Pentest jun/2026 (issue #SEC-4): user enumeration por timing. Email
+        # existente paga bcrypt (~250ms); inexistente cai no short-circuit
+        # (~10ms). Atacante distingue contas validas pela diferenca de tempo
+        # mesmo com mensagem identica. Mitigacao: pagar bcrypt mesmo no caso
+        # "user not found" pra equalizar o tempo.
+        verify_password(credentials.password, _LOGIN_TIMING_DUMMY_HASH)
         raise invalid_credentials
 
     blocked_until = _as_utc(user.blocked_until)
@@ -225,8 +240,29 @@ def refresh_token(
 
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Logout: limpa cookie refresh + invalida access tokens emitidos antes
+    deste momento.
+
+    Pentest jun/2026 (issue #SEC-5): antes, logout apenas apagava o cookie
+    refresh; o access token continuava valido ate expirar (~1h). Atacante
+    com token roubado (XSS, MITM) mantinha sessao mesmo apos usuario sair.
+
+    Fix: registra session_invalidated_at no User; get_current_user rejeita
+    tokens com iat anterior a esse timestamp. Logout agora revoga de
+    verdade — janela de risco reduzida a delta(now, iat) que esta
+    sempre proximo de zero.
+    """
     _clear_refresh_cookie(response)
+    try:
+        current_user.session_invalidated_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
     return {"message": "Logout realizado"}
 
 
