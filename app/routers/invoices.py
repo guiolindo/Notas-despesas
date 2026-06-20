@@ -17,8 +17,25 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
+
+
+def _validation_to_422(exc: ValidationError) -> HTTPException:
+    """Converte ValidationError do Pydantic em 422 amigavel.
+
+    Pentest jun/2026 (#SEC-9): rotas multipart instanciam manualmente
+    InvoiceCreate/InvoiceUpdate, fora do path de body-binding do FastAPI.
+    Sem este wrapper, ValidationError sobe como 500 — atacante distinguia
+    erros de validacao reais (422) de inputs absurdos (500) e usava 500
+    como fingerprint.
+    """
+    errs = exc.errors()
+    first = errs[0] if errs else {"loc": (), "msg": "invalido", "type": "value_error"}
+    field = ".".join(str(p) for p in first.get("loc", ()))
+    msg = first.get("msg", "Dado invalido")
+    detail = f"{field}: {msg}" if field else msg
+    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
 
 from app.database import get_db
 from app.models import ApprovalHistory, Invoice, InvoiceStatus, User, UserRole
@@ -404,17 +421,20 @@ async def create_invoice(
     current_user: User = Depends(require_role(UserRole.EMPLOYEE.value, UserRole.MANAGER.value, UserRole.DIRECTOR.value)),
 ):
     parsed_files = await _read_pdf_uploads(files)
-    data = InvoiceCreate(
-        invoice_number=invoice_number,
-        issue_date=issue_date,
-        due_date=due_date,
-        description=description,
-        bank_details=bank_details,
-        amount=amount,
-        supplier_document=supplier_document,
-        supplier_name=supplier_name,
-        supplier_legal_name=supplier_legal_name,
-    )
+    try:
+        data = InvoiceCreate(
+            invoice_number=invoice_number,
+            issue_date=issue_date,
+            due_date=due_date,
+            description=description,
+            bank_details=bank_details,
+            amount=amount,
+            supplier_document=supplier_document,
+            supplier_name=supplier_name,
+            supplier_legal_name=supplier_legal_name,
+        )
+    except ValidationError as exc:
+        raise _validation_to_422(exc) from exc
     invoice = invoice_service.create_invoice(
         db,
         data,
@@ -881,23 +901,26 @@ async def update_invoice(
     """PATCH adiciona NOVOS anexos (nao substitui). Pra remover use
     DELETE /{invoice_id}/attachments/{attachment_id}."""
     new_files = await _read_pdf_uploads(files)
-    data = InvoiceUpdate(
-        **{
-            key: value
-            for key, value in {
-                "invoice_number": invoice_number,
-                "issue_date": issue_date,
-                "due_date": due_date,
-                "description": description,
-                "bank_details": bank_details,
-                "amount": amount,
-                "supplier_document": supplier_document,
-                "supplier_name": supplier_name,
-                "supplier_legal_name": supplier_legal_name,
-            }.items()
-            if value is not None
-        }
-    )
+    try:
+        data = InvoiceUpdate(
+            **{
+                key: value
+                for key, value in {
+                    "invoice_number": invoice_number,
+                    "issue_date": issue_date,
+                    "due_date": due_date,
+                    "description": description,
+                    "bank_details": bank_details,
+                    "amount": amount,
+                    "supplier_document": supplier_document,
+                    "supplier_name": supplier_name,
+                    "supplier_legal_name": supplier_legal_name,
+                }.items()
+                if value is not None
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_to_422(exc) from exc
     invoice = invoice_service.update_invoice(
         db,
         invoice_id,

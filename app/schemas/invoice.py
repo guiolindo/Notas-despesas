@@ -1,8 +1,24 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+# Pentest jun/2026 (#SEC-7): amount sem upper bound aceitava 1e308; sem
+# bound de data, aceitava 9999-12-31 ou 1800-01-01. Limites razoaveis pra
+# uma nota fiscal real: ate R$ 10 bi e datas dentro de ±10 anos da hoje.
+_MAX_INVOICE_AMOUNT = Decimal("10000000000.00")
+_MAX_DATE_OFFSET_DAYS = 365 * 10
+
+
+def _validate_invoice_date(name: str, value: date) -> date:
+    today = date.today()
+    if value < today - timedelta(days=_MAX_DATE_OFFSET_DAYS):
+        raise ValueError(f"{name} muito antiga (limite: 10 anos no passado)")
+    if value > today + timedelta(days=_MAX_DATE_OFFSET_DAYS):
+        raise ValueError(f"{name} muito distante (limite: 10 anos no futuro)")
+    return value
 
 
 class UserBrief(BaseModel):
@@ -18,7 +34,11 @@ class InvoiceCreate(BaseModel):
     due_date: date
     description: str = Field(min_length=10, max_length=2000)
     bank_details: Optional[str] = Field(default=None, max_length=500)
-    amount: Decimal = Field(gt=0, decimal_places=2)
+    # Pentest jun/2026 (#SEC-7): le adicionado. Antes, 1e308 era aceito e
+    # gravado como inteiro absurdo (~10^308), poluindo total_amount e
+    # quebrando dashboard. 10 bi de teto cobre nota fiscal mais cara da
+    # vida real com folga.
+    amount: Decimal = Field(gt=0, le=_MAX_INVOICE_AMOUNT, decimal_places=2)
     supplier_document: str = Field(min_length=11, max_length=18)  # com ou sem mascara
     supplier_name: Optional[str] = Field(default=None, max_length=255)
     supplier_legal_name: Optional[str] = Field(default=None, max_length=255)
@@ -29,9 +49,16 @@ class InvoiceCreate(BaseModel):
     # diferente reaproveitando numeracao e legitimo no Brasil).
     confirm_duplicate: bool = False
 
+    @field_validator("issue_date")
+    @classmethod
+    def validate_issue_date(cls, v):
+        # Pentest jun/2026 (#SEC-7): 1800-01-01 e 9999-12-31 eram aceitos.
+        return _validate_invoice_date("issue_date", v)
+
     @field_validator("due_date")
     @classmethod
     def due_after_issue(cls, v, info):
+        v = _validate_invoice_date("due_date", v)
         if "issue_date" in info.data and v < info.data["issue_date"]:
             raise ValueError("due_date deve ser >= issue_date")
         return v
@@ -52,7 +79,7 @@ class InvoiceUpdate(BaseModel):
     due_date: Optional[date] = None
     description: Optional[str] = Field(default=None, min_length=10, max_length=2000)
     bank_details: Optional[str] = Field(default=None, max_length=500)
-    amount: Optional[Decimal] = Field(default=None, gt=0)
+    amount: Optional[Decimal] = Field(default=None, gt=0, le=_MAX_INVOICE_AMOUNT, decimal_places=2)
     supplier_document: Optional[str] = Field(default=None, min_length=11, max_length=18)
     supplier_name: Optional[str] = Field(default=None, max_length=255)
     supplier_legal_name: Optional[str] = Field(default=None, max_length=255)
@@ -60,6 +87,10 @@ class InvoiceUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_dates(self):
+        if self.issue_date:
+            _validate_invoice_date("issue_date", self.issue_date)
+        if self.due_date:
+            _validate_invoice_date("due_date", self.due_date)
         if self.issue_date and self.due_date and self.due_date < self.issue_date:
             raise ValueError("due_date deve ser >= issue_date")
         return self

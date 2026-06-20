@@ -567,6 +567,15 @@ def change_password(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Nova senha deve conter letra e numero",
         )
+    # Pentest jun/2026 (#SEC-8): proibe trocar a senha pela mesma. Sem
+    # esta checagem, usuario com must_change_password=True conseguia
+    # "trocar" pra mesma senha e bypassar a obrigacao de virar fluxo —
+    # bypass total da politica de reset forcado pelo admin.
+    if verify_password(body.new_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A nova senha deve ser diferente da senha atual.",
+        )
 
     current_user.hashed_password = hash_password(body.new_password)
     current_user.password_changed_at = datetime.now(timezone.utc)
