@@ -201,12 +201,22 @@ Cada transição gera entrada em `approval_history` + `audit_logs` com:
 ### Autenticação
 - Senhas com **bcrypt** (cost factor padrão)
 - Validação de complexidade: mínimo 8 chars, letra + número
-- JWT access token (60 min) + refresh token HttpOnly cookie (7 dias, secure em PROD)
+- **Trocar pela mesma senha é proibido** — `change-password` rejeita 422 se
+  a nova bater no hash atual (anti-bypass de `must_change_password=True`)
+- JWT access token (60 min) + refresh token HttpOnly cookie (7 dias,
+  `SameSite=strict`, `Secure` em PROD)
 - Rate limit de login: 5 tentativas → bloqueio 10 min (com email automático ao titular)
 - Race condition prevenida com `SELECT FOR UPDATE` no PostgreSQL
 - Refresh token revalida usuário no DB a cada uso (rebaixamento/desativação têm efeito imediato)
 - **Tokens emitidos antes da última troca de senha são invalidados** — admin
   reseta senha → todas as sessões abertas do usuário caem
+- **Logout revoga o access token de verdade** (pentest jun/2026): logout grava
+  `session_invalidated_at` no usuário; qualquer access com `iat` anterior cai
+  com 401. Antes, só o cookie refresh era apagado e o access continuava
+  válido até expirar (~1h), mantendo atacante com token sequestrado na sessão
+- **Login e forgot-password com tempo de resposta constante** — bcrypt rodado
+  mesmo quando o email não existe + work pesado em BackgroundTasks. Fecha
+  enumeração de contas por timing (antes: 350ms vs 12ms / 6s vs 10ms)
 - **Esqueci minha senha** com código 6 dígitos via email (TTL 15 min, throttle
   60s, bloqueio após 5 tentativas erradas)
 
@@ -224,11 +234,24 @@ Cada transição gera entrada em `approval_history` + `audit_logs` com:
 - Anonimização irreversível de colaboradores desligados (Art. 16, I)
 - Página `/privacidade` com aviso completo
 
-### Upload de PDF — 3 camadas
-1. **Magic bytes** (`%PDF-`) — bloqueia arquivos renomeados (`.exe` → `.pdf`)
-2. **Detecção de JavaScript embutido** — bloqueia PDFs com `/JS`, `/JavaScript`,
+### Upload de PDF — 4 camadas
+1. **Body size limit no middleware** (55MB pra rotas de invoice, 1MB pra
+   resto) — rejeita multipart absurdo via 413 sem nem chegar no parser.
+   Antes, o limite de 5 arquivos era checado APÓS o parse, consumindo
+   30s de CPU/memória num upload de 12×9MB. Pentest jun/2026 fechou.
+2. **Magic bytes** (`%PDF-`) — bloqueia arquivos renomeados (`.exe` → `.pdf`)
+3. **Detecção de JavaScript embutido** — bloqueia PDFs com `/JS`, `/JavaScript`,
    `/OpenAction` (vetores típicos de exploit)
-3. **Sanitização de filename** — UUID + extensão (anti header injection)
+4. **Sanitização de filename** — UUID + extensão (anti header injection)
+
+### Validação de campos de invoice
+- `amount`: `> 0` e `<= R$ 10 bi` com `decimal_places=2` estrito (antes,
+  `1e308` era aceito e gravado como inteiro de 309 dígitos)
+- `issue_date` e `due_date`: dentro de ±10 anos da data atual (antes,
+  `9999-12-31` e `1800-01-01` passavam)
+- `invoice_number`: `<= 50 chars`; campos texto têm `max_length` consistente
+- `ValidationError` do Pydantic em rotas multipart agora vira **422** com
+  `{campo}: {mensagem}` (antes vazava como 500, dando fingerprint pro atacante)
 
 ### Headers HTTP
 - `Content-Security-Policy` restritivo (script-src `'self' https://cdn.jsdelivr.net`
@@ -240,6 +263,13 @@ Cada transição gera entrada em `approval_history` + `audit_logs` com:
 - `Permissions-Policy: camera=(self), microphone=(), geolocation=()` —
   câmera liberada para a própria origem (necessária pro scanner do contas
   a pagar); microfone e geolocalização seguem bloqueados
+
+### Endpoints administrativos desligados em PROD
+- `/docs`, `/redoc`, `/openapi.json` retornam **404 em PROD** (antes vazavam
+  spec de 73 endpoints com schemas Pydantic completos). DEV continua aberto.
+- `/health/dependencies` exige Bearer ADMIN em PROD (antes revelava qual
+  provider de email/R2 estava configurado pra qualquer um que perguntasse).
+- `/health/live` e `/health/ready` continuam públicos pra orquestrador.
 
 ### CORS
 - Em PROD: restrito ao domínio público do Railway
@@ -331,6 +361,13 @@ Acesse [http://localhost:7145](http://localhost:7145).
 **Login inicial**: `admin@economart.com` / `Admin@2024!`
 (troca obrigatória no primeiro acesso).
 
+> ⚠️ **Em produção, troque essa senha IMEDIATAMENTE após o primeiro deploy.**
+> A credencial está hardcoded no código (`main.py:_ensure_admin_exists()`)
+> pra facilitar bootstrap. `must_change_password=True` força a troca no
+> primeiro login e desde jun/2026 a tentativa de "trocar pela mesma" é
+> rejeitada, mas qualquer pessoa com acesso ao repositório conhece a
+> credencial até a troca acontecer.
+
 ## Deploy no Railway
 
 ### 1. Criar serviços
@@ -383,7 +420,8 @@ economart_notas/
 │   ├── config.py                    # Settings via pydantic-settings
 │   ├── database.py                  # Engine SQLAlchemy + session
 │   ├── middleware/
-│   │   └── security.py              # CSP, HSTS, rate limit
+│   │   ├── observability.py         # Request ID + timing log
+│   │   └── security.py              # CSP, HSTS, rate limit, body size limit
 │   ├── models/                      # SQLAlchemy models
 │   │   ├── users.py
 │   │   ├── invoices.py              # FSM com 7 status
@@ -460,6 +498,17 @@ economart_notas/
 
 Resumo das entregas das últimas semanas (commit-by-commit em
 `git log --oneline`):
+
+- **Pentest jun/2026 — 9 vulnerabilidades corrigidas** em 3 rounds:
+  `/docs` em PROD desligado, `forgot-password` com tempo constante,
+  `/health/dependencies` gated, login timing equalizado, logout revoga
+  access token, body size limit no upload, amount/date com bounds,
+  senha igual à atual rejeitada, ValidationError→422. Detalhes em
+  [`docs/decisoes-2026-06-03.md`](docs/decisoes-2026-06-03.md).
+- **Refactor completo do `app.js`** (P2-1 v3, 3712 linhas → 14 módulos
+  pequenos) — `core.js`, `shell.js`, `pdf-viewer.js`, `drawer.js`, etc.
+  Mantém o padrão "sem build" e backward-compat com bookmarks antigos.
+  Plano em [`docs/plan-appjs-split-v3.md`](docs/plan-appjs-split-v3.md).
 
 - **CPF/CNPJ obrigatório do fornecedor** com validação Mod 11 e autocomplete
   via opencnpj.org (cache 6 meses)
