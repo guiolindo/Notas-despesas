@@ -275,8 +275,11 @@ def check_pdf_safety(file_bytes: bytes) -> None:
     Adobe Reader). Usa pypdf que ja esta nas dependencias.
 
     Tempo medio: 30-150ms para PDFs ate 10MB. Aceitavel para upload.
-    Em caso de PDF corrompido/criptografado que nao parseia, libera
-    (assume legitimo — bloquear forcaria usuarios honestos a refazer).
+
+    SEC-10 (auditoria set/2026): antes, PDF que nao parseava era liberado
+    (fail-open) — atacante corrompia deliberadamente o xref e passava
+    pela inspecao. Agora: PDF invalido = rejeicao explicita. Usuario
+    honesto com PDF corrompido recebe erro claro e refaz.
     """
     from io import BytesIO
     try:
@@ -287,7 +290,13 @@ def check_pdf_safety(file_bytes: bytes) -> None:
     try:
         reader = PdfReader(BytesIO(file_bytes), strict=False)
     except Exception:
-        return
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "PDF corrompido ou nao parseavel — nao foi possivel inspecionar "
+                "seguranca. Gere um novo PDF e tente novamente."
+            ),
+        )
 
     # 1. JavaScript embutido em nivel de documento (/Names -> /JavaScript)
     try:

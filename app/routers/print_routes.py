@@ -322,10 +322,13 @@ def verify_full(
         "issue_date": invoice.issue_date.strftime("%d/%m/%Y") if invoice.issue_date else None,
         "due_date": invoice.due_date.strftime("%d/%m/%Y") if invoice.due_date else None,
         "director_reviewed_at_br": _br_datetime(invoice.director_reviewed_at),
+        # SEC-12 (auditoria set/2026): mascara email pra evitar que
+        # CONTAS_A_PAGAR extraia lista completa de gestores/diretores da
+        # organizacao (insumo primario pra phishing direcionado).
         "manager_name": invoice.manager.name if invoice.manager else None,
-        "manager_email": invoice.manager.email if invoice.manager else None,
+        "manager_email": _mask_email(invoice.manager.email) if invoice.manager else None,
         "director_name": invoice.director.name if invoice.director else None,
-        "director_email": invoice.director.email if invoice.director else None,
+        "director_email": _mask_email(invoice.director.email) if invoice.director else None,
         "created_by_name": invoice.created_by.name if invoice.created_by else None,
         "supplier_document": supplier_doc_fmt,
         "supplier_document_type": invoice.supplier_document_type,

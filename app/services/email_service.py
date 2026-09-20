@@ -11,6 +11,7 @@ apenas loga e segue, evitando que email caido impeca aprovacao de notas.
 """
 from __future__ import annotations
 
+import html as _html
 import json
 import logging
 import smtplib
@@ -21,6 +22,16 @@ import urllib.request
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
+
+
+def _esc(value) -> str:
+    """SEC-09 (auditoria set/2026): escape de HTML pra qualquer valor
+    interpolado nos templates de email. Antes, `reason`, `supplier_name`,
+    `invoice_number` etc. eram inseridos crus — permitindo phishing
+    interno via HTML injetado em motivos de reprovacao."""
+    if value is None:
+        return ""
+    return _html.escape(str(value), quote=True)
 
 from sqlalchemy.orm import Session
 
@@ -214,14 +225,14 @@ def template_new_invoice_for_approver(
 ) -> tuple[str, str, str]:
     subject = f"Nova nota fiscal aguardando sua aprovacao - {invoice_number}"
     html = _wrap(f"""
-      <h1>Ola, {approver_name}</h1>
+      <h1>Ola, {_esc(approver_name)}</h1>
       <p>Uma nova nota fiscal foi enviada para sua aprovacao.</p>
       <div class="meta">
-        <p><strong>Numero:</strong> {invoice_number}</p>
-        <p><strong>Valor:</strong> {amount}</p>
-        <p><strong>Criada por:</strong> {creator_name}</p>
+        <p><strong>Numero:</strong> {_esc(invoice_number)}</p>
+        <p><strong>Valor:</strong> {_esc(amount)}</p>
+        <p><strong>Criada por:</strong> {_esc(creator_name)}</p>
       </div>
-      <a class="btn" href="{public_url}">Abrir no sistema</a>
+      <a class="btn" href="{_esc(public_url)}">Abrir no sistema</a>
     """)
     text = f"Nova nota {invoice_number} ({amount}) criada por {creator_name} aguarda sua aprovacao.\n{public_url}"
     return subject, html, text
@@ -236,13 +247,13 @@ def template_invoice_rejected(
 ) -> tuple[str, str, str]:
     subject = f"Sua nota {invoice_number} foi reprovada"
     html = _wrap(f"""
-      <h1>Ola, {creator_name}</h1>
-      <p>Sua nota fiscal <strong>{invoice_number}</strong> foi reprovada por <strong>{rejected_by}</strong>.</p>
+      <h1>Ola, {_esc(creator_name)}</h1>
+      <p>Sua nota fiscal <strong>{_esc(invoice_number)}</strong> foi reprovada por <strong>{_esc(rejected_by)}</strong>.</p>
       <div class="meta">
-        <p><strong>Motivo:</strong> {reason or '(nao informado)'}</p>
+        <p><strong>Motivo:</strong> {_esc(reason) or '(nao informado)'}</p>
       </div>
       <p>Voce pode editar e reenviar a nota a qualquer momento.</p>
-      <a class="btn" href="{public_url}">Abrir no sistema</a>
+      <a class="btn" href="{_esc(public_url)}">Abrir no sistema</a>
     """)
     text = f"Sua nota {invoice_number} foi reprovada por {rejected_by}.\nMotivo: {reason}\n{public_url}"
     return subject, html, text
@@ -254,9 +265,9 @@ def template_account_blocked(
 ) -> tuple[str, str, str]:
     subject = "Sua conta foi temporariamente bloqueada"
     html = _wrap(f"""
-      <h1>Ola, {user_name}</h1>
+      <h1>Ola, {_esc(user_name)}</h1>
       <p>Detectamos varias tentativas de login com senha incorreta na sua conta.</p>
-      <p>Por seguranca, sua conta foi <strong>bloqueada temporariamente por {minutes} minutos</strong>.</p>
+      <p>Por seguranca, sua conta foi <strong>bloqueada temporariamente por {_esc(minutes)} minutos</strong>.</p>
       <p>Se nao foi voce, considere trocar sua senha apos o desbloqueio.</p>
     """)
     text = f"Conta bloqueada por {minutes} minutos apos varias tentativas falhas de login."
@@ -280,13 +291,13 @@ def template_director_peer_notify(
     """
     subject = f"Aviso de seguranca - {action_label}: {target_name}"
     html = _wrap(f"""
-      <h1>Ola, {recipient_name}</h1>
+      <h1>Ola, {_esc(recipient_name)}</h1>
       <p>Voce esta recebendo este aviso como diretor ativo no sistema.</p>
       <div class="meta">
-        <p><strong>Acao:</strong> {action_label}</p>
-        <p><strong>Diretor afetado:</strong> {target_name} ({target_email})</p>
-        <p><strong>Executado por:</strong> {actor_name}</p>
-        <p><strong>Quando:</strong> {occurred_at_br}</p>
+        <p><strong>Acao:</strong> {_esc(action_label)}</p>
+        <p><strong>Diretor afetado:</strong> {_esc(target_name)} ({_esc(target_email)})</p>
+        <p><strong>Executado por:</strong> {_esc(actor_name)}</p>
+        <p><strong>Quando:</strong> {_esc(occurred_at_br)}</p>
       </div>
       <p>Se voce <strong>nao</strong> autorizou ou nao foi informado sobre esta
          acao, conteste imediatamente com a diretoria. Se foi voce ou esta
@@ -309,12 +320,12 @@ def template_password_reset_code(
 ) -> tuple[str, str, str]:
     subject = "Codigo para redefinir sua senha"
     html = _wrap(f"""
-      <h1>Ola, {user_name}</h1>
+      <h1>Ola, {_esc(user_name)}</h1>
       <p>Voce solicitou redefinicao de senha. Use o codigo abaixo:</p>
       <div class="meta" style="text-align:center;font-size:28px;letter-spacing:6px;font-weight:700;color:#1e3a8a">
-        {code}
+        {_esc(code)}
       </div>
-      <p>Valido por <strong>{minutes_valid} minutos</strong>.</p>
+      <p>Valido por <strong>{_esc(minutes_valid)} minutos</strong>.</p>
       <p>Se nao foi voce que solicitou, ignore este email — sua senha continua segura.</p>
     """)
     text = f"Seu codigo de redefinicao: {code}\nValido por {minutes_valid} minutos."

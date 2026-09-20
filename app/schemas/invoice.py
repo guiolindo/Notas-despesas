@@ -8,7 +8,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # Pentest jun/2026 (#SEC-7): amount sem upper bound aceitava 1e308; sem
 # bound de data, aceitava 9999-12-31 ou 1800-01-01. Limites razoaveis pra
 # uma nota fiscal real: ate R$ 10 bi e datas dentro de ±10 anos da hoje.
-_MAX_INVOICE_AMOUNT = Decimal("10000000000.00")
+# SEC-18 (auditoria set/2026): antes 10bi, mas a coluna e Numeric(10,2)
+# que aceita ate 99.999.999,99. Faixa 100M-10bi passava na validacao e
+# explodia com overflow no Postgres. Alinhado ao teto real do storage.
+_MAX_INVOICE_AMOUNT = Decimal("99999999.99")
 _MAX_DATE_OFFSET_DAYS = 365 * 10
 
 

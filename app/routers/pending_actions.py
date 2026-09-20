@@ -164,9 +164,11 @@ def list_my_pending_actions(
     current_user: User = Depends(get_current_user),
 ):
     """Lista pendentes que afetam o usuario logado (target). Usado no
-    banner vermelho do dashboard. Inclui executar lazy de pendentes
-    expiradas pra estado nao ficar 'stale'."""
-    run_due_actions(db)
+    banner vermelho do dashboard.
+
+    SEC-08 (auditoria set/2026): antes chamava run_due_actions() aqui
+    dentro — GET com efeito colateral. Um crawler ou prefetch executava
+    desativacoes. Movido para /run-due (admin-only)."""
     items = (
         db.query(PendingAdminAction)
         .filter(
@@ -195,7 +197,8 @@ def list_visible_pending_actions(
     """
     if current_user.role.value not in {"DIRECTOR", "ADMIN"}:
         return []
-    run_due_actions(db)
+    # SEC-08: GET nao muta estado. run_due_actions agora vive apenas no
+    # endpoint dedicado (admin-only).
     items = (
         db.query(PendingAdminAction)
         .filter(PendingAdminAction.status == PendingActionStatus.PENDING)
@@ -280,13 +283,16 @@ def cancel_pending_action(
         solicit = db.query(User).filter(User.id == pa.requested_by_id).first()
         target = pa.target
         if solicit and solicit.email:
+            from html import escape as _esc  # SEC-09
+            _label = ACTION_LABELS.get(pa.action_type.value, pa.action_type.value)
+            _target_name = target.name if target else "?"
             email_service.send_email_async(
                 solicit.email,
-                subject=f"Sua solicitacao foi cancelada: {ACTION_LABELS.get(pa.action_type.value, '')}",
-                html=f"<p>Ola {solicit.name},</p><p>{current_user.name} cancelou sua solicitacao "
-                     f"<strong>{ACTION_LABELS.get(pa.action_type.value, pa.action_type.value)}</strong> "
-                     f"contra <strong>{target.name if target else '?'}</strong>.</p>"
-                     f"<p>Motivo informado: {pa.cancel_reason or '(nao informado)'}</p>",
+                subject=f"Sua solicitacao foi cancelada: {_label}",
+                html=f"<p>Ola {_esc(solicit.name)},</p><p>{_esc(current_user.name)} cancelou sua solicitacao "
+                     f"<strong>{_esc(_label)}</strong> "
+                     f"contra <strong>{_esc(_target_name)}</strong>.</p>"
+                     f"<p>Motivo informado: {_esc(pa.cancel_reason or '(nao informado)')}</p>",
             )
     except Exception:  # noqa: BLE001
         pass
@@ -357,12 +363,14 @@ def confirm_pending_action(
         for uid in [pa.requested_by_id, pa.target_user_id]:
             recipient = db.query(User).filter(User.id == uid).first()
             if recipient and recipient.email and not recipient.email.endswith("@desligado.local"):
+                from html import escape as _esc  # SEC-09
+                _label = ACTION_LABELS.get(pa.action_type.value, pa.action_type.value)
                 email_service.send_email_async(
                     recipient.email,
-                    subject=f"Acao confirmada e aplicada: {ACTION_LABELS.get(pa.action_type.value, '')}",
-                    html=f"<p>Ola {recipient.name},</p><p><strong>{current_user.name}</strong> "
+                    subject=f"Acao confirmada e aplicada: {_label}",
+                    html=f"<p>Ola {_esc(recipient.name)},</p><p><strong>{_esc(current_user.name)}</strong> "
                          f"confirmou a execucao da acao "
-                         f"<strong>{ACTION_LABELS.get(pa.action_type.value, pa.action_type.value)}</strong>. "
+                         f"<strong>{_esc(_label)}</strong>. "
                          f"O efeito foi aplicado imediatamente, sem esperar as 24h.</p>",
                 )
     except Exception:  # noqa: BLE001
@@ -376,7 +384,12 @@ def run_due_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Executa pendentes vencidas. Chamado pelo cron interno OU pelo
-    proprio frontend (no carregamento de dashboard) — idempotente."""
+    """Executa pendentes vencidas. Somente ADMIN — antes qualquer usuario
+    autenticado podia forcar desativacoes vencidas (SEC-08). Idempotente."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas administradores podem executar acoes pendentes.",
+        )
     n = run_due_actions(db)
     return {"executed": n}
