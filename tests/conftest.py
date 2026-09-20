@@ -52,7 +52,15 @@ def client(app):
     Cada teste recebe instancia nova pra evitar leaking de cookies entre
     cenarios. Session/DB compartilhados (mesmo arquivo SQLite) — testes
     devem ser idempotentes ou usar dados isolados.
+
+    Rate-limit buckets sao globais no processo; sem reset, testes que
+    exercitam POST /api/invoices/, /auth/refresh, etc. em sequencia
+    esgotam a cota da suite inteira. Limpamos antes de cada teste — o
+    proprio teste de rate limit ainda funciona porque enche o bucket
+    dentro do seu proprio caso.
     """
+    from app.middleware.security import rate_limit_buckets
+    rate_limit_buckets.clear()
     from fastapi.testclient import TestClient
     with TestClient(app) as c:
         yield c

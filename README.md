@@ -357,15 +357,24 @@ python -m uvicorn app.main:app --reload --port 7145
 
 Acesse [http://localhost:7145](http://localhost:7145).
 
-**Login inicial**: `admin@economart.com` / `Admin@2024!`
-(troca obrigatória no primeiro acesso).
+**Login inicial**:
 
-> ⚠️ **Em produção, troque essa senha IMEDIATAMENTE após o primeiro deploy.**
-> A credencial está hardcoded no código (`main.py:_ensure_admin_exists()`)
-> pra facilitar bootstrap. `must_change_password=True` força a troca no
-> primeiro login e desde jun/2026 a tentativa de "trocar pela mesma" é
-> rejeitada, mas qualquer pessoa com acesso ao repositório conhece a
-> credencial até a troca acontecer.
+Desde a correção SEC-01 (set/2026) a credencial deixou de ser hardcoded.
+Defina no `.env`:
+
+```
+BOOTSTRAP_ADMIN_EMAIL=admin@sua-empresa.com
+BOOTSTRAP_ADMIN_PASSWORD=<senha-forte-de-uso-inicial>
+```
+
+Ao subir com banco vazio, o app cria o admin com essas credenciais e força
+troca de senha no primeiro acesso.
+
+- **PROD sem essas variáveis**: o admin **não** é criado — o operador precisa
+  provisionar manualmente.
+- **DEV sem essas variáveis**: uma senha aleatória é gerada e impressa **uma
+  única vez** no log do processo, com banner destacado. Anote no momento — não
+  é exibida de novo.
 
 ## Deploy no Railway
 

@@ -1,5 +1,7 @@
 import hashlib
+import hmac
 import io
+import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -30,9 +32,34 @@ LIGHT_GREEN = colors.HexColor("#DCFCE7")
 LIGHT_GRAY = colors.HexColor("#F5F5F5")
 
 
+def _invoice_hmac_key() -> bytes:
+    """Chave dedicada pro codigo de conferencia do comprovante.
+
+    SEC-02 (auditoria set/2026): antes era SHA-256 puro sobre 4 campos
+    publicos da nota — qualquer pessoa que visse o PDF forjava a
+    "assinatura". Agora e HMAC. Chave preferencial: INVOICE_HMAC_KEY.
+    Fallback: SECRET_KEY (evita quebrar deploys existentes; ainda melhor
+    que a versao anterior porque o segredo nao aparece no PDF).
+    """
+    from app.config import settings
+    key = os.getenv("INVOICE_HMAC_KEY") or settings.SECRET_KEY
+    if isinstance(key, str):
+        key = key.encode("utf-8")
+    return key
+
+
 def invoice_hash(invoice: Invoice) -> str:
-    raw = f"{invoice.id}:{invoice.invoice_number}:{invoice.amount}:{invoice.created_at}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:16].upper()
+    """Codigo curto de conferencia impresso no comprovante.
+
+    NAO e uma assinatura digital no sentido criptografico (nao ha PKI).
+    E um HMAC-SHA256 truncado que so quem detem a chave consegue
+    reproduzir — o suficiente pra rejeitar comprovantes forjados por
+    quem ve apenas o PDF. A verdadeira verificacao de autenticidade
+    acontece server-side quando o QR code aponta para /verify/{id}.
+    """
+    raw = f"{invoice.id}:{invoice.invoice_number}:{invoice.amount}:{invoice.created_at}".encode("utf-8")
+    digest = hmac.new(_invoice_hmac_key(), raw, hashlib.sha256).hexdigest()
+    return digest[:16].upper()
 
 
 def _format_date(value) -> str:

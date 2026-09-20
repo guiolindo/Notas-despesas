@@ -56,6 +56,41 @@ RATE_LIMIT_POLICIES: tuple[RateLimitPolicy, ...] = (
         max_requests=30,
         window_seconds=60,
     ),
+    # SEC-03 (auditoria set/2026): /verify e publico e sem limite era vetor
+    # de enumeracao/DoS. UUIDv4 tem entropia alta, mas qualquer vazamento
+    # parcial permitia varredura ilimitada.
+    RateLimitPolicy(
+        name="verify-public",
+        methods=frozenset({"GET"}),
+        pattern=re.compile(r"^/verify/[^/]+$"),
+        max_requests=20,
+        window_seconds=60,
+    ),
+    RateLimitPolicy(
+        name="verify-full",
+        methods=frozenset({"GET"}),
+        pattern=re.compile(r"^/api/invoices/[^/]+/verify-full$"),
+        max_requests=30,
+        window_seconds=60,
+    ),
+    # SEC-05: /auth/refresh sem limite permite usuario/atacante martelar
+    # emissao de access tokens. Limite generoso pra nao afetar uso legitimo.
+    RateLimitPolicy(
+        name="auth-refresh",
+        methods=frozenset({"POST"}),
+        pattern=re.compile(r"^/auth/refresh$"),
+        max_requests=60,
+        window_seconds=60,
+    ),
+    # SEC-05: criacao de nota e o endpoint mais caro (upload + crypto + R2).
+    # Sem limite, uma conta comprometida vira DoS de storage.
+    RateLimitPolicy(
+        name="invoice-create",
+        methods=frozenset({"POST"}),
+        pattern=re.compile(r"^/api/invoices/?$"),
+        max_requests=30,
+        window_seconds=60,
+    ),
 )
 
 
@@ -156,7 +191,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
+        # SEC-17: X-XSS-Protection foi removido dos navegadores modernos e o
+        # modo=block introduziu bugs proprios. CSP e o controle real.
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         # Camera liberada para a propria origem (scanner QR em /contas-a-pagar/scanner).
         # Microfone e geolocalizacao seguem bloqueados.

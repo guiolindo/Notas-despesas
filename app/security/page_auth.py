@@ -20,7 +20,7 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from app.models import User
-from app.security.dependencies import token_is_pre_password_change
+from app.security.dependencies import token_is_pre_logout, token_is_pre_password_change
 from app.security.jwt import decode_token
 
 
@@ -42,6 +42,10 @@ def _get_user_from_cookie(request: Request, db: Session) -> User | None:
     # senha. Sem isso, navegar pelas paginas HTML continua funcionando ate o
     # cookie expirar (7d), mesmo apos reset/troca. Mesmo bug do /refresh em P0.
     if token_is_pre_password_change(user, payload.get("iat")):
+        return None
+    # SEC-20 (auditoria set/2026): mesma revogacao que o access token.
+    # Refresh cookie copiado antes do logout NAO pode abrir paginas HTML.
+    if token_is_pre_logout(user, payload.get("iat")):
         return None
     return user
 

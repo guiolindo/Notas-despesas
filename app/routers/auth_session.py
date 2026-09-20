@@ -166,9 +166,14 @@ def refresh_token(
         raise refresh_unauthorized("Conta bloqueada")
 
     # Invalida refresh tokens emitidos ANTES da ultima troca de senha.
-    from app.security.dependencies import token_is_pre_password_change
+    from app.security.dependencies import token_is_pre_logout, token_is_pre_password_change
     if token_is_pre_password_change(user, payload.get("iat")):
         raise refresh_unauthorized("Sessao expirada (senha foi alterada). Faca login novamente.")
+    # SEC-20 (auditoria set/2026): refresh tambem tem que respeitar logout.
+    # Sem isso, cookie copiado antes do logout continuava renovando access
+    # tokens por ate 7 dias apesar do usuario ter clicado em "sair".
+    if token_is_pre_logout(user, payload.get("iat")):
+        raise refresh_unauthorized("Sessao encerrada. Faca login novamente.")
 
     # Le role do DB, nao do token (defesa contra rebaixamento ignorado)
     access_token = create_access_token({"sub": user.id, "role": user.role.value})

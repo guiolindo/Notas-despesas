@@ -152,30 +152,65 @@ def ensure_admin_exists() -> None:
     como password_changed_at). Se rodar antes da migration, deploy quebra
     com UndefinedColumn em DB antigo.
 
-    SEC-roadmap jun/2026: a senha default `Admin@2024!` esta hardcoded
-    pra facilitar bootstrap. `must_change_password=True` forca a troca
-    no primeiro login e desde jun/2026 trocar pela mesma senha e rejeitado
-    com 422 (SEC-8). Em PROD, trocar imediatamente apos primeiro acesso.
+    SEC-01 (auditoria set/2026): credencial NAO e mais hardcoded. Requer
+    variaveis de ambiente BOOTSTRAP_ADMIN_EMAIL + BOOTSTRAP_ADMIN_PASSWORD.
+    Sem elas:
+     - DEV: gera senha aleatoria e loga UMA VEZ no stdout (com banner).
+       Onboarding local nao trava, mas a senha nao esta versionada.
+     - PROD: log ERROR e NAO cria admin — operador precisa provisionar
+       manualmente via variaveis. Impede que uma nova instancia suba com
+       credencial conhecida.
     """
+    import logging
+    import os
+    import secrets
     from sqlalchemy.exc import IntegrityError
+    from app.config import settings
     from app.models import User, UserRole
     from app.security.hashing import hash_password
 
+    log = logging.getLogger("app.bootstrap")
+    is_prod = (settings.ENVIRONMENT or "DEV").upper() == "PROD"
+
     with Session(engine) as db:
-        if db.query(User).count() == 0:
-            try:
-                admin = User(
-                    name="Administrador",
-                    email="admin@economart.com",
-                    hashed_password=hash_password("Admin@2024!"),
-                    role=UserRole.ADMIN,
-                    must_change_password=True,
-                    is_active=True,
+        if db.query(User).count() > 0:
+            return
+
+        email = (os.getenv("BOOTSTRAP_ADMIN_EMAIL") or "").strip().lower()
+        password = os.getenv("BOOTSTRAP_ADMIN_PASSWORD") or ""
+
+        if not email or not password:
+            if is_prod:
+                log.error(
+                    "[bootstrap] Banco vazio em PROD e BOOTSTRAP_ADMIN_EMAIL/"
+                    "BOOTSTRAP_ADMIN_PASSWORD nao definidos. Admin NAO foi "
+                    "criado. Defina as variaveis e reinicie."
                 )
-                db.add(admin)
-                db.commit()
-            except IntegrityError:
-                db.rollback()  # outro worker ja criou — ignorar
+                return
+            # DEV: gera senha aleatoria e imprime uma vez.
+            email = email or "admin@economart.local"
+            password = "Adm-" + secrets.token_urlsafe(12)
+            log.warning(
+                "\n\n%s\n[bootstrap DEV] Admin criado com credencial gerada:\n"
+                "  email:    %s\n  password: %s\n"
+                "Guarde agora — nao sera exibida de novo. Configure "
+                "BOOTSTRAP_ADMIN_* no .env para credencial fixa.\n%s\n",
+                "=" * 72, email, password, "=" * 72,
+            )
+
+        try:
+            admin = User(
+                name="Administrador",
+                email=email,
+                hashed_password=hash_password(password),
+                role=UserRole.ADMIN,
+                must_change_password=True,
+                is_active=True,
+            )
+            db.add(admin)
+            db.commit()
+        except IntegrityError:
+            db.rollback()  # outro worker ja criou — ignorar
 
 
 def purge_old_rejected_on_startup() -> None:
