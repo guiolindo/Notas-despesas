@@ -218,17 +218,18 @@ async def _worker_loop(interval_seconds: int) -> None:
 
 
 def start_background_worker(interval_seconds: int = 15) -> None:
-    """Inicia o worker assincrono se ainda nao estiver rodando. Idempotente.
+    """Inicia o worker assincrono no LOOP ATUAL.
 
-    Chamar de app.main no startup. Com gunicorn -w N, cada worker do gunicorn
-    inicia o proprio loop — SKIP LOCKED garante que nao peguem a mesma row.
+    CONF-03/BE-04 (auditoria set/2026): antes usava asyncio.get_event_loop()
+    (depreciado 3.10+) com fallback new_event_loop() — em contextos
+    onde o loop obtido nao era o do FastAPI, o worker nao rodava e a
+    fila crescia silenciosamente. Agora e chamado de dentro do
+    lifespan handler do FastAPI (que executa DENTRO do loop principal),
+    entao asyncio.create_task usa o loop correto por definicao.
+
+    Idempotente: chamar 2x nao duplica task.
     """
     global _worker_task
     if _worker_task is not None and not _worker_task.done():
         return
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    _worker_task = loop.create_task(_worker_loop(interval_seconds))
+    _worker_task = asyncio.create_task(_worker_loop(interval_seconds))

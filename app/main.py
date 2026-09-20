@@ -48,24 +48,24 @@ def _compute_static_version() -> str:
     import hashlib
 
     static_dir = BASE_DIR / "static"
-    # Arquivos que importam pra invalidacao: JS de modulo + CSS principal.
-    files = [
-        static_dir / "js" / "app.js",
-        static_dir / "js" / "format.js",
-        static_dir / "js" / "documents.js",
-        static_dir / "js" / "comments.js",
-        static_dir / "js" / "password.js",
-        static_dir / "js" / "offline.js",
-        static_dir / "sw.js",
-        static_dir / "css" / "main.css",
-    ]
+    # FE-03 (auditoria set/2026): antes usava mtime/size, mas 1) uma
+    # nova cópia do repo mudava mtime de tudo (força cache-miss em
+    # todo mundo sem mudanca real de conteudo) e 2) so cobria 8
+    # arquivos — mudar drawer.js ou qualquer CSS de pagina nao invalidava
+    # o cache. Agora: hash de CONTEUDO de todos os JS + CSS servidos +
+    # sw.js. Correcao em qualquer arquivo alcanca usuarios ao proximo GET.
     h = hashlib.sha256()
-    for f in files:
+    paths = sorted(
+        list((static_dir / "js").glob("*.js"))
+        + list((static_dir / "css").glob("**/*.css"))
+        + [static_dir / "sw.js"]
+    )
+    for f in paths:
         try:
-            stat = f.stat()
+            content = f.read_bytes()
             h.update(f.name.encode())
-            h.update(str(stat.st_mtime_ns).encode())
-            h.update(str(stat.st_size).encode())
+            h.update(str(len(content)).encode())
+            h.update(hashlib.sha256(content).digest())
         except OSError:
             continue
     return h.hexdigest()[:10]
@@ -79,7 +79,34 @@ templates.env.globals["STATIC_VERSION"] = STATIC_VERSION
 # PROD vazam o mapa completo da API (73 endpoints, schemas, parametros) pra
 # qualquer atacante. So devs locais precisam disso — em PROD desligamos. DEV
 # continua com tudo pra documentacao do FastAPI funcionar.
-_PROD = os.environ.get("ENVIRONMENT", "DEV").upper() == "PROD"
+# SEC-07: default agora e "PROD" (fail-safe). Ver app/config.py.
+_PROD = os.environ.get("ENVIRONMENT", "PROD").upper() == "PROD"
+
+
+# CONF-03/BE-04 (auditoria set/2026): antes usava @app.on_event("startup")
+# (depreciado) + asyncio.get_event_loop() (depreciado em 3.10+). O worker
+# de email podia nao iniciar dependendo do loop obtido, sem qualquer
+# sinal — mensagens acumulavam para sempre (codigos de reset nunca
+# chegavam).
+# Agora: lifespan async context manager. Padrao moderno do FastAPI,
+# garante que o worker roda no MESMO loop que atende requests.
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def _lifespan(app_):
+    # Startup
+    import logging as _lg
+    log = _lg.getLogger(__name__)
+    if _startup_failure is None:
+        try:
+            from app.services.email_queue_service import start_background_worker
+            start_background_worker(interval_seconds=15)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[startup] email worker falhou ao subir: %s", exc)
+    yield
+    # Shutdown (nada explicito por enquanto — worker asyncio morre com loop)
+
 
 app = FastAPI(
     title="Economart - Aprovacao de Notas Fiscais",
@@ -87,6 +114,7 @@ app = FastAPI(
     docs_url=None if _PROD else "/docs",
     redoc_url=None if _PROD else "/redoc",
     openapi_url=None if _PROD else "/openapi.json",
+    lifespan=_lifespan,
 )
 
 # P1-2 da auditoria: PROD nao pode subir com SECRET_KEY default ou
@@ -160,19 +188,9 @@ if _startup_failure is None:
     purge_old_rejected_on_startup()
 
 
-# P2-8 da auditoria: worker assincrono que drena email_queue. Roda dentro
-# do proprio event loop do FastAPI/uvicorn. Em gunicorn -w N, cada worker
-# inicia seu loop; o claim usa FOR UPDATE SKIP LOCKED no PG pra coordenar.
-@app.on_event("startup")
-async def _start_email_worker() -> None:
-    if _startup_failure is not None:
-        return
-    try:
-        from app.services.email_queue_service import start_background_worker
-        start_background_worker(interval_seconds=15)
-    except Exception as exc:  # noqa: BLE001
-        import logging
-        logging.getLogger(__name__).warning(f"[startup] email worker falhou ao subir: {exc}")
+# CONF-03: worker de email agora sobe via lifespan handler (definido
+# acima). @app.on_event("startup") era depreciado e usava
+# asyncio.get_event_loop() — podia nao rodar dependendo do contexto.
 
 
 # Subclasse do StaticFiles que adiciona Cache-Control para reduzir

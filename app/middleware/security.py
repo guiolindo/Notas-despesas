@@ -231,9 +231,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src https://fonts.gstatic.com; "
             "img-src 'self' data:; "
-            # jsdelivr liberado APENAS para o jsQR usado em /contas-a-pagar/scanner.
-            # Sem unsafe-inline — todo script ainda precisa vir de origem confiavel.
-            "script-src 'self' https://cdn.jsdelivr.net; "
+            # SEC-15: jsQR vendorizado localmente (/static/vendor/jsQR.js).
+            # jsdelivr removido do allowlist.
+            "script-src 'self'; "
             "frame-src 'self' blob:; "
             "object-src 'none'; "
             "base-uri 'self'"
