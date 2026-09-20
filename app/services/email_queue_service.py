@@ -143,19 +143,21 @@ def _schedule_retry(row: EmailQueue, error: str | None) -> None:
     row.last_error = error
     row.locked_at = None
     row.locked_by = None
+    # SEC-16: nunca logar email completo (LGPD — logs sao retidos)
+    from app.services.email_service import _mask_email_for_log as _mask
+    masked_to = _mask(row.to_email)
     if row.attempts >= row.max_attempts:
         row.status = EmailStatus.FAILED
         logger.error(
             "[email-queue] FAILED apos %d tentativas: to=%s subj=%r err=%s",
-            row.attempts, row.to_email, row.subject[:60], error,
+            row.attempts, masked_to, row.subject[:60], error,
         )
         return
-    # Backoff: pega o proximo intervalo. Se acabar a tabela, repete o ultimo.
     minutes = _BACKOFF_MINUTES[min(row.attempts, len(_BACKOFF_MINUTES) - 1)]
     row.next_retry_at = _utc_now() + timedelta(minutes=minutes)
     logger.warning(
         "[email-queue] retry %d/%d em %dmin: to=%s err=%s",
-        row.attempts, row.max_attempts, minutes, row.to_email, error,
+        row.attempts, row.max_attempts, minutes, masked_to, error,
     )
 
 

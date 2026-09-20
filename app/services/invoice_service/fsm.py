@@ -360,8 +360,13 @@ def transfer_to_director(
                     f"<p>Motivo registrado: {comment.strip()}</p>"
                 ),
             )
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as _exc:  # noqa: BLE001
+        # BE-01: notificacao ao diretor anterior e best-effort. Loga.
+        import logging as _lg
+        _lg.getLogger(__name__).warning(
+            "[fsm] falha ao notificar diretor anterior da transferencia: %s",
+            _exc,
+        )
 
     db.commit()
     return _get_invoice(db, invoice.id)
@@ -370,7 +375,18 @@ def transfer_to_director(
 def mark_paid(db: Session, invoice_id: str, finance_user: User, ip: str | None = None, port: int | None = None) -> Invoice:
     if finance_user.role not in {UserRole.FINANCE, UserRole.ADMIN}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissao insuficiente")
-    invoice = _get_invoice(db, invoice_id)
+    # DB-06 (auditoria set/2026): SELECT ... FOR UPDATE pra evitar
+    # duplo lancamento em duplo clique / dois operadores simultaneos.
+    # PostgreSQL: lock de linha ate o commit. SQLite ignora
+    # with_for_update (dialect no-op) — DEV single-writer.
+    invoice = (
+        db.query(Invoice)
+        .filter(Invoice.id == invoice_id)
+        .with_for_update()
+        .first()
+    )
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nota nao encontrada")
     if invoice.status != InvoiceStatus.APROVADO:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

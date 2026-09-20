@@ -1,9 +1,12 @@
 import hashlib
 import hmac
 import io
+import logging
 import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+
+_logger = logging.getLogger(__name__)
 
 BR_TZ = ZoneInfo("America/Sao_Paulo")
 
@@ -274,7 +277,17 @@ def generate_print_pdf(invoice: Invoice, base_url: str) -> bytes:
             )
             for page in PdfReader(io.BytesIO(att_bytes)).pages:
                 writer.add_page(page)
-        except Exception:  # noqa: BLE001 — defensivo, comprovante nao deve quebrar
+        except Exception as exc:  # noqa: BLE001
+            # BE-01 (auditoria set/2026): antes era silencioso — anexo
+            # que falhava sumia do comprovante oficial sem qualquer
+            # sinal, e ninguem sabia que o PDF entregue estava
+            # incompleto. Agora loga com contexto suficiente pra
+            # diagnostico. A concatenacao segue (nao quebrar comprovante
+            # inteiro por 1 anexo ruim), mas o log fica.
+            _logger.warning(
+                "[pdf] falha ao mesclar anexo id=%s da nota %s: %s",
+                att.id, invoice.id, exc,
+            )
             continue
 
     output = io.BytesIO()

@@ -33,6 +33,24 @@ def _esc(value) -> str:
         return ""
     return _html.escape(str(value), quote=True)
 
+
+def _mask_email_for_log(addr: str | None) -> str:
+    """SEC-16 (auditoria set/2026): mascara email para logs.
+    'maria.silva@economart.com' -> 'ma***@e***.com'.
+    Preserva o suficiente pra diagnostico sem expor dado pessoal
+    completo nos logs do Railway (que sao retidos e acessiveis a
+    qualquer operador)."""
+    if not addr or "@" not in addr:
+        return "***"
+    local, _, domain = addr.partition("@")
+    l = (local[:2] + "***") if len(local) > 2 else (local[:1] + "***")
+    if "." in domain:
+        first, _, rest = domain.partition(".")
+        d = (first[:1] + "***." + rest) if first else domain
+    else:
+        d = domain[:1] + "***"
+    return f"{l}@{d}"
+
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -83,7 +101,7 @@ def send_email(
     """Envia email via provider configurado em .env. Best-effort."""
     provider = _email_provider()
     if provider == "DISABLED":
-        logger.info(f"[email] desabilitado — pulando envio para {to_email}")
+        logger.info("[email] desabilitado — pulando envio para %s", _mask_email_for_log(to_email))
         return False
     if provider == "RESEND":
         return _send_via_resend(to_email, subject, html, text)
@@ -107,10 +125,10 @@ def _send_via_smtp(to_email, subject, html, text):
             with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as server:
                 server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
                 server.send_message(msg)
-        logger.info(f"[email-smtp] enviado para {to_email}: {subject}")
+        logger.info("[email-smtp] enviado para %s: %s", _mask_email_for_log(to_email), subject[:80])
         return True
     except Exception as exc:  # noqa: BLE001
-        logger.error(f"[email-smtp] falha para {to_email}: {exc}")
+        logger.error("[email-smtp] falha para %s: %s", _mask_email_for_log(to_email), exc)
         return False
 
 
@@ -142,17 +160,17 @@ def _send_via_resend(to_email, subject, html, text):
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
-            logger.info(f"[email-resend] enviado para {to_email}: {subject} ({resp.status})")
+            logger.info("[email-resend] enviado para %s: %s (%s)", _mask_email_for_log(to_email), subject[:80], resp.status)
             return True
     except urllib.error.HTTPError as exc:
         try:
-            err_body = exc.read().decode("utf-8")
+            err_body = exc.read().decode("utf-8")[:300]
         except Exception:  # noqa: BLE001
             err_body = "(sem corpo)"
-        logger.error(f"[email-resend] HTTP {exc.code} para {to_email}: {err_body}")
+        logger.error("[email-resend] HTTP %s para %s: %s", exc.code, _mask_email_for_log(to_email), err_body)
         return False
     except Exception as exc:  # noqa: BLE001
-        logger.error(f"[email-resend] falha para {to_email}: {exc}")
+        logger.error("[email-resend] falha para %s: %s", _mask_email_for_log(to_email), exc)
         return False
 
 
