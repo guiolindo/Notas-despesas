@@ -189,15 +189,23 @@ def lookup_cnpj(db: Session, cnpj: str) -> dict | None:
                 "cached": True,
             }
 
-    # 2) Chama API
+    # 2) Chama API — com circuit breaker (BE-05) + timeout reduzido (SEC-14)
     url = f"https://api.opencnpj.org/{digits}"
     req = urllib.request.Request(url, headers={
         "User-Agent": "Economart-Notas/1.0 (+https://economart.com.br)",
         "Accept": "application/json",
     })
+    from app.services.circuit_breaker import BreakerOpen, get_breaker
+    breaker = get_breaker("opencnpj", failure_threshold=3, reset_seconds=60)
     try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        with breaker.call():
+            # SEC-14: timeout reduzido de 8s pra 4s. Com 2 workers, uma
+            # api externa lenta consumia todo o pool. Menos amplificacao.
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+    except BreakerOpen:
+        logger.info("[cnpj] breaker aberto — pulando consulta externa de %s", digits)
+        return None
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         logger.warning(f"[cnpj] falha ao consultar {digits}: {exc}")
         return None

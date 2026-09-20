@@ -136,13 +136,19 @@ class DriveService:
             return f"local:{local_id}", encrypted_key_b64
 
         object_key = f"{uuid.uuid4()}.enc"
-        client.put_object(
-            Bucket=settings.R2_BUCKET_NAME,
-            Key=object_key,
-            Body=encrypted_bytes,
-            ContentType="application/octet-stream",
-            Metadata={"original_filename": Path(original_filename).name[:200]},
-        )
+        # BE-05: circuit breaker — apos 5 falhas consecutivas do R2,
+        # rejeita rapidamente por 30s. Amplifica menos a falha do que
+        # ficar esperando 3 retries do boto3 (~30s) por request.
+        from app.services.circuit_breaker import get_breaker
+        breaker = get_breaker("r2-put")
+        with breaker.call():
+            client.put_object(
+                Bucket=settings.R2_BUCKET_NAME,
+                Key=object_key,
+                Body=encrypted_bytes,
+                ContentType="application/octet-stream",
+                Metadata={"original_filename": Path(original_filename).name[:200]},
+            )
         return object_key, encrypted_key_b64
 
     def download_and_decrypt(

@@ -197,10 +197,31 @@ def prefetch_comment_counts(db, invoice_ids: list[str]) -> None:
 
 def count_comments(invoice: Invoice) -> int:
     """Conta comentarios da nota. Usa cache do request quando disponivel
-    (listagem pre-fetched), senao cai pra query individual (detail)."""
+    (listagem pre-fetched), senao cai pra query individual (detail).
+
+    PERF-05 (auditoria set/2026): a dependencia da ContextVar era
+    implicita — qualquer novo endpoint que serializasse multiplas notas
+    sem chamar prefetch_comment_counts caia em N+1 silencioso. Agora,
+    quando o cache existe mas NAO contem o invoice.id (i.e. codigo
+    novo esqueceu de prefetch pra esse item), emite log warning uma
+    unica vez por processo pra revelar o esquecimento. Em prod, sinal
+    para adicionar o prefetch ou passar count explicitamente.
+    """
     cache = _COMMENT_COUNT_CACHE.get()
     if cache is not None and invoice.id in cache:
         return cache[invoice.id]
+    if cache is not None and invoice.id not in cache:
+        # Cache foi setado (dentro de listagem) mas esse item nao esta
+        # nele — provavel bug. Loga uma vez pra alertar.
+        import logging
+        _log = logging.getLogger(__name__)
+        if not getattr(count_comments, "_warned", False):
+            _log.warning(
+                "[count_comments] invoice.id=%s ausente do prefetch cache. "
+                "Adicione o id no prefetch_comment_counts para evitar N+1.",
+                invoice.id,
+            )
+            count_comments._warned = True  # type: ignore[attr-defined]
     from sqlalchemy import func
     from sqlalchemy.orm import object_session
     from app.models import InvoiceComment

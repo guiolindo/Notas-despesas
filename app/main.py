@@ -18,6 +18,7 @@ from app.middleware.observability import (
     RequestIdMiddleware,
     install_request_id_logging,
 )
+from app.middleware.idempotency import IdempotencyMiddleware
 from app.middleware.security import (
     BodySizeLimitMiddleware,
     CSRFOriginMiddleware,
@@ -231,6 +232,10 @@ app.add_middleware(BodySizeLimitMiddleware)
 # Ordem: fica antes do rate-limit e depois do body-size (last-added,
 # first-executed pattern do Starlette).
 app.add_middleware(CSRFOriginMiddleware)
+# BE-06: idempotency-key. Fica DEPOIS de CSRF/rate-limit (executa
+# ANTES na ordem de request — last-added = outermost) pra evitar que
+# retries duplicados consumam cota de rate-limit.
+app.add_middleware(IdempotencyMiddleware)
 # RequestIdMiddleware vem por ultimo (= executa por primeiro), pra que o id
 # ja esteja disponivel quando os outros middlewares logarem.
 app.add_middleware(RequestIdMiddleware)

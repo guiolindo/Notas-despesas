@@ -228,21 +228,16 @@ def _br_datetime(dt) -> str | None:
 
 
 def _user_has_invoice_access(user: User, invoice: Invoice) -> bool:
-    """Quem ve dados completos da nota:
-    - ADMIN e FINANCE sempre
-    - Criador, gestor e diretor desta nota
-    - (CONTAS_A_PAGAR sera incluido na Fase 3)
+    """ARQ-04 (auditoria set/2026): consolidado na fonte canonica
+    invoice_service.queries._can_view. Antes tinha 3 versoes distintas
+    (aqui, queries._can_view, e a logica implicita no _query_visible_
+    invoices) com regras divergentes — este era o unico que concedia
+    a CONTAS_A_PAGAR e continha comentario obsoleto sobre 'Fase 3'.
     """
     if not user or not invoice:
         return False
-    role = user.role.value
-    if role in {"ADMIN", "FINANCE"}:
-        return True
-    # Futuro: CONTAS_A_PAGAR
-    if role == "CONTAS_A_PAGAR":
-        return True
-    uid = user.id
-    return uid in {invoice.created_by_id, invoice.manager_id, invoice.director_id}
+    from app.services.invoice_service import _can_view
+    return _can_view(invoice, user)
 
 
 @router.get("/verify/{invoice_id}", response_class=HTMLResponse)

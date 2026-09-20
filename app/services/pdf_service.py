@@ -249,6 +249,13 @@ def _build_cover_pdf(invoice: Invoice, base_url: str) -> bytes:
     return buffer.getvalue()
 
 
+# BE-08 (auditoria set/2026): teto de paginas do documento final.
+# 5 anexos x ate 500 paginas cada = 2500 e mais que suficiente pra
+# nota fiscal real. Evita ataque com PDF de milhoes de paginas via
+# object reference explosion, protegendo memoria/cpu do worker.
+_MAX_MERGED_PAGES = 2500
+
+
 def generate_print_pdf(invoice: Invoice, base_url: str) -> bytes:
     """Gera comprovante: capa + TODOS os anexos da nota concatenados.
 
@@ -256,6 +263,9 @@ def generate_print_pdf(invoice: Invoice, base_url: str) -> bytes:
     em um unico PDF de comprovante. Se algum anexo falhar (R2 fora,
     chave invalida), apenas pula esse anexo — comprovante segue valido
     com os outros.
+
+    BE-08: para em _MAX_MERGED_PAGES paginas. Anexos alem do limite
+    sao ignorados com log warning.
     """
     cover_pdf = _build_cover_pdf(invoice, base_url)
     attachments = invoice.attachments or []
@@ -263,20 +273,31 @@ def generate_print_pdf(invoice: Invoice, base_url: str) -> bytes:
         return cover_pdf
 
     writer = PdfWriter()
+    total_pages = 0
     # Capa primeiro
     for page in PdfReader(io.BytesIO(cover_pdf)).pages:
         writer.add_page(page)
+        total_pages += 1
 
     # Cada anexo, em ordem
     for att in attachments:
         if not att.drive_file_id or not att.encryption_key_enc:
             continue
+        if total_pages >= _MAX_MERGED_PAGES:
+            _logger.warning(
+                "[pdf] limite de %d paginas atingido; anexos restantes da nota %s ignorados",
+                _MAX_MERGED_PAGES, invoice.id,
+            )
+            break
         try:
             att_bytes = drive_service.download_and_decrypt(
                 att.drive_file_id, att.encryption_key_enc,
             )
             for page in PdfReader(io.BytesIO(att_bytes)).pages:
+                if total_pages >= _MAX_MERGED_PAGES:
+                    break
                 writer.add_page(page)
+                total_pages += 1
         except Exception as exc:  # noqa: BLE001
             # BE-01 (auditoria set/2026): antes era silencioso — anexo
             # que falhava sumia do comprovante oficial sem qualquer

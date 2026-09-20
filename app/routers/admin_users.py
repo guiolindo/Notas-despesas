@@ -33,8 +33,44 @@ router = APIRouter()
 def list_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("ADMIN")),
+    page: int = 1,
+    per_page: int = 50,
+    search: str | None = None,
+    role: str | None = None,
+    is_active: bool | None = None,
 ):
-    users = db.query(User).order_by(User.name).all()
+    """PERF-06 (auditoria set/2026): antes retornava todos os usuarios
+    de uma vez. Em org com milhares de colaboradores, transferia
+    registro completo (incluindo dados pessoais) em uma unica resposta.
+    Agora paginado com filtro server-side.
+
+    Retrocompat: quando nenhum parametro e passado, retorna a primeira
+    pagina; frontend antigo que espera lista simples ainda funciona
+    porque a resposta segue lista JSON (nao envelope).
+    """
+    page = max(page, 1)
+    per_page = min(max(per_page, 1), 200)
+    query = db.query(User)
+    if search:
+        term = f"%{search.strip().lower()}%"
+        from sqlalchemy import or_, func
+        query = query.filter(or_(
+            func.lower(User.name).like(term),
+            func.lower(User.email).like(term),
+        ))
+    if role:
+        try:
+            query = query.filter(User.role == UserRole(role))
+        except ValueError:
+            pass
+    if is_active is not None:
+        query = query.filter(User.is_active == is_active)
+    users = (
+        query.order_by(User.name)
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
     return [user_payload(user) for user in users]
 
 
