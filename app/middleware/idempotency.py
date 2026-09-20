@@ -36,12 +36,13 @@ _MUTATION_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 class _Entry:
-    __slots__ = ("status", "body", "media_type", "expires_at")
+    __slots__ = ("status", "body", "media_type", "content_encoding", "expires_at")
 
-    def __init__(self, status, body, media_type, expires_at):
+    def __init__(self, status, body, media_type, content_encoding, expires_at):
         self.status = status
         self.body = body
         self.media_type = media_type
+        self.content_encoding = content_encoding
         self.expires_at = expires_at
 
 
@@ -75,11 +76,14 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         with _cache_lock:
             entry = _cache.get(bucket)
             if entry and entry.expires_at > now:
+                headers = {"X-Idempotent-Replay": "true"}
+                if entry.content_encoding:
+                    headers["Content-Encoding"] = entry.content_encoding
                 return Response(
                     content=entry.body,
                     status_code=entry.status,
                     media_type=entry.media_type or "application/json",
-                    headers={"X-Idempotent-Replay": "true"},
+                    headers=headers,
                 )
 
         response = await call_next(request)
@@ -88,11 +92,14 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         if 200 <= response.status_code < 500 and response.status_code != 401:
             body_iter = [chunk async for chunk in response.body_iterator]
             body = b"".join(body_iter)
+            # Preserva content-encoding pra devolver corpo compativel no replay
+            content_encoding = response.headers.get("content-encoding")
             with _cache_lock:
                 _cache[bucket] = _Entry(
                     status=response.status_code,
                     body=body,
                     media_type=response.media_type,
+                    content_encoding=content_encoding,
                     expires_at=now + _TTL_SECONDS,
                 )
                 _sweep_expired(now)
