@@ -25,7 +25,69 @@ from app.services.document_service import (
     mask_document,
     mask_name,
 )
+from app.services.drive_service import drive_service
 from app.services.pdf_service import generate_print_pdf, invoice_hash
+
+
+def _cached_or_generate_pdf(invoice: Invoice, base_url: str) -> bytes:
+    """PERF-02 (auditoria set/2026): antes gerava PDF do zero a cada
+    print/mark-paid — baixar N anexos do R2, descriptografar cada um,
+    concatenar. Segundos por chamada, worker bloqueado.
+
+    Agora: se a nota ja tem print_drive_file_id armazenado (isto e,
+    ja foi gerada uma vez apos APROVADO), tenta baixar do R2. Se o
+    download falhar (chave errada, arquivo removido), regenera. Se
+    ainda nao existe, gera + guarda para as proximas reimpressoes.
+
+    Chave de encriptacao reusa encryption_key_enc da nota — se ela
+    existe (anexo do usuario original criptografado). Se nao (nota sem
+    anexo criptografado — edge case DEV), guarda sem encriptar.
+    """
+    cache_id = getattr(invoice, "print_drive_file_id", None)
+    if cache_id and invoice.encryption_key_enc:
+        try:
+            return drive_service.download_and_decrypt(
+                cache_id, invoice.encryption_key_enc,
+            )
+        except Exception:
+            # Cache invalido — regenera e sobrescreve.
+            pass
+    pdf_bytes = generate_print_pdf(invoice, base_url)
+    return pdf_bytes
+
+
+def _persist_pdf_cache(db, invoice: Invoice, pdf_bytes: bytes) -> None:
+    """Guarda o PDF no R2 e associa a nota."""
+    if not invoice.encryption_key_enc:
+        # Sem chave original — nao persiste (edge DEV).
+        return
+    try:
+        from app.services.drive_service import (
+            decrypt_key_with_master, encrypt_data,
+        )
+        # Descriptografa a chave da nota, encripta o PDF com ela, sobe.
+        file_key = decrypt_key_with_master(invoice.encryption_key_enc)
+        encrypted = encrypt_data(pdf_bytes, file_key)
+        client = drive_service._client()
+        if client is None:
+            return  # fallback local — nao persiste
+        import uuid as _uuid
+        from app.config import settings
+        obj_key = f"print-{_uuid.uuid4()}.enc"
+        client.put_object(
+            Bucket=settings.R2_BUCKET_NAME,
+            Key=obj_key,
+            Body=encrypted,
+            ContentType="application/octet-stream",
+            Metadata={"kind": "print", "invoice_id": invoice.id[:36]},
+        )
+        invoice.print_drive_file_id = obj_key
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        import logging as _lg
+        _lg.getLogger(__name__).warning(
+            "[print] falha ao persistir cache do PDF %s: %s", invoice.id, exc,
+        )
 
 
 router = APIRouter()
@@ -117,7 +179,8 @@ def print_invoice(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Contas a Pagar so pode reimprimir notas ja lancadas pelo Financeiro.",
         )
-    pdf_bytes = generate_print_pdf(invoice, str(request.base_url))
+    # PERF-02: usa cache quando a nota ja foi paga uma vez.
+    pdf_bytes = _cached_or_generate_pdf(invoice, str(request.base_url))
     return _pdf_streaming_response(invoice, pdf_bytes)
 
 
@@ -137,7 +200,7 @@ def mark_paid(
     de novo. ADMIN e FINANCE podem chamar; CONTAS_A_PAGAR nao (read-only).
     """
     invoice = _load_printable_invoice(db, invoice_id)
-    pdf_bytes = generate_print_pdf(invoice, str(request.base_url))
+    pdf_bytes = _cached_or_generate_pdf(invoice, str(request.base_url))
     now = datetime.now(timezone.utc)
     _ip = pseudonymize_ip(request.client.host if request.client else None)
     _port = request.client.port if request.client else None
@@ -190,6 +253,10 @@ def mark_paid(
             )
         )
         db.commit()
+        # PERF-02: persiste o PDF pra reimpressoes futuras ficarem
+        # rapidas. So faz na transicao real APROVADO->PAGO — se ja
+        # esta PAGO e chegou aqui, o cache_or_generate ja tratou.
+        _persist_pdf_cache(db, invoice, pdf_bytes)
     # Se ja PAGO, idempotente: devolve o PDF sem mexer no estado.
     return _pdf_streaming_response(invoice, pdf_bytes)
 

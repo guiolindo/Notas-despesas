@@ -34,6 +34,14 @@ def run_schema_migrations() -> None:
     is_postgres = engine.dialect.name == "postgresql"
     pg = lambda s: s if is_postgres else s.replace(" IF NOT EXISTS", "")
 
+    # INFRA-09 (auditoria set/2026): comandos exclusivos de PostgreSQL
+    # (ALTER TYPE, CREATE EXTENSION, DROP COLUMN, indices funcionais) sao
+    # separados. Em SQLite o loop pula silenciosamente com log info em
+    # vez de warning — evita poluir o boot do DEV com "SQL falhou".
+    def _pg_only(s: str) -> str:
+        """Marca comando como PG-only. Em SQLite, retorna None (skip)."""
+        return s if is_postgres else "-- skipped in sqlite: " + s
+
     migrations = [
         # Audit / historico — colunas de individualizacao NAT (LGPD)
         pg("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS source_port INTEGER"),
@@ -50,10 +58,9 @@ def run_schema_migrations() -> None:
         pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP"),
         pg("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS printed_by_id VARCHAR(36)"),
 
-        # Cleanup: coluna legacy 'department' (string) substituida por
-        # department_id (FK). DROP COLUMN IF EXISTS so no Postgres; SQLite
-        # nao suporta, mas em dev nao machuca deixar a coluna orfa.
-        pg("ALTER TABLE users DROP COLUMN IF EXISTS department"),
+        # Cleanup: coluna legacy 'department' — PG-only (SQLite nao
+        # suporta DROP COLUMN IF EXISTS; coluna orfa nao machuca em DEV).
+        _pg_only("ALTER TABLE users DROP COLUMN IF EXISTS department"),
 
         # Indices para consultas frequentes
         pg("CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)"),
@@ -100,21 +107,19 @@ def run_schema_migrations() -> None:
         pg("ALTER TABLE pending_admin_actions ADD COLUMN IF NOT EXISTS executed_by_id VARCHAR(36)"),
 
         # Repasse de nota entre diretores: novo valor no enum approvalaction
-        pg("ALTER TYPE approvalaction ADD VALUE IF NOT EXISTS 'TRANSFERRED_DIRECTOR'"),
+        _pg_only("ALTER TYPE approvalaction ADD VALUE IF NOT EXISTS 'TRANSFERRED_DIRECTOR'"),
 
         # Substituto durante ferias (delegacao automatica de notas)
         pg("ALTER TABLE users ADD COLUMN IF NOT EXISTS substitute_director_id VARCHAR(36)"),
         # Mesmo conceito para MANAGER — fechou o gap apontado pela auditoria P1-9
         pg("ALTER TABLE users ADD COLUMN IF NOT EXISTS substitute_manager_id VARCHAR(36)"),
 
-        # Extensao unaccent: busca acento-insensivel em descricao/fornecedor.
-        # Sem isso 'escritorio' nao acha 'escritório'. SQLite ignora (cai
-        # em lower() simples no fallback do servico).
-        pg("CREATE EXTENSION IF NOT EXISTS unaccent"),
+        # Extensao unaccent: PG-only (SQLite nao tem sistema de extensoes).
+        _pg_only("CREATE EXTENSION IF NOT EXISTS unaccent"),
 
-        # Indices funcionais para acelerar a busca textual em PG
-        pg("CREATE INDEX IF NOT EXISTS idx_invoices_supplier_name_un ON invoices (LOWER(supplier_name))"),
-        pg("CREATE INDEX IF NOT EXISTS idx_invoices_description_un ON invoices (LOWER(description))"),
+        # Indices funcionais so em PG (SQLite nao aceita expressao no CREATE INDEX pre-3.9).
+        _pg_only("CREATE INDEX IF NOT EXISTS idx_invoices_supplier_name_un ON invoices (LOWER(supplier_name))"),
+        _pg_only("CREATE INDEX IF NOT EXISTS idx_invoices_description_un ON invoices (LOWER(description))"),
         # DB-08 (auditoria set/2026): consultas reais usam padroes compostos.
         # Alertas: status + due_date. Audit chain: timestamp+id descending.
         # Comentarios: por invoice_id.
@@ -123,10 +128,9 @@ def run_schema_migrations() -> None:
         pg("CREATE INDEX IF NOT EXISTS idx_audit_ts_id ON audit_logs(timestamp DESC, id DESC)"),
         pg("CREATE INDEX IF NOT EXISTS idx_invoice_comments_invoice ON invoice_comments(invoice_id)"),
 
-        # Fase 3: novo role CONTAS_A_PAGAR (read-only + scanner QR).
-        # No Postgres role e um TYPE ENUM — precisa ALTER TYPE ADD VALUE.
-        # No SQLite o Enum vira VARCHAR e aceita qualquer string.
-        pg("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'CONTAS_A_PAGAR'"),
+        # Fase 3: novo role CONTAS_A_PAGAR — PG-only ALTER TYPE.
+        # SQLite: enum vira VARCHAR e aceita qualquer valor automaticamente.
+        _pg_only("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'CONTAS_A_PAGAR'"),
 
         # Pentest jun/2026 (#SEC-5): logout passa a invalidar access tokens
         # emitidos antes do logout — sem isso, /auth/logout so apagava o
@@ -135,12 +139,15 @@ def run_schema_migrations() -> None:
     ]
     with engine.connect() as conn:
         for stmt in migrations:
+            # INFRA-09: comandos marcados como PG-only ficam como
+            # comentario SQL em SQLite. Pulamos sem log ruidoso.
+            if stmt.startswith("-- skipped in sqlite:"):
+                _log.debug("[migration] pulado em sqlite: %s", stmt[22:80])
+                continue
             try:
                 conn.execute(text(stmt))
                 conn.commit()
             except Exception as _exc:
-                # SQLite: coluna/indice ja existe (esperado). Mas se for outro
-                # tipo de erro em PG, queremos pelo menos um aviso no log.
                 msg = str(_exc).lower()
                 if ("already exists" in msg or "duplicate column" in msg
                         or "duplicate object" in msg):

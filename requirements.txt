@@ -1,7 +1,11 @@
 SQLAlchemy>=2.0.49
 psycopg2-binary>=2.9.9
+# INFRA-10 (auditoria set/2026): bcrypt 5.x removeu __about__.__version__
+# que passlib 1.7.4 tenta ler no startup, gerando "(trapped) error"
+# nos logs. Fixamos bcrypt em 4.x pra suprimir o warning ate passlib
+# 1.7.5+ (com suporte a bcrypt 5) chegar em release estavel.
 passlib[bcrypt]>=1.7.4
-bcrypt>=4.0.1,<5
+bcrypt>=4.0.1,<5.0.0
 python-jose[cryptography]>=3.5.0
 cryptography>=48.0.0
 fastapi>=0.136.1
