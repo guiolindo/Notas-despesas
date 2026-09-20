@@ -687,6 +687,13 @@ Resumo das entregas das últimas semanas (commit-by-commit em
 
 Software proprietário Economart Atacadista. Uso interno.
 
+## Créditos
+
+Ver [CREDITS.md](CREDITS.md) para atribuições da auditoria de segurança
+e qualidade — em particular, à auditoria dinâmica do **Manus AI**
+(ago/2026), que identificou o achado crítico SEC-20 (logout não revoga
+refresh cookie) e outros achados exclusivos corrigidos em set/2026.
+
 ---
 
 **Suporte / dúvidas**: contato com o administrador do sistema.
