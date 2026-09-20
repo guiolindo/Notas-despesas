@@ -72,7 +72,7 @@ serve para você saber se alguém está tentando entrar.
 3. Você recebe um código de 6 dígitos por email
 4. Em `/reset-password`, informar email + código + nova senha
 
-Validade do código: 10 minutos. Tentativas máximas: 5.
+Validade do código: 15 minutos. Tentativas máximas: 5.
 Após sucesso, o código é invalidado. Códigos novos invalidam
 os anteriores.
 

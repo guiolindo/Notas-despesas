@@ -221,7 +221,7 @@ Antes de commit:
 
 - [ ] `node --check` em cada arquivo
 - [ ] Concatenar e `new Function()` para detectar problemas top-level
-- [ ] `pytest tests/ -q` continua 21/21 verde
+- [ ] `pytest tests/ -q` continua 108/108 verde
 - [ ] Smoke runtime via uvicorn + curl:
   - `GET /login` → 3 scripts mínimos
   - `GET /forgot-password` → +password.js
@@ -237,7 +237,7 @@ refactor(js): split completo do app.js em 13+ módulos
 
 3712 linhas → ~13 módulos de 50-300 linhas cada.
 [detalhes do que cada módulo cobre]
-[smoke validado, pytest 21/21, browser test manual]
+[smoke validado, pytest 108/108, browser test manual]
 ```
 
 ## Política de rollback
@@ -270,7 +270,7 @@ Não mover esses do app.js (ou mover por último com cuidado extremo):
 - `app.js` vazio (ou com no máximo 50 linhas — só `window.Economart = {}`)
 - Cada módulo no diretório `app/static/js/` com nome semântico
 - Templates atualizados com os `<script>` corretos
-- pytest 21/21 verde
+- pytest 108/108 verde
 - Smoke runtime OK
 - Push único, mensagem detalhada
 - Após Ctrl+F5 do usuário, sistema funciona idêntico ao antes

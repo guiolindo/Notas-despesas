@@ -214,7 +214,7 @@ vaza. Quem é da empresa e clica no link, vê tudo após login.
 
 ## Rate-limit
 
-Cinco endpoints têm rate-limit aplicado via
+Endpoints com rate-limit aplicado via
 `app/middleware/security.py:RateLimitMiddleware`:
 
 | Endpoint | Método | Limite | Janela | Por que |
@@ -222,18 +222,19 @@ Cinco endpoints têm rate-limit aplicado via
 | `/auth/login` | POST | 10 | 60s | Brute force |
 | `/auth/forgot-password` | POST | 5 | 600s | Spam de códigos |
 | `/auth/reset-password` | POST | 8 | 600s | Brute force do código |
+| `/auth/refresh` | POST | 60 | 60s | SEC-05: martelar emissao de access token |
 | `/api/invoices/lookup-cnpj/*` | GET | 30 | 60s | Custo da API externa |
 | `/api/invoices/*/comments` | * | 30 | 60s | Flood na UI |
+| `/api/invoices/` | POST | 30 | 60s | SEC-05: DoS de storage (upload) |
+| `/verify/{id}` | GET | 20 | 60s | SEC-03: enumeracao publica |
+| `/api/invoices/*/verify-full` | GET | 30 | 60s | Enumeracao autenticada |
 
-O bucket é por (regra, cliente). O cliente é identificado por:
-
-- **Token JWT** se presente (sub do token) — evita que um NAT
-  corporativo trave 10 funcionários por um único IP
-- **IP** caso contrário
-
-Em produção atrás de proxy (Railway), o middleware honra
-`X-Forwarded-For` para obter o IP real do cliente — apenas em
-PROD, para que tráfego direto em DEV não possa spoofar o header.
+O bucket é por (regra, IP). Em produção atrás de proxy o middleware
+honra `X-Forwarded-For` **apenas quando o IP do socket vem de um
+prefixo confiavel** (env `TRUSTED_PROXY_PREFIXES`, default:
+loopback + ranges privados). SEC-06: sem essa verificação, atacante
+com trafego direto forjava XFF e cada request caia em bucket
+distinto (bypass total de rate-limit).
 
 Quando o limite é atingido, resposta é HTTP 429 com cabeçalhos:
 
@@ -362,7 +363,7 @@ Em `app/models/pending_admin_actions.py`. Quando o admin:
 A ação **não acontece imediatamente**. É registrada em
 `pending_admin_actions` com status `PENDING_GRACE`. Durante 24h,
 outro admin ou diretor pode vetar via interface (POST
-`/api/pending-actions/{id}/veto`).
+`/api/pending-actions/{id}/cancel`).
 
 Se ninguém objetar em 24h, um job de background promove a ação
 automaticamente para `EXECUTED`. Se alguém vetar, o status vai

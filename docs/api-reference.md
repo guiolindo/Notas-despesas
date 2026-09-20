@@ -260,7 +260,7 @@ AGUARDANDO_DIRETOR).
 Cancela nota (volta para RASCUNHO). Disponível em estados não
 finalizados.
 
-### `POST /api/invoices/{id}/manager-review`
+### `POST /api/invoices/{id}/review`
 
 Gestor aprova ou reprova.
 
@@ -324,11 +324,11 @@ Lança a nota (APROVADO → PAGO) **e** devolve o comprovante.
 
 Lista anexos da nota.
 
-### `GET /api/invoices/{id}/attachment/{attachment_id}`
+### `GET /api/invoices/{id}/attachments/{attachment_id}`
 
 Baixa um anexo específico (decriptado on-the-fly).
 
-### `DELETE /api/invoices/{id}/attachment/{attachment_id}`
+### `DELETE /api/invoices/{id}/attachments/{attachment_id}`
 
 Remove anexo. Apenas em estados editáveis. Pelo menos 1 anexo
 precisa restar.
@@ -409,17 +409,17 @@ Endpoints abaixo exigem role ADMIN.
 - `GET /api/admin/users/{id}` — detalhe
 - `POST /api/admin/users` — cria (pode entrar em
   pending_admin_actions se for ADMIN ou DIRECTOR)
-- `PATCH /api/admin/users/{id}` — edita
+- `PUT /api/admin/users/{id}` — edita (SEC-08 fix: aciona janela 24h para DIRECTOR)
 - `POST /api/admin/users/{id}/reset-password` — reset
   manual (força nova senha temporária)
-- `POST /api/admin/users/{id}/close` — encerra (anonimiza)
+- `POST /api/admin/users/{id}/anonymize` — encerra (anonimiza)
 
 ### Setores
 
 - `GET /api/admin/departments`
 - `POST /api/admin/departments`
 - `PATCH /api/admin/departments/{id}`
-- `POST /api/admin/departments/{id}/assign-director`
+- `POST /api/admin/departments/{id}` (PUT com campo director_ids)`
 
 ### Audit log
 
@@ -431,7 +431,7 @@ Endpoints abaixo exigem role ADMIN.
 
 - `GET /api/pending-actions/me` — ações pendentes que **outro**
   admin/diretor iniciou e que eu posso vetar
-- `POST /api/pending-actions/{id}/veto` — veta com motivo
+- `POST /api/pending-actions/{id}/cancel` — veta com motivo
 
 ---
 

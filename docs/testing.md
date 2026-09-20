@@ -5,7 +5,7 @@ rodá-la e como adicionar novos testes.
 
 ## Estado atual
 
-- **21 testes pytest** verdes
+- **108 testes pytest** verdes
 - Cobrem regressões de **P0/P1** do trabalho de auditoria
 - Tempo total: ~12 segundos
 - Sem testes E2E de browser ainda

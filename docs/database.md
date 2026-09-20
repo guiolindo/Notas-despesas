@@ -270,7 +270,7 @@ Códigos de recuperação de senha (6 dígitos numéricos).
 - `used_at` (timestamp, null se ainda não foi usado)
 - `created_at`
 
-Política: código tem 5 minutos de validade, máximo 5 tentativas,
+Política: código tem 15 minutos de validade, máximo 5 tentativas,
 não pode reutilizar após sucesso, novos códigos invalidam os
 anteriores do mesmo usuário.
 

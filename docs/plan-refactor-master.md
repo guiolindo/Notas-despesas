@@ -1,6 +1,8 @@
 # Plano mestre de refactor — backend + frontend
 
-**Status**: em execução.
+**Status**: Fases 1, 2, 3.1 e 4 CONCLUÍDAS (commits `a131274`, `63cbbd9`,
+`1aa614c`, `980e6e8` em jun/2026). Fase 3.2 (drawer.js split) e Fase 5
+(admin_users.py refinamento) permanecem opcionais e não priorizadas.
 **Início**: 2026-06-20.
 **Contexto**: sistema em DEV, oportunidade de quebrar agora pra entregar
 PROD com arquitetura limpa.
@@ -63,7 +65,7 @@ quebra mais do que melhora. **Não refatorar**.
    além do necessário pra não quebrar deploys já em curso (caso o user
    teste em paralelo). Pode rodar `git revert` sem dor.
 2. **Cada refactor é UM commit isolado** — rollback granular.
-3. **Pytest 21/21 verde** antes e depois.
+3. **Pytest 108/108 verde** antes e depois.
 4. **Smoke runtime contra LAN** depois de cada commit de router/endpoint.
 5. **Mecânico, não comportamental**: nenhum endpoint muda assinatura,
    nenhum body muda formato. Só reorganização física.
@@ -187,7 +189,7 @@ com `__init__.py` re-exportando tudo. Assim os imports atuais
 | `invoice_service/__init__.py` | ~30 | `from .queries import *; from .fsm import *; ...` |
 
 **Validação obrigatória**:
-- pytest 21/21 antes e depois
+- pytest 108/108 antes e depois
 - smoke runtime: criar nota → submit → manager_review → director_review
   → mark_paid (fluxo completo end-to-end)
 
@@ -210,7 +212,7 @@ Antes de cada `git commit`:
 
 ```bash
 # pytest
-python -m pytest tests/ -q                                  # esperado 21/21
+python -m pytest tests/ -q                                  # esperado 108/108
 
 # parse de cada novo arquivo Python
 python -c "import app.routers.invoices_crud as m; print('OK')"

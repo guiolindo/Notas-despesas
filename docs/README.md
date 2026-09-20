@@ -26,7 +26,7 @@ Setup local em 6 passos, primeiro login, erros comuns na instalação.
 | Documento | O que cobre |
 |---|---|
 | [operations.md](operations.md) | Deploy no Railway, variáveis de ambiente, provedores de email, troubleshooting comum, procedimentos manuais (trocar SECRET_KEY, backup, reset de senha do admin) |
-| [testing.md](testing.md) | Suite pytest, como rodar, como adicionar testes novos. Cobertura atual: 21 testes verdes em ~12s |
+| [testing.md](testing.md) | Suite pytest, como rodar, como adicionar testes novos. Cobertura atual: 108 testes verdes |
 | [faq.md](faq.md) | Perguntas técnicas frequentes com respostas curtas. Vai aqui se você tem um problema específico |
 
 ## Registro de decisões

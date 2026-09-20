@@ -29,7 +29,7 @@ Railway detecta, faz build e sobe.
 | `R2_BUCKET_NAME` | `economart-prod` | Crie no painel Cloudflare antes |
 | `EMAIL_PROVIDER` | `SMTP` ou `RESEND` | Resend recomendado para Railway Hobby |
 | `SMTP_*` ou `RESEND_API_KEY` | conforme provedor | Ver detalhes abaixo |
-| `TRUSTED_PROXIES` | `*` | Faz o rate-limit honrar X-Forwarded-For |
+| `TRUSTED_PROXY_PREFIXES` | `*` | SEC-06: prefixos CIDR de proxies confiaveis (CSV). X-Forwarded-For so e honrado quando o socket vem de um desses prefixos. Default: ranges privados/loopback. |
 | `MAX_LOGIN_ATTEMPTS` | `5` | (default) |
 | `LOGIN_BLOCK_MINUTES` | `10` | (default) |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | (default) |
@@ -349,7 +349,7 @@ Se o admin esqueceu a senha **e** não tem outro admin para resetar:
 
 Antes de cada deploy não-trivial:
 
-- [ ] `python -m pytest tests/ -q` passa (21 testes verdes)
+- [ ] `python -m pytest tests/ -q` passa (108 testes verdes)
 - [ ] `for f in app/static/js/*.js; do node --check "$f"; done` sem erro
       (valida sintaxe dos 19 módulos vanilla)
 - [ ] Diff revisado por outra pessoa (PR review)

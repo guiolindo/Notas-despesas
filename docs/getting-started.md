@@ -183,7 +183,7 @@ pip install pytest
 python -m pytest tests/ -q
 ```
 
-Esperado: 21 testes verdes em ~12 segundos.
+Esperado: 108 testes verdes (~2 min com bcrypt real).
 
 Para detalhes ver [testing.md](testing.md).
 
