@@ -1,0 +1,8 @@
+# Dependencias de desenvolvimento — instale com:
+#   pip install -r requirements-dev.txt
+# Nao instaladas em producao (Railway usa apenas requirements.txt).
+-r requirements.txt
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx>=0.27.0
+coverage>=7.4.0
