@@ -129,7 +129,7 @@
       if (me?.role === 'ADMIN') {
         depts = await apiFetch('/api/admin/departments');
       } else {
-        const sample = await apiFetch('/api/invoices/?per_page=100');
+        const sample = await apiFetch('/api/invoices/?per_page=100&fields=light');
         const seen = new Map();
         (sample.items || []).forEach((it) => {
           if (it.department_name) seen.set(it.department_name, { id: it.department_name, name: it.department_name });
@@ -187,6 +187,12 @@
     if (invoiceListState.createdBy) params.set('created_by', invoiceListState.createdBy);
     if (invoiceListState.supplier) params.set('supplier', invoiceListState.supplier);
     if (invoiceListState.departmentId) params.set('department_id', invoiceListState.departmentId);
+    // DB-03 (auditoria set/2026): a listagem exibe apenas colunas
+    // simples (numero, setor, valor, datas, status). fields=light manda
+    // o backend pular selectinload de approval_history/attachments —
+    // corta ~2 queries N+1 por request. Sem esse parametro, per_page=100
+    // arrasta o grafo completo por nada.
+    params.set('fields', 'light');
 
     let data;
     try {

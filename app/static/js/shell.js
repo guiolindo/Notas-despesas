@@ -91,9 +91,11 @@
     document.getElementById('header-user-role').textContent = ROLE_LABELS[user.role] || user.role;
     addApprovalQueueLink(user.role);
     renderGlobalAvailabilityBanner();
-    // Alerts em fire-and-forget pra nao bloquear init da pagina.
-    apiFetch('/alerts/').then((data) => {
-      const count = (data && data.summary && data.summary.total_alerts) || 0;
+    // DB-05 (auditoria set/2026): usa /alerts/summary — 5 COUNTs simples
+    // em vez de /alerts/ que materializava listas inteiras a cada
+    // navegacao. Payload cai de dezenas de KB pra ~100 bytes.
+    apiFetch('/alerts/summary').then((data) => {
+      const count = (data && data.total_alerts) || 0;
       if (count > 0) {
         const el = document.getElementById('alert-count');
         if (el) {

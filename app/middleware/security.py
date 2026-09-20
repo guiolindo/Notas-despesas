@@ -94,20 +94,42 @@ RATE_LIMIT_POLICIES: tuple[RateLimitPolicy, ...] = (
 )
 
 
+def _trusted_proxy_prefixes() -> tuple[str, ...]:
+    """SEC-06 (auditoria set/2026): antes, PROD confiava cegamente no
+    primeiro elemento de X-Forwarded-For — atacante forjava valor
+    aleatorio e cada request caia em bucket distinto (bypass total de
+    rate limit) e envenenava audit logs.
+
+    Agora so honramos o header quando o socket vem de um proxy conhecido.
+    Configuravel via env TRUSTED_PROXY_PREFIXES (CSV de prefixes CIDR-like).
+    Sem configuracao: default cobre ranges privados/loopback do Railway.
+    """
+    import os
+    raw = os.getenv("TRUSTED_PROXY_PREFIXES", "")
+    if raw.strip():
+        return tuple(p.strip() for p in raw.split(",") if p.strip())
+    # Defaults conservadores: loopback + private ranges (proxies internos)
+    return ("127.", "10.", "172.16.", "172.17.", "172.18.", "172.19.",
+            "172.20.", "172.21.", "172.22.", "172.23.", "172.24.",
+            "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
+            "172.30.", "172.31.", "192.168.", "::1")
+
+
 def _client_ip(request: Request) -> str:
     """Identifica o cliente para rate limit.
 
-    Em producao atras de proxy (Railway/nginx/etc.), o socket costuma ser do
-    proxy. Nessa situacao usamos o primeiro IP de X-Forwarded-For, que e o
-    cliente original na convencao HTTP. Em dev/local, evita confiar em header
-    forjado por cliente direto.
+    SEC-06: honra X-Forwarded-For apenas quando o socket vem de proxy
+    conhecido. Em outros casos, usa o IP do socket direto.
     """
+    socket_ip = (request.client.host if request.client else "") or ""
     if settings.ENVIRONMENT.upper() in {"PROD", "PRODUCTION"}:
-        forwarded_for = request.headers.get("x-forwarded-for", "")
-        first_hop = forwarded_for.split(",", 1)[0].strip()
-        if first_hop:
-            return first_hop[:64]
-    return (request.client.host if request.client else "unknown")[:64]
+        prefixes = _trusted_proxy_prefixes()
+        if any(socket_ip.startswith(p) for p in prefixes):
+            forwarded_for = request.headers.get("x-forwarded-for", "")
+            first_hop = forwarded_for.split(",", 1)[0].strip()
+            if first_hop:
+                return first_hop[:64]
+    return (socket_ip or "unknown")[:64]
 
 
 def _matching_policy(request: Request) -> RateLimitPolicy | None:

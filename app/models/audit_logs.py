@@ -77,20 +77,44 @@ class AuditLog(Base):
     user = relationship("User")
 
 
+# DB-01 (auditoria set/2026): sem serializacao, 2 workers gunicorn liam
+# o mesmo antecessor no `before_flush` e bifurcavam a cadeia. Chave de
+# advisory lock estavel (numero arbitrario) — same lock ID em toda a app
+# garante ordem total das insercoes em audit_logs.
+_AUDIT_CHAIN_LOCK_ID = 748291306  # arbitrario, unico dentro da app
+
+
 def attach_audit_chain_listener(SessionClass) -> None:
     """Attach um listener before_flush na Session que computa prev/row_hash
-    para todos os AuditLog novos da flush, em ordem cronologica. Faz isso
-    em batch para que multiplas insercoes na mesma transacao sejam
-    encadeadas corretamente entre si (e nao todas apontando pra mesma
-    linha previa do DB).
+    para todos os AuditLog novos da flush, em ordem cronologica.
 
-    Chamado em main.py apos a definicao de SessionLocal.
+    DB-01: em PostgreSQL, adquire pg_advisory_xact_lock antes de ler o
+    ultimo hash. O lock e liberado automaticamente no commit/rollback.
+    Isso serializa a insercao de audit logs entre workers/replicas sem
+    bloquear o resto da aplicacao. Em SQLite (DEV single-writer) o lock
+    e no-op porque o proprio DB serializa escritas.
     """
+    from sqlalchemy import text as _sql_text
+
     @event.listens_for(SessionClass, "before_flush")
     def _audit_chain_before_flush(session, _flush_context, _instances):
         pending = [obj for obj in session.new if isinstance(obj, AuditLog)]
         if not pending:
             return
+        # Serializa a construcao da cadeia entre transacoes concorrentes.
+        # Advisory lock em PG (auto-liberado no fim da transacao); no-op
+        # em SQLite (dialect diferente).
+        try:
+            bind = session.get_bind()
+            if bind is not None and bind.dialect.name == "postgresql":
+                session.execute(
+                    _sql_text("SELECT pg_advisory_xact_lock(:k)"),
+                    {"k": _AUDIT_CHAIN_LOCK_ID},
+                )
+        except Exception:
+            # Se o lock falhar por qualquer razao, seguimos sem ele —
+            # perda de garantia e melhor que quebrar audit.
+            pass
         # Garante timestamps + ordena cronologicamente. Linhas sem ts
         # ainda definido recebem agora; manter ordem de criacao via id.
         now = datetime.now(timezone.utc)

@@ -199,12 +199,19 @@ def get_invoices_for_user(
             User.name.ilike(creator_term)
         )
 
-    total = query.count()
-    total_amount = float(
-        db.query(func.coalesce(func.sum(Invoice.amount), 0))
-        .filter(Invoice.id.in_(query.with_entities(Invoice.id)))
-        .scalar() or 0
-    )
+    # DB-04 (auditoria set/2026): antes eram 3 varreduras — count() +
+    # subconsulta IN(...) para sum() + fetch paginado. Agora count e sum
+    # saem numa unica query agregada sobre o mesmo filtro, sem carregar
+    # entidades nem opcoes de eager loading. Em tabela grande, corta
+    # duas varreduras pesadas por request de listagem.
+    agg_query = query.with_entities(
+        func.count(Invoice.id),
+        func.coalesce(func.sum(Invoice.amount), 0),
+    ).order_by(None)
+    total, sum_amount = agg_query.first() or (0, 0)
+    total = int(total or 0)
+    total_amount = float(sum_amount or 0)
+
     items = (
         query.order_by(Invoice.created_at.desc())
         .offset((page - 1) * per_page)

@@ -19,7 +19,12 @@ class Settings(BaseSettings):
     R2_BUCKET_NAME: str = ""
     MAX_LOGIN_ATTEMPTS: int = 5
     LOGIN_BLOCK_MINUTES: int = 10
-    ENVIRONMENT: str = "DEV"
+    # SEC-07 (auditoria set/2026): default agora e PROD (fail-safe).
+    # Antes, uma variavel de ambiente esquecida no painel do Railway
+    # subia o app com /docs publica, cookie sem Secure, CORS aberto e
+    # /health/dependencies expondo config — tudo por default.
+    # DEV precisa setar ENVIRONMENT=DEV explicitamente.
+    ENVIRONMENT: str = "PROD"
 
     # ─── Email — agora exclusivamente via env (admin do app nao mexe) ───
     # Esta separacao garante que um admin malicioso da aplicacao nao
