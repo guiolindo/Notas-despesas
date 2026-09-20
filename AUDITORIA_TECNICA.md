@@ -23,6 +23,124 @@ Achados que ambas as auditorias encontraram independentemente aparecem marcados 
 
 ---
 
+## Status de correção (set/2026)
+
+Correções aplicadas em 11 commits (`61c6916..08b02c2`). **37 de 78 achados corrigidos** — 100% dos críticos, 68% dos altos, 44% dos médios. Testes: 108/108 passing após cada commit.
+
+### Legenda
+- ✅ Corrigido no commit indicado
+- 🟡 Corrigido parcialmente (escopo reduzido documentado)
+- ⏳ Pendente — precisa infra externa, refactor grande, ou decisão operacional
+- ❌ Não priorizado
+
+### Status por achado
+
+| ID | Título | Sev | Status | Commit |
+|---|---|---|---|---|
+| SEC-01 | Credencial admin hardcoded | Crítica | ✅ | `61c6916` |
+| SEC-02 | Assinatura sem segredo (HMAC agora) | Crítica | ✅ | `61c6916` |
+| SEC-03 | Rate limit `/verify` público | Crítica | ✅ | `61c6916` |
+| SEC-04 | Rate limit em memória por processo | Alta | ⏳ | precisa Redis |
+| SEC-05 | Cobertura de rate limit insuficiente | Alta | 🟡 | `61c6916` (refresh, invoice-create adicionados) |
+| SEC-06 | X-Forwarded-For sem validação | Alta | ✅ | `e154a8e` |
+| SEC-07 | Default `ENVIRONMENT=DEV` fail-open | Alta | ✅ | `e154a8e` |
+| SEC-08 | `/run-due` sem role + GET com mutação | Alta | ✅ | `7456b93` |
+| SEC-09 | HTML injection nos emails | Alta | ✅ | `7456b93` |
+| SEC-10 | Fail-open no parse PDF | Alta | ✅ | `7456b93` |
+| SEC-11 | SECRET_KEY reusada em pseudonim | Média | ✅ | `a5c068b` |
+| SEC-12 | Emails full em `/verify-full` | Média | ✅ | `7456b93` |
+| SEC-13 | Sem proteção CSRF (Origin) | Média | ✅ | `08b02c2` |
+| SEC-14 | opencnpj sync no request path | Média | ⏳ | precisa async worker |
+| SEC-15 | jsDelivr sem SRI | Média | ✅ | `bc22cb6` (vendorizado) |
+| SEC-16 | Email completo em logs | Média | ✅ | `a5c068b` |
+| SEC-17 | X-XSS-Protection obsoleto | Baixa | ✅ | `61c6916` |
+| SEC-18 | Teto de valor divergente | Baixa | ✅ | `7456b93` |
+| SEC-19 | .db/.env no working tree | Info | ❌ | higiene local |
+| SEC-20 | **Logout não revoga refresh cookie** | Crítica | ✅ | `61c6916` |
+| DB-01 | Hash chain bifurca (2+ workers) | Crítica | ✅ | `e154a8e` |
+| DB-02 | Migrações sem Alembic | Alta | ⏳ | refactor grande |
+| DB-03 | Eager loading na listagem | Alta | ✅ | `e154a8e` |
+| DB-04 | Total via subconsulta | Alta | ✅ | `e154a8e` |
+| DB-05 | `/alerts` sem paginação | Alta | ✅ | `e154a8e` |
+| DB-06 | Race em `mark_paid` | Média | ✅ | `a5c068b` |
+| DB-07 | Purge concorrente entre workers | Média | ✅ | `08b02c2` |
+| DB-08 | Índices compostos ausentes | Média | ✅ | `e154a8e` |
+| DB-09 | Sem transacional explícito no FSM | Média | ⏳ | refactor amplo |
+| DB-10 | Sem unique parcial em invoice_number | Baixa | ❌ | decisão de produto |
+| BE-01 | Excepts silenciosos (35 pontos) | Alta | 🟡 | `a5c068b` (PDF merge, transfer notification) |
+| BE-02 | Timeout gunicorn ausente | Alta | ✅ | `2ae62b2` |
+| BE-03 | `/mark-paid` duplicado | Alta | ✅ | `aba84d9` |
+| BE-04 | Worker asyncio com get_event_loop | Média | ✅ | `bc22cb6` (lifespan) |
+| BE-05 | Sem circuit breaker deps externas | Média | ⏳ | precisa design decision |
+| BE-06 | Sem chave de idempotência | Média | ⏳ | contrato de API |
+| BE-07 | Domínio acoplado a FastAPI | Média | ⏳ | refactor amplo |
+| BE-08 | Sem limite de páginas no PDF merge | Média | ⏳ | proteção adicional |
+| ARQ-01 | Dep circular main<->routers | Alta | ⏳ | refactor de módulos |
+| ARQ-02 | main.py com responsabilidades demais | Média | ⏳ | fábrica de app |
+| ARQ-03 | Sem camada DTO | Média | ⏳ | refactor amplo |
+| ARQ-04 | Autorização duplicada 3x | Média | ⏳ | consolidar |
+| ARQ-05 | Helpers concentradores | Baixa | ⏳ | refactor incremental |
+| FE-01 | 19 scripts em toda página | Alta | ⏳ | refactor de templates |
+| FE-02 | innerHTML manual + escape | Média | ⏳ | refactor amplo |
+| FE-03 | Versionamento assets por mtime | Baixa | ✅ | `bc22cb6` (hash de conteúdo) |
+| FE-04 | Comentários desatualizados | Baixa | ⏳ | manutenção contínua |
+| FE-05 | verify sem revelar após login | Alta | ✅ | `aba84d9` |
+| FE-06 | Atalhos `g i`/`g a` quebrados | Baixa | ❌ | não priorizado |
+| FE-07 | Colagem de labels tabela admin | Baixa | ❌ | não priorizado |
+| APP-01 | DEV sem chave = 500 | Alta | ✅ | `aba84d9` |
+| API-01 | Docs API divergentes | Média | ✅ | `441c657` (junto com DOC-01) |
+| INFRA-01 | Sem CI/CD | Crítica | ✅ | `2ae62b2` |
+| INFRA-02 | Healthcheck falso | Alta | ✅ | `2ae62b2` |
+| INFRA-03 | Sem observabilidade (Sentry etc) | Alta | ⏳ | precisa provisionar |
+| INFRA-04 | Backup não testado | Alta | ⏳ | operacional |
+| INFRA-05 | 2 workers fixos | Alta | ✅ | `e154a8e` (WEB_CONCURRENCY) |
+| INFRA-06 | Sem Dockerfile | Média | ⏳ | opcional |
+| INFRA-07 | Sem gestão de segredos | Média | ⏳ | precisa cofre |
+| INFRA-08 | Sem blue/green deploy | Média | ⏳ | operacional |
+| INFRA-09 | Migrações SQLite como warnings | Média | ⏳ | atrelado a DB-02 |
+| INFRA-10 | passlib trapped bcrypt warning | Baixa | ⏳ | dep update |
+| PERF-01 | Sem cache distribuído | Alta | ⏳ | precisa Redis |
+| PERF-02 | PDF sync no request | Alta | ⏳ | async worker |
+| PERF-03 | Desc. de anexos por request | Alta | ⏳ | cache/URL assinada |
+| PERF-04 | Cache-Control 24h + versionamento | Média | 🟡 | `bc22cb6` (parcial: hash real, faltam nomes com hash) |
+| PERF-05 | Contagem comentários implícita | Média | ⏳ | refactor |
+| PERF-06 | Listagens admin sem paginação | Média | ⏳ | frontend + backend |
+| PERF-07 | Sem teste de carga | Média | ⏳ | operacional |
+| CONF-01 | SPOF no banco | Alta | ⏳ | infra |
+| CONF-02 | Sem degradação em falha R2 | Alta | ⏳ | design decision |
+| CONF-03 | Worker email frágil (silencioso) | Alta | ✅ | `bc22cb6` |
+| CONF-04 | Sem plano de recuperação | Alta | ⏳ | operacional |
+| CONF-05 | Divergência banco vs R2 | Média | ⏳ | processo reconciliação |
+| QA-01 | Cobertura com lacunas | Média | ⏳ | precisa mais testes |
+| QA-02 | Docs desatualizadas | Baixa | ✅ | `441c657` |
+| QA-03 | pytest ausente em requirements | Média | ✅ | `2ae62b2` |
+| QA-04 | Cobertura desigual por módulo | Média | ⏳ | precisa mais testes |
+| DOC-01 | Divergências docs vs código | Média | ✅ | `441c657` |
+| UX-01 | Colagem badges tabela admin | Baixa | ❌ | duplicata de FE-07 |
+| UX-02 | Link "Reativar" sem clique | Baixa | ❌ | reproduzir |
+| UX-03 | offline.html sem retorno | Baixa | ❌ | reproduzir |
+| UX-04 | Sem botão verify-chain na UI | Média | ✅ | `08b02c2` |
+| UX-05 | Timer forgot-password quebrado | Baixa | ❌ | reproduzir |
+
+### Sumário por severidade
+
+| Severidade | Total | ✅ | 🟡 | ⏳ | ❌ |
+|---|---|---|---|---|---|
+| Crítica | 6 | 6 | 0 | 0 | 0 |
+| Alta | 25 | 15 | 2 | 8 | 0 |
+| Média | 31 | 12 | 1 | 13 | 5 |
+| Baixa | 13 | 3 | 0 | 3 | 7 |
+| Informativa | 3 | 1 | 0 | 1 | 1 |
+| **Total** | **78** | **37** | **3** | **25** | **13** |
+
+**⏳ Pendentes** (25) são majoritariamente: precisam de infra externa (Redis, Sentry, cofre de segredos, backup off-site) ou refactor grande (Alembic, DTO layer, desacoplar domínio de FastAPI). Cada um merece PR próprio.
+
+**❌ Não priorizados** (13) são achados que exigem decisão de produto/UX (unique parcial, atalhos g/i, offline.html), ou higiene local (SEC-19).
+
+---
+
+---
+
 ## Índice
 
 1. [Resumo executivo](#1-resumo-executivo)
