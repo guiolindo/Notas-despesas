@@ -28,15 +28,36 @@ def decrypt_data(token: bytes, key: bytes) -> bytes:
 
 
 def _master_key() -> bytes:
+    """Retorna chave mestra Fernet. APP-01 (auditoria set/2026): antes,
+    subir sem a chave passava no config e explodia em runtime no primeiro
+    upload com HTTP 500 opaco. Agora, DEV sem chave gera uma efemera pra
+    permitir onboarding sem quebra funcional — com aviso; PROD continua
+    exigindo a chave configurada (validado em app.config.startup_security_failure)."""
     key = settings.MASTER_ENCRYPTION_KEY
     if isinstance(key, str):
         key = key.strip().encode("utf-8")
     if not key:
-        raise ValueError(
-            "MASTER_ENCRYPTION_KEY nao configurada. Gere uma chave com python generate_keys.py."
-        )
+        # Fallback DEV apenas: chave efemera por processo. Notas criadas
+        # nesta sessao nao sobrevivem a restart (chave nova = nao decrypta).
+        env = (settings.ENVIRONMENT or "DEV").upper()
+        if env == "PROD":
+            raise ValueError(
+                "MASTER_ENCRYPTION_KEY nao configurada. Gere com python generate_keys.py."
+            )
+        global _DEV_EPHEMERAL_KEY
+        if _DEV_EPHEMERAL_KEY is None:
+            _DEV_EPHEMERAL_KEY = Fernet.generate_key()
+            logger.warning(
+                "[DriveService] DEV sem MASTER_ENCRYPTION_KEY — usando chave "
+                "efemera. Uploads nao sobrevivem a restart. Configure a "
+                "variavel para persistencia."
+            )
+        return _DEV_EPHEMERAL_KEY
     Fernet(key)
     return key
+
+
+_DEV_EPHEMERAL_KEY: bytes | None = None
 
 
 def encrypt_key_with_master(file_key: bytes) -> str:

@@ -123,15 +123,6 @@ def transfer_director(
     return invoice_response(invoice)
 
 
-@router.post("/{invoice_id}/mark-paid", response_model=InvoiceResponse)
-def mark_paid(
-    invoice_id: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.FINANCE.value)),
-):
-    invoice = invoice_service.mark_paid(
-        db, invoice_id, current_user,
-        ip=client_ip(request), port=client_port(request),
-    )
-    return invoice_response(invoice)
+# BE-03 (auditoria set/2026): endpoint /mark-paid vive em print_routes.py.
+# Este handler duplicado era codigo morto (perdia a ordem de include_router)
+# e declarava contrato diferente (JSON vs PDF). Removido.
