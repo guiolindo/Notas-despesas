@@ -182,6 +182,51 @@ def _is_upload_route(request: Request) -> bool:
     return path.startswith("/api/invoices/") and "comments" not in path
 
 
+# SEC-13 (auditoria set/2026): rotas HTML autenticadas dependem so do
+# cookie refresh_token com SameSite=strict pra proteger contra CSRF.
+# Modernos honram; alguns navegadores antigos e cenarios de subdominio
+# comprometido nao. Este middleware adiciona uma 2a camada barata:
+# rejeita metodos de mutacao (POST/PUT/PATCH/DELETE) quando o cabecalho
+# Origin ou Referer nao bate com o host da propria aplicacao.
+# APIs Bearer nao usam cookie e sao imunes a CSRF classico — este
+# middleware so afeta rotas de cookie. Requisicoes sem Origin (curl,
+# xhr same-origin sem preflight) sao permitidas — o SameSite ja protege
+# cookie-based CSRF nesses casos.
+_MUTATION_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+class CSRFOriginMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        method = request.method.upper()
+        if method not in _MUTATION_METHODS:
+            return await call_next(request)
+        origin = request.headers.get("origin", "")
+        # Sem Origin: permite (fetch same-origin sem CORS preflight,
+        # curl, testes). SameSite=strict do cookie ja cobre CSRF classico.
+        if not origin:
+            return await call_next(request)
+        host = request.headers.get("host", "")
+        # Compara host do Origin com Host do request. Se bater, ok.
+        try:
+            from urllib.parse import urlparse
+            origin_host = urlparse(origin).netloc.lower()
+        except Exception:
+            origin_host = ""
+        if origin_host and host and origin_host == host.lower():
+            return await call_next(request)
+        # Permite tambem origens explicitas na allowlist (ex: dominios
+        # alternativos, subdominio de staging).
+        import os as _os
+        allowlist_raw = _os.getenv("CSRF_ALLOWED_ORIGINS", "")
+        allowlist = {o.strip().lower() for o in allowlist_raw.split(",") if o.strip()}
+        if origin.lower() in allowlist:
+            return await call_next(request)
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Origem nao permitida para esta operacao."},
+        )
+
+
 class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Le Content-Length declarado. Se ausente (chunked), o

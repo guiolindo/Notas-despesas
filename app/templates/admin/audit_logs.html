@@ -7,6 +7,14 @@
     <h1>Auditoria</h1>
     <p class="text-muted">Historico das acoes sensiveis do sistema.</p>
   </div>
+  <div>
+    {# UX-04 (auditoria set/2026): expor botao pra verificar cadeia
+       hash. Antes so existia via endpoint (nao ficava acessivel na UI). #}
+    <button class="btn btn-secondary" id="admin-audit-verify-chain" type="button">
+      Verificar integridade da cadeia
+    </button>
+    <div id="admin-audit-verify-result" class="text-muted" style="margin-top:8px"></div>
+  </div>
 </div>
 
 <form class="form-card" id="admin-audit-filter-form">

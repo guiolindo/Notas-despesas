@@ -20,6 +20,7 @@ from app.middleware.observability import (
 )
 from app.middleware.security import (
     BodySizeLimitMiddleware,
+    CSRFOriginMiddleware,
     RateLimitMiddleware,
     SecurityHeadersMiddleware,
 )
@@ -226,6 +227,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 # absurdo antes de gastar CPU pra parsing/rate-limit lookup.
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(BodySizeLimitMiddleware)
+# SEC-13: 2a camada CSRF (rejeita mutacoes com Origin cross-site).
+# Ordem: fica antes do rate-limit e depois do body-size (last-added,
+# first-executed pattern do Starlette).
+app.add_middleware(CSRFOriginMiddleware)
 # RequestIdMiddleware vem por ultimo (= executa por primeiro), pra que o id
 # ja esteja disponivel quando os outros middlewares logarem.
 app.add_middleware(RequestIdMiddleware)

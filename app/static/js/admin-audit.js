@@ -32,6 +32,30 @@
         loadAdminAuditLogs();
       }
     });
+    // UX-04: botao "Verificar integridade da cadeia"
+    document.getElementById('admin-audit-verify-chain')?.addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget;
+      const resultEl = document.getElementById('admin-audit-verify-result');
+      btn.disabled = true;
+      resultEl.textContent = 'Verificando...';
+      resultEl.style.color = '';
+      try {
+        const data = await apiFetch('/api/admin/audit-logs/verify-chain');
+        if (data && data.valid) {
+          resultEl.textContent = `Cadeia integra — ${data.total || 0} registros verificados.`;
+          resultEl.style.color = '#087443';
+        } else {
+          const at = data && data.broken_at ? ` (linha ${data.broken_at})` : '';
+          resultEl.textContent = `VIOLACAO DETECTADA${at}. Contate o responsavel pela seguranca.`;
+          resultEl.style.color = '#b91c1c';
+        }
+      } catch (e) {
+        resultEl.textContent = `Erro ao verificar: ${e.message || 'tente novamente'}`;
+        resultEl.style.color = '#b91c1c';
+      } finally {
+        btn.disabled = false;
+      }
+    });
     await loadAdminAuditLogs();
   }
 

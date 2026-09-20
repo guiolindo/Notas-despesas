@@ -220,17 +220,45 @@ def ensure_admin_exists() -> None:
             db.rollback()  # outro worker ja criou — ignorar
 
 
+_PURGE_LOCK_ID = 748291307  # adjacente ao lock da hash chain
+
+
 def purge_old_rejected_on_startup() -> None:
     """Limpa notas reprovadas ha mais de 90 dias. Roda no boot.
+
+    DB-07 (auditoria set/2026): antes, cada worker gunicorn executava
+    a purga concorrentemente no startup — 2 workers apagando o mesmo
+    conjunto criam erros de FK e deixam arquivos orfaos no R2. Agora
+    tenta adquirir pg_try_advisory_lock — quem pegar executa, os
+    outros pulam silenciosamente. SQLite (single-writer) roda sempre.
 
     Best-effort — falha aqui nao impede o app de subir.
     """
     try:
-        from app.database import SessionLocal
+        from sqlalchemy import text as _sql_text
+        from app.database import SessionLocal, engine as _engine
         from app.services.invoice_service import purge_old_rejected_invoices
         with SessionLocal() as db:
-            n = purge_old_rejected_invoices(db)
-            if n:
-                _log.info(f"[startup] purgeu {n} nota(s) reprovada(s) >90 dias")
+            if _engine.dialect.name == "postgresql":
+                got = db.execute(
+                    _sql_text("SELECT pg_try_advisory_lock(:k)"),
+                    {"k": _PURGE_LOCK_ID},
+                ).scalar()
+                if not got:
+                    _log.info("[startup] purge pulado — outro worker esta rodando")
+                    return
+                try:
+                    n = purge_old_rejected_invoices(db)
+                    if n:
+                        _log.info(f"[startup] purgeu {n} nota(s) reprovada(s) >90 dias")
+                finally:
+                    db.execute(
+                        _sql_text("SELECT pg_advisory_unlock(:k)"),
+                        {"k": _PURGE_LOCK_ID},
+                    )
+            else:
+                n = purge_old_rejected_invoices(db)
+                if n:
+                    _log.info(f"[startup] purgeu {n} nota(s) reprovada(s) >90 dias")
     except Exception as exc:  # noqa: BLE001
         _log.warning(f"[startup] purge falhou: {exc}")
